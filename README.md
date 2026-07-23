@@ -152,11 +152,6 @@ ComfyUI-Neo-Nodes/
 - `POST /rs_prompts/generate_prompt` - 从描述生成提示词
 - `POST /rs_prompts/random_prompt` - 随机生成提示词
 
-## 原始插件
-
-本插件合并了以下两个插件的功能：
-- [ComfyUI-Prompts-Simple](https://github.com/) - 智能提示词管理
-- [ComfyUI-UNetLoader](https://github.com/) - 带目录过滤的模型加载器
 
 ## 许可证
 
