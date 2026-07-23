@@ -1,6 +1,18 @@
 # ComfyUI-Neo-Nodes
 
-一个 ComfyUI 自定义节点插件。
+一个 ComfyUI 自定义节点插件。 AI 驱动的文本编码器，带提示词管理节点
+
+## 安装
+
+1. 将此目录克隆或复制到 `ComfyUI/custom_nodes/` 目录
+2. 重启 ComfyUI
+
+## 依赖
+
+- `torch`
+- `huggingface_hub`（用于下载 LLM 模型）
+- `llama_cpp`（用于本地 LLM 推理）
+
 
 ## 功能特性
 
@@ -14,7 +26,7 @@
 
 ### 2. 智能提示词管理
 
-#### NeoPrompts - 提示词管理节点
+#### NeoPrompts -  AI 驱动的文本编码器，带提示词管理节点
 
 提供完整的提示词管理功能：
 
@@ -38,53 +50,6 @@
 | 🎲 | 随机生成创意提示词 |
 | 🚀 | 根据快捷描述生成提示词 |
 
-#### PSPrompts - AI 驱动的文本编码器
-
-- 支持提示词保存/选择
-- LLM 提示词增强
-- 提示词翻译（中英互译）
-- 提示词分类提取
-- 提示词标题提取
-- 智能缓存
-
-### 3. 图片加载器
-
-提供增强的图片加载功能：
-
-- **ImageLoadWithPrefix** - 带目录前缀过滤的图片加载器
-
-## 安装
-
-1. 将此目录克隆或复制到 `ComfyUI/custom_nodes/` 目录
-2. 重启 ComfyUI
-
-## 依赖
-
-- `torch`
-- `huggingface_hub`（用于下载 LLM 模型）
-- `llama_cpp`（用于本地 LLM 推理）
-
-## 目录结构
-
-```
-ComfyUI-Neo-Nodes/
-├── __init__.py          # 插件入口
-├── prompts.py           # 提示词节点实现
-├── llm.py               # LLM 推理模块
-├── image_loaders.py     # 图片加载器节点
-├── README.md            # 本文件
-├── web/                 # 前端资源
-│   ├── prompts.js       # 提示词节点前端扩展
-│   ├── prompts.css      # 提示词节点样式
-│   ├── prompt-manager.js # 提示词管理 UI 组件
-│   ├── prompt-service.js # 提示词 API 服务
-│   ├── model_loader.js  # 模型加载器前端
-│   └── image_loader.js  # 图片加载器前端
-├── locals/              # 本地化文件
-│   └── zh_CN.json       # 中文本地化
-└── prompts/             # 提示词存储目录
-    └── .gitkeep
-```
 
 ## 节点说明
 
