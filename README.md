@@ -9,9 +9,8 @@
 
 ## 依赖
 
-- `torch`
 - `huggingface_hub`（用于下载 LLM 模型）
-- `llama_cpp`（用于本地 LLM 推理）
+- `llama_cpp_python`（用于本地 LLM 推理）
 
 
 ## 功能特性

@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
 # ComfyUI-Neo-Nodes - Model Loaders
-# Part 1: Model Loaders (from ComfyUI-UNetLoader)
 
 import os
 import torch

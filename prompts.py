@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
 # ComfyUI-Neo-Nodes - Prompts
-# Part 2: Prompts (from ComfyUI-Prompts-Simple)
 
 import os
 import json
@@ -26,15 +25,6 @@ _tags_lock = threading.Lock()
 
 # 从 llm 模块导入 LLM 相关功能
 from .llm import (
-    LLMSingleton,
-    get_llm_instance,
-    LLM_TASKS,
-    run_llm_task,
-    _run_llm_inference,
-    TRANSLATION_CACHE,
-    TranslationCache,
-    _normalize_text,
-    _detect_language,
     handle_llm_api_request,
 )
 
