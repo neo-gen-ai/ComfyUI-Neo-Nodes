@@ -4,7 +4,7 @@
 
 ## 功能特性
 
-### 1. 模型加载器（来自 ComfyUI-UNetLoader）
+### 1. 模型加载器
 
 提供带目录前缀过滤功能的模型加载器节点：
 
@@ -12,7 +12,7 @@
 - **CheckpointLoaderWithPrefix** - 加载检查点模型，支持目录前缀过滤
 - **LoraLoaderWithPrefix** - 加载 LoRA 模型，支持目录前缀过滤（仅模型参数，不包含 CLIP）
 
-### 2. 智能提示词管理（来自 ComfyUI-Prompts-Simple）
+### 2. 智能提示词管理
 
 #### NeoPrompts - 提示词管理节点
 
@@ -117,40 +117,11 @@ ComfyUI-Neo-Nodes/
 返回类型：
 - **PROMPT**: 提示词字符串
 
-#### PSPrompts
-- **clip**: CLIP 模型
-- **text**: 提示词文本（隐藏）
-- **disable_text_input**: 禁用外部文本输入（隐藏）
-- **text_input**: 文本输入（可选，外部连接）
-- **instance_uid**: 实例 ID（隐藏）
 
 返回类型：
 - **POSITIVE**: 正向条件
 - **NEGATIVE**: 负向条件
 - **PROMPT**: 提示词字符串
-
-### 图片加载器节点
-
-#### ImageLoadWithPrefix
-- **image_directory**: 选择图片目录，`__all__` 表示显示所有图片
-- **image_name**: 要加载的图片文件
-- **output**: 输出的图片张量
-
-## API 端点
-
-### 提示词管理
-- `POST /rs_prompts/save_prompt` - 保存提示词
-- `POST /rs_prompts/list_prompts` - 列出所有提示词
-- `POST /rs_prompts/load_prompt` - 加载提示词
-- `POST /rs_prompts/delete_prompt` - 删除提示词
-
-### LLM 任务
-- `POST /rs_prompts/extract_title` - 提取提示词标题
-- `POST /rs_prompts/extract_classify` - 提取提示词分类
-- `POST /rs_prompts/enhance_prompt` - 增强提示词
-- `POST /rs_prompts/translate_prompt` - 翻译提示词
-- `POST /rs_prompts/generate_prompt` - 从描述生成提示词
-- `POST /rs_prompts/random_prompt` - 随机生成提示词
 
 
 ## 许可证
