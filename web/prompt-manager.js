@@ -231,7 +231,7 @@ function createSettingsModal() {
 }
 
 function createStatusBars() {
-    const statusBar = mkEl("div", "rs-status-bar-local");
+    const statusBar = mkEl("div", "rs-status-bar");
     statusBar.style.cssText = "width:100%;padding:4px 8px;font-size:11px;font-weight:bold;text-align:center;border-radius:4px 4px 0 0;margin-bottom:4px;display:flex;align-items:center;justify-content:center;gap:6px;line-height:1.2;position:relative;pointer-events:none;";
     
     // Toggle switch for disable_text_input (left side)
@@ -274,7 +274,7 @@ function createStatusBars() {
 
     const randomBtn = mkEl("button", "rs-random-btn");
     randomBtn.textContent = "🎲";
-    randomBtn.style.cssText = "padding:2px 6px;font-size:14px;background:linear-gradient(135deg,#5a2a6a 0%,#4a1a5a 100%);color:#d8a0ff;border:1px solid #7a4a9a;border-radius:4px 0 0 0;cursor:pointer;white-space:nowrap;height:22px;flex-shrink:0;";
+    randomBtn.style.cssText = "padding:2px 6px;font-size:14px;background:#1a3a5a;color:#60a5fa;border:1px solid #3a6a9a;border-radius:4px 0 0 0;cursor:pointer;white-space:nowrap;height:22px;flex-shrink:0;";
     randomBtn.setAttribute("data-rs-tooltip", "Random prompt");
 
     const quickInput = mkEl("input", "rs-quick-input");

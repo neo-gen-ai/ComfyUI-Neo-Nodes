@@ -1,8 +1,15 @@
 /* ComfyUI-Neo-Nodes - Prompt Management Styles */
 
+/* Shared variables */
+.rs-root, .rs-waiting-overlay, .rs-preset-list-overlay, .rs-preset-name-input,
+.rs-delete-confirm-overlay, .rs-download-modal, .rs-settings-modal-wrapper {
+    box-sizing: border-box;
+}
+
+/* Waiting overlay */
 .rs-waiting-overlay {
     position: absolute;
-    top: 0; left: 0; right: 0; bottom: 0;
+    inset: 0;
     background: rgba(0, 0, 0, 0.85);
     display: flex;
     align-items: center;
@@ -19,6 +26,7 @@
     text-align: center;
 }
 
+/* Preset list */
 .rs-preset-list-overlay {
     position: absolute;
     display: none;
@@ -31,9 +39,8 @@
     z-index: 9999;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.8);
     min-width: 260px;
-    padding: 0;
-    overflow: hidden;
     max-height: 250px;
+    overflow: hidden;
 }
 
 .rs-preset-list-header {
@@ -66,13 +73,12 @@
 .rs-preset-search-input:focus {
     outline: none;
     border-color: #5090cc;
-    box-shadow: 0 0 0 2px rgba(80, 144, 204, 0.3);
 }
 
 .rs-preset-search-input::placeholder { color: #666; }
 
 .rs-preset-list-body {
-    max-height: calc(450px - 80px);
+    max-height: 370px;
     overflow-y: auto;
     padding: 4px 0;
     flex: 1;
@@ -83,13 +89,14 @@
 .rs-preset-list-body::-webkit-scrollbar-thumb { background: #5090cc; border-radius: 4px; }
 
 .rs-preset-list-footer {
-    padding: 8px 12px;
+    padding: 8px;
     border-top: 1px solid #3a3a3a;
     background: #1e1e1e;
     display: flex;
     justify-content: center;
 }
 
+/* Close button */
 .rs-close-btn {
     background: #2a3a3a;
     color: #ccc;
@@ -98,14 +105,11 @@
     font-size: 11px;
     border-radius: 6px;
     cursor: pointer;
-    transition: all 0.2s ease;
 }
 
 .rs-close-btn:hover {
     background: #3a4a4a;
     color: #fff;
-    border-color: #555;
-    transform: translateY(-1px);
 }
 
 .rs-close-btn.top-right {
@@ -113,18 +117,9 @@
     top: 8px; right: 8px;
     z-index: 10;
     padding: 4px 10px;
-    font-size: 12px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
 }
 
-.rs-close-btn.top-right:hover {
-    background: #3a4a4a;
-    color: #fff;
-    transform: scale(1.05);
-}
-
+/* Preset items */
 .rs-preset-item {
     display: flex;
     align-items: center;
@@ -143,18 +138,14 @@
     cursor: pointer;
     color: #ccc;
     font-size: 12px;
-    user-select: none;
 }
 
 .rs-preset-item:hover .rs-preset-content { color: #fff; }
-.rs-preset-content:hover { background: #3a3a3a; }
 
 .rs-preset-content > span.rs-tags-part {
     color: #666;
     font-size: 10px;
-    font-weight: 400;
     margin-left: 4px;
-    opacity: 0.7;
 }
 
 .rs-preset-item:hover .rs-preset-content > span.rs-tags-part { color: #888; }
@@ -163,29 +154,24 @@
     background: rgba(80, 144, 204, 0.3);
     font-weight: 600;
     padding: 0 2px;
-    border-radius: 2px;
 }
 
+/* Delete button */
 .rs-preset-delete-btn {
     background: transparent;
     color: #f87171;
     font-size: 16px;
     padding: 2px 6px;
-    border-radius: 4px;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
-    justify-content: center;
 }
 
 .rs-preset-delete-btn:hover {
     background: rgba(248, 113, 113, 0.1);
-    color: #ef4444;
-    transform: scale(1.1);
 }
 
-.rs-preset-delete-btn:active { transform: scale(0.95); }
-
+/* Preset name input */
 .rs-preset-name-input {
     position: absolute;
     display: none;
@@ -196,7 +182,6 @@
     border: 1px solid #5090cc;
     border-radius: 6px;
     z-index: 9999;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.7);
     width: 220px;
     text-align: center;
 }
@@ -223,16 +208,12 @@
     border-radius: 4px !important;
     font-size: 10px;
     box-sizing: border-box;
-    transition: all 0.2s ease;
 }
 
 .rs-input-field:focus {
     outline: none;
     border-color: #5090cc !important;
-    box-shadow: 0 0 0 2px rgba(80, 144, 204, 0.3);
 }
-
-.rs-input-field:hover { border-color: #666; }
 
 .rs-input-buttons {
     display: flex;
@@ -250,52 +231,19 @@
     border: none;
     border-radius: 4px;
     cursor: pointer;
-    transition: all 0.25s ease;
-    position: relative;
-    overflow: hidden;
 }
 
-.rs-input-ok-btn {
-    background: #10b981;
-    color: #fff;
-    box-shadow: 0 2px 6px rgba(16, 185, 129, 0.3);
-}
-
-.rs-input-ok-btn:hover {
-    background: #34d399;
-    box-shadow: 0 2px 8px rgba(16, 185, 129, 0.5);
-    transform: translateY(-1px);
-}
-
-.rs-input-ok-btn:active {
-    transform: translateY(0);
-    box-shadow: 0 1px 2px rgba(16, 185, 129, 0.3);
-}
-
-.rs-input-cancel-btn {
-    background: #4b5563;
-    color: #e5e5e5;
-    box-shadow: 0 2px 6px rgba(75, 85, 99, 0.3);
-}
-
-.rs-input-cancel-btn:hover {
-    background: #6b7280;
-    box-shadow: 0 2px 8px rgba(75, 85, 99, 0.5);
-    transform: translateY(-1px);
-}
-
-.rs-input-cancel-btn:active {
-    transform: translateY(0);
-    box-shadow: 0 1px 2px rgba(75, 85, 99, 0.3);
-}
-
+.rs-input-ok-btn { background: #10b981; color: #fff; }
+.rs-input-ok-btn:hover { background: #34d399; }
+.rs-input-cancel-btn { background: #4b5563; color: #e5e5e5; }
+.rs-input-cancel-btn:hover { background: #6b7280; }
 .rs-input-ok-btn:disabled, .rs-input-cancel-btn:disabled {
     background: #2a2a2a !important;
     color: #666 !important;
     cursor: not-allowed !important;
-    transform: none !important;
 }
 
+/* Delete confirm */
 .rs-delete-confirm-overlay {
     position: absolute;
     display: none;
@@ -306,7 +254,6 @@
     border: 1px solid #5090cc;
     border-radius: 6px;
     z-index: 9999;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.7);
     width: 220px;
     text-align: center;
 }
@@ -318,39 +265,23 @@
     word-break: break-word;
 }
 
-.rs-delete-buttons {
-    display: flex;
-    gap: 5px;
-}
+.rs-delete-buttons { display: flex; gap: 5px; }
 
 .rs-delete-ok-btn {
     background: #5090cc;
     color: #fff;
     border: none;
-    box-shadow: 0 2px 8px rgba(80, 144, 204, 0.4);
 }
-
-.rs-delete-ok-btn:hover {
-    background: #60a0dc;
-    box-shadow: 0 4px 12px rgba(80, 144, 204, 0.5);
-}
+.rs-delete-ok-btn:hover { background: #60a0dc; }
 
 .rs-delete-cancel-btn {
     background: #2a3a3a;
     color: #ccc;
     border: 1px solid #444;
 }
+.rs-delete-cancel-btn:hover { background: #3a4a4a; color: #fff; }
 
-.rs-delete-cancel-btn:hover {
-    background: #3a4a4a;
-    color: #fff;
-    border-color: #555;
-}
-
-.rs-status-bar-local { background: #1a3a1a !important; color: #4ade80 !important; }
-.rs-status-bar-external { background: #1a2a3a !important; color: #60a5fa !important; }
-.rs-status-bar-waiting { background: #3a2a1a !important; color: #fbbf24 !important; }
-
+/* Main buttons */
 .rs-btn, .rs-btn-local, .rs-btn-external, .rs-btn-waiting {
     flex: 1;
     padding: 5px 3px;
@@ -359,42 +290,22 @@
     border: none;
     border-radius: 4px;
     cursor: pointer;
-    transition: all 0.2s ease;
-    position: relative;
-    overflow: hidden;
 }
 
-.rs-btn {
-    background: #1a3a5a;
-    color: #aadaff;
-    box-shadow: 0 0 0 1px rgba(80, 144, 204, 0.3), 0 2px 8px rgba(26, 58, 90, 0.3);
-}
-
-.rs-btn:hover {
-    background: #2a4a6a;
-    color: #fff;
-    box-shadow: 0 4px 12px rgba(26, 58, 90, 0.4);
-    transform: translateY(-1px);
-}
-
-.rs-btn:active {
-    transform: translateY(0);
-    box-shadow: 0 1px 4px rgba(26, 58, 90, 0.3), inset 0 2px 4px rgba(0, 0, 0, 0.1);
-}
-
+.rs-btn { background: #1a3a5a; color: #aadaff; }
+.rs-btn:hover { background: #2a4a6a; color: #fff; }
 .rs-btn:disabled, .rs-btn-disabled {
     background: #2a3a4a !important;
     color: #666 !important;
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2) !important;
     cursor: not-allowed !important;
     opacity: 0.5 !important;
 }
 
+/* Textarea */
 .rs-custom-textarea, .rs-textarea-local, .rs-textarea-external, .rs-textarea-waiting {
     background-color: var(--bg-2, #1a1a1a);
     color: var(--text-1, #fff);
     border-color: var(--bg-3, #444);
-    transition: border-color 0.2s ease;
 }
 
 .rs-textarea-disabled {
@@ -409,6 +320,7 @@
     border-color: #fbbf24 !important;
 }
 
+/* Quick input */
 .rs-quick-input-wrapper {
     width: 100%;
     display: flex;
@@ -426,17 +338,16 @@
     color: #ccc;
     border: 1px solid #444;
     outline: none;
-    transition: all 0.2s ease;
     min-width: 0;
 }
 
 .rs-quick-input:focus {
     border-color: #5090cc;
-    box-shadow: 0 0 0 2px rgba(80, 144, 204, 0.3);
 }
 
 .rs-quick-input::placeholder { color: #666; }
 
+/* Generate / Random buttons */
 .rs-generate-btn {
     padding: 2px 6px;
     font-size: 9px;
@@ -445,19 +356,12 @@
     border: 1px solid #3a6a9a;
     cursor: pointer;
     white-space: nowrap;
-    transition: all 0.2s ease;
     margin-left: auto;
     flex-shrink: 0;
     height: 22px;
 }
 
-.rs-generate-btn:hover {
-    background: #2a4a6a;
-    color: #fff;
-}
-
-.rs-generate-btn:active { transform: translateY(0); }
-
+.rs-generate-btn:hover { background: #2a4a6a; color: #fff; }
 .rs-generate-btn:disabled {
     background: #1a2a3a !important;
     color: #666 !important;
@@ -468,31 +372,25 @@
 .rs-random-btn {
     padding: 2px 6px;
     font-size: 14px;
-    background: #4a1a5a;
-    color: #d8a0ff;
-    border: 1px solid #7a4a9a;
+    background: #1a3a5a;
+    color: #60a5fa;
+    border: 1px solid #3a6a9a;
     border-radius: 4px 0 0 0;
     cursor: pointer;
     white-space: nowrap;
-    transition: all 0.2s ease;
     flex-shrink: 0;
     height: 22px;
 }
 
-.rs-random-btn:hover {
-    background: #5a2a6a;
-    color: #fff;
-}
-
-.rs-random-btn:active { transform: translateY(0); }
-
+.rs-random-btn:hover { background: #2a4a6a; color: #fff; }
 .rs-random-btn:disabled {
-    background: #2a1a3a !important;
+    background: #1a2a3a !important;
     color: #666 !important;
     cursor: not-allowed !important;
     opacity: 0.5 !important;
 }
 
+/* Root layout */
 .rs-root {
     display: flex;
     flex-direction: column;
@@ -530,13 +428,7 @@
     margin-top: 4px;
 }
 
-.rs-btn-row, .rs-action-row {
-    display: flex;
-    gap: 6px;
-    width: 100%;
-}
-
-.rs-row {
+.rs-btn-row, .rs-action-row, .rs-row {
     display: flex;
     gap: 6px;
     width: 100%;
@@ -549,6 +441,7 @@
     flex-wrap: wrap;
 }
 
+/* Tag buttons */
 .rs-tag-btn {
     padding: 4px 8px;
     font-size: 10px;
@@ -557,40 +450,24 @@
     color: #666;
     border-radius: 6px;
     cursor: pointer;
-    transition: all 0.25s ease;
-    position: relative;
-    overflow: hidden;
 }
 
 .rs-tag-btn:hover {
     border-color: #5090cc;
     background: #333;
     color: #ccc;
-    transform: translateY(-1px);
-    box-shadow: 0 2px 8px rgba(80, 144, 204, 0.3);
 }
 
 .rs-tag-btn.rs-tag-selected {
     background: #5090cc;
     color: #fff !important;
     border-color: #5090cc;
-    box-shadow: 0 0 4px rgba(80, 144, 204, 0.3);
-    transform: scale(1.05);
     font-weight: 600;
-    animation: tag-pulse 0.3s ease;
 }
 
-.rs-tag-btn.rs-tag-selected:hover {
-    background: #60a0dc;
-    box-shadow: 0 0 6px rgba(80, 144, 204, 0.4);
-    transform: scale(1.08);
-}
+.rs-tag-btn.rs-tag-selected:hover { background: #60a0dc; }
 
-@keyframes tag-pulse {
-    0%, 100% { transform: scale(1.05); }
-    50% { transform: scale(1.08); }
-}
-
+/* AI Status */
 .rs-ai-status {
     padding: 6px 10px;
     background: #2a3a4a;
@@ -598,13 +475,13 @@
     border-radius: 4px 4px 0 0;
     font-size: 11px;
     text-align: center;
-    transition: all 0.3s ease;
 }
 
 .rs-ai-status.processing { background: #2a3a4a; color: #5090cc; }
 .rs-ai-status.success { background: #1a3a1a; color: #4ade80; }
 .rs-ai-status.error { background: #3a1a1a; color: #f87171; }
 
+/* Download modal */
 .rs-download-modal {
     position: absolute;
     display: none;
@@ -641,10 +518,7 @@
     margin-bottom: 4px;
 }
 
-.rs-download-desc {
-    color: #999;
-    font-size: 11px;
-}
+.rs-download-desc { color: #999; font-size: 11px; }
 
 .rs-download-model-info {
     background: #1a1a1a;
@@ -684,7 +558,6 @@
     height: 100%;
     background: #5090cc;
     width: 0%;
-    transition: width 0.3s ease;
     border-radius: 3px;
 }
 
@@ -703,10 +576,7 @@
     min-height: 16px;
 }
 
-.rs-download-buttons {
-    display: flex;
-    gap: 8px;
-}
+.rs-download-buttons { display: flex; gap: 8px; }
 
 .rs-download-btn {
     flex: 1;
@@ -718,24 +588,14 @@
     border: none;
     border-radius: 4px;
     cursor: pointer;
-    transition: all 0.2s ease;
-    box-shadow: 0 2px 6px rgba(16, 185, 129, 0.3);
 }
 
-.rs-download-btn:hover {
-    background: #34d399;
-    box-shadow: 0 2px 8px rgba(16, 185, 129, 0.5);
-    transform: translateY(-1px);
-}
-
-.rs-download-btn:active { transform: translateY(0); }
-
+.rs-download-btn:hover { background: #34d399; }
 .rs-download-btn:disabled {
     background: #2a2a2a !important;
     color: #666 !important;
     cursor: not-allowed !important;
     opacity: 0.5 !important;
-    transform: none !important;
 }
 
 .rs-download-cancel-btn {
@@ -747,17 +607,9 @@
     border: none;
     border-radius: 4px;
     cursor: pointer;
-    transition: all 0.2s ease;
-    box-shadow: 0 2px 6px rgba(75, 85, 99, 0.3);
 }
 
-.rs-download-cancel-btn:hover {
-    background: #6b7280;
-    box-shadow: 0 2px 8px rgba(75, 85, 99, 0.5);
-    transform: translateY(-1px);
-}
-
-.rs-download-cancel-btn:active { transform: translateY(0); }
+.rs-download-cancel-btn:hover { background: #6b7280; }
 
 .rs-download-close-btn {
     padding: 8px 12px;
@@ -768,19 +620,14 @@
     border: 1px solid #444;
     border-radius: 4px;
     cursor: pointer;
-    transition: all 0.2s ease;
 }
 
-.rs-download-close-btn:hover {
-    background: #2a3a3a;
-    color: #fff;
-    border-color: #555;
-}
+.rs-download-close-btn:hover { background: #2a3a3a; color: #fff; }
 
 .rs-status-downloading {
     background: #3a2a1a !important;
     color: #fbbf24 !important;
-    animation: status-pulse 2s ease-in-out infinite;
+    animation: status-pulse 2s infinite;
 }
 
 @keyframes status-pulse {
@@ -788,11 +635,10 @@
     50% { opacity: 0.7; }
 }
 
+/* Settings modal */
 .rs-settings-modal {
     position: fixed;
-    top: 0; left: 0;
-    width: 100%;
-    height: 100%;
+    inset: 0;
     background: rgba(0, 0, 0, 0.7);
     display: none;
     justify-content: center;
@@ -849,16 +695,12 @@
     margin-bottom: 4px;
 }
 
-.rs-settings-desc {
-    color: #999;
-    font-size: 12px;
-}
+.rs-settings-desc { color: #999; font-size: 12px; }
 
 .rs-settings-model-list {
     margin-bottom: 16px;
     max-height: 200px;
     overflow-y: auto;
-    overflow-x: hidden;
 }
 
 .rs-settings-model-item {
@@ -872,7 +714,6 @@
     align-items: center;
     gap: 6px;
     min-height: 28px;
-    transition: all 0.15s ease;
 }
 
 .rs-settings-model-item:hover {
@@ -883,7 +724,6 @@
 .rs-settings-model-item.active {
     background: #1a2a3a;
     border-color: #5090cc;
-    box-shadow: 0 0 0 1px rgba(80, 144, 204, 0.3);
 }
 
 .rs-settings-model-info {
@@ -914,7 +754,6 @@
 .rs-settings-model-name .rs-model-size {
     color: #888;
     font-size: 9px;
-    font-weight: 400;
     margin-left: auto;
     padding: 1px 4px;
     background: rgba(80, 144, 204, 0.1);
@@ -940,7 +779,6 @@
     color: #5090cc;
     font-size: 12px;
     opacity: 0;
-    transition: opacity 0.15s ease;
     font-weight: bold;
 }
 
@@ -955,25 +793,14 @@
     border: none;
     border-radius: 3px;
     cursor: pointer;
-    transition: all 0.15s ease;
     white-space: nowrap;
-    box-shadow: 0 1px 3px rgba(80, 144, 204, 0.3);
 }
 
-.rs-download-btn-small:hover {
-    background: #60a0dc;
-    box-shadow: 0 1px 4px rgba(80, 144, 204, 0.5);
-    transform: translateY(-1px);
-}
-
-.rs-download-btn-small:active { transform: translateY(0); }
-
+.rs-download-btn-small:hover { background: #60a0dc; }
 .rs-download-btn-small:disabled {
     background: #333 !important;
     color: #666 !important;
     cursor: not-allowed !important;
-    box-shadow: none !important;
-    transform: none !important;
 }
 
 .rs-download-progress-bar {
@@ -990,7 +817,6 @@
     height: 100%;
     background: #5090cc;
     width: 0%;
-    transition: width 0.3s ease;
 }
 
 .rs-download-progress-text {
@@ -1034,7 +860,6 @@
     border: none;
     border-radius: 3px;
     cursor: pointer;
-    transition: all 0.2s ease;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1042,16 +867,9 @@
     line-height: 1;
 }
 
-.rs-settings-close-btn:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: #fff;
-    transform: translateY(-50%) scale(1.1);
-}
+.rs-settings-close-btn:hover { color: #fff; }
 
-/* ==========================================
-   Toggle Switch Styles
-   ========================================== */
-
+/* Toggle Switch */
 .rs-toggle-wrapper {
     position: absolute;
     left: 4px;
@@ -1069,13 +887,10 @@
     border-radius: 8px;
     position: relative;
     cursor: pointer;
-    transition: background 0.2s ease, border-color 0.2s ease;
     border: 1px solid #555;
 }
 
-.rs-toggle-switch:hover {
-    border-color: #666;
-}
+.rs-toggle-switch:hover { border-color: #666; }
 
 .rs-toggle-knob {
     width: 12px;
@@ -1085,21 +900,13 @@
     position: absolute;
     top: 1px;
     left: 1px;
-    transition: transform 0.2s ease, background 0.2s ease;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
-.rs-toggle-switch:hover .rs-toggle-knob {
-    background: #bbb;
-}
+.rs-toggle-switch:hover .rs-toggle-knob { background: #bbb; }
 
-/* ==========================================
-   Custom Tooltip Styles
-   ========================================== */
-
-[data-rs-tooltip] {
-    position: relative;
-}
+/* Tooltip */
+[data-rs-tooltip] { position: relative; }
 
 [data-rs-tooltip]:hover::after {
     content: attr(data-rs-tooltip);
@@ -1111,13 +918,11 @@
     color: #fff;
     padding: 4px 8px;
     font-size: 11px;
-    font-weight: 400;
     white-space: nowrap;
     border-radius: 4px;
     pointer-events: none;
     z-index: 1000;
     margin-bottom: 6px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
     border: 1px solid #444;
 }
 
@@ -1132,4 +937,54 @@
     margin-bottom: -4px;
     z-index: 1000;
     pointer-events: none;
+}
+
+/* ==========================================
+   Theme - LOCAL PROMPT (Green)
+   ========================================== */
+
+.rs-root.rs-theme-local {
+    --theme-primary: #4ade80;
+    --theme-bg: #1a3a2a;
+}
+
+.rs-root.rs-theme-local .rs-status-bar {
+    background: var(--theme-bg) !important;
+    color: var(--theme-primary) !important;
+    border: none !important;
+    box-shadow: none !important;
+}
+
+.rs-root.rs-theme-local .rs-settings-btn {
+    color: var(--theme-primary) !important;
+}
+
+.rs-root.rs-theme-local .rs-settings-btn:hover {
+    color: #3a9a4e !important;
+    background: rgba(45, 122, 62, 0.15) !important;
+}
+
+/* ==========================================
+   Theme - EXTERNAL INPUT (Blue)
+   ========================================== */
+
+.rs-root.rs-theme-external {
+    --theme-primary: #60a5fa;
+    --theme-bg: #1a2a4a;
+}
+
+.rs-root.rs-theme-external .rs-status-bar {
+    background: var(--theme-bg) !important;
+    color: var(--theme-primary) !important;
+    border: none !important;
+    box-shadow: none !important;
+}
+
+.rs-root.rs-theme-external .rs-settings-btn {
+    color: var(--theme-primary) !important;
+}
+
+.rs-root.rs-theme-external .rs-settings-btn:hover {
+    color: #fff !important;
+    background: rgba(96, 165, 250, 0.2) !important;
 }

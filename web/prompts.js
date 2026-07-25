@@ -167,7 +167,8 @@ app.registerExtension({
 
             // 创建提示词管理 UI - 内聚到 prompt-manager
             const promptUI = createPromptManagerUI();
-            node.addDOMWidget("prompt_ui", "custom", promptUI.root);
+            const root = promptUI.root;
+            node.addDOMWidget("prompt_ui", "custom", root);
             node.setSize([370, 350]);
             node.min_height = 350;
             node.min_width = 370;
@@ -219,14 +220,30 @@ app.registerExtension({
                 // 获取状态文字元素（避免用 innerHTML 覆盖整个状态栏）
                 const statusTextEl = statusBar.querySelector("span");
                 
-                if (hasConnection && !isDisabled) {
-                    statusBar.style.background = "#1a2a3a";
+                // isDisabled=true 表示启用外部输入 = EXTERNAL INPUT 主题 (蓝色)
+                // isDisabled=false 表示本地模式 = LOCAL PROMPT 主题 (绿色)
+                if (isDisabled) {
+                    statusBar.style.background = "#1a2a4a";
                     statusBar.style.color = "#60a5fa";
+                    statusBar.style.border = "none";
+                    statusBar.style.borderRadius = "4px 4px 0 0";
+                    statusBar.style.boxShadow = "none";
                     if (statusTextEl) statusTextEl.textContent = "🔵 EXTERNAL INPUT";
+                    
+                    // 应用 EXTERNAL INPUT 主题
+                    root.classList.remove("rs-theme-local");
+                    root.classList.add("rs-theme-external");
                 } else {
                     statusBar.style.background = "#1a3a1a";
                     statusBar.style.color = "#4ade80";
+                    statusBar.style.border = "none";
+                    statusBar.style.borderRadius = "4px 4px 0 0";
+                    statusBar.style.boxShadow = "none";
                     if (statusTextEl) statusTextEl.textContent = "🟢 LOCAL PROMPT";
+                    
+                    // 应用 LOCAL PROMPT 主题
+                    root.classList.remove("rs-theme-external");
+                    root.classList.add("rs-theme-local");
                 }
 
                 // 更新toggle开关状态
@@ -283,7 +300,24 @@ app.registerExtension({
                     e.stopPropagation();
                     e.preventDefault();
                     const currentState = node.properties.rs_disable_state;
-                    node.properties.rs_disable_state = !currentState;
+                    const newState = !currentState;
+                    
+                    // 没有外部连接时，不能切换到 EXTERNAL INPUT 模式
+                    if (newState && !hasTextInputConnection()) {
+                        // 显示提示，不允许切换
+                        const statusTextEl = statusBar.querySelector("span");
+                        if (statusTextEl) {
+                            statusTextEl.textContent = "⚠️ CONNECT text_input TO SWITCH";
+                        }
+                        statusBar.style.background = "#3a2a1a";
+                        statusBar.style.color = "#fbbf24";
+                        setTimeout(() => {
+                            updateStatusAndUI();
+                        }, 1500);
+                        return;
+                    }
+                    
+                    node.properties.rs_disable_state = newState;
                     
                     // Update widget value
                     if (disableWidget) {
