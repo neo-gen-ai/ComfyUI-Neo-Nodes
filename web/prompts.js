@@ -6,7 +6,7 @@
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 import { mkEl, createPromptManagerUI } from "./prompt-manager.js";
-import { enhancePrompt, translatePrompt, generatePromptFromText, randomPrompt as randomPromptAPI } from "./prompt-service.js";
+import { enhancePrompt, translatePrompt, generatePromptFromText, randomPrompt as randomPromptAPI, checkModelAndPrompt, downloadModel, showDownloadModal, monitorDownloadProgress } from "./prompt-service.js";
 
 // ==========================================
 // Reference external CSS file
@@ -175,7 +175,7 @@ app.registerExtension({
             const { 
                 enhanceBtn, translateBtn, generateBtn, randomBtn, quickInput, 
                 customTextarea, statusBar,
-                presetListOverlay, presetNameInput, deleteConfirmOverlay 
+                presetListOverlay, presetNameInput, deleteConfirmOverlay, downloadModal 
             } = promptUI.init({
                 node,
                 graph: node.graph,
@@ -316,6 +316,12 @@ app.registerExtension({
                     return;
                 }
 
+                // 检查模型是否已下载
+                const modelOk = await checkModelAndPrompt(downloadModal, statusBar);
+                if (!modelOk) {
+                    return;
+                }
+
                 enhanceBtn.disabled = true;
                 enhanceBtn.textContent = "⏳ Enhancing...";
 
@@ -355,6 +361,12 @@ app.registerExtension({
                     return;
                 }
 
+                // 检查模型是否已下载
+                const modelOk = await checkModelAndPrompt(downloadModal, statusBar);
+                if (!modelOk) {
+                    return;
+                }
+
                 translateBtn.disabled = true;
                 translateBtn.textContent = "⏳ Translating...";
 
@@ -391,6 +403,12 @@ app.registerExtension({
                 const quickText = quickInput.value.trim();
                 if (!quickText) {
                     alert("Please enter a quick description first.");
+                    return;
+                }
+
+                // 检查模型是否已下载
+                const modelOk = await checkModelAndPrompt(downloadModal, statusBar);
+                if (!modelOk) {
                     return;
                 }
 
@@ -437,6 +455,12 @@ app.registerExtension({
             // 随机生成按钮
             // ==========================================
             randomBtn.addEventListener("click", async () => {
+                // 检查模型是否已下载
+                const modelOk = await checkModelAndPrompt(downloadModal, statusBar);
+                if (!modelOk) {
+                    return;
+                }
+
                 randomBtn.disabled = true;
                 randomBtn.textContent = "⏳";
 

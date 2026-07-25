@@ -4,13 +4,53 @@
 
 import os
 import re
+import json
 import logging
 import base64
 import io
 import folder_paths
 from collections import OrderedDict
 
+# ==========================================
+# HuggingFace Endpoint Configuration
+# ==========================================
+# Override HF_ENDPOINT to use official HuggingFace endpoint
+# This is needed because some systems set HF_ENDPOINT to a mirror that may be unavailable
+os.environ["HF_ENDPOINT"] = "https://huggingface.co"
+
 logger = logging.getLogger(__name__)
+
+# ==========================================
+# Model Configuration (loaded from JSON)
+# ==========================================
+
+def _load_model_config():
+    """从 model_config.json 加载模型配置"""
+    config_path = os.path.join(os.path.dirname(__file__), "model_config.json")
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            config = json.load(f)
+        return config
+    except Exception as e:
+        logger.error(f"Failed to load model config: {e}")
+        # 返回默认配置
+        return {
+            "model": {
+                "ms_repo_id": "unsloth/Qwen3.5-0.8B-GGUF",
+                "hf_repo_id": "unsloth/Qwen3.5-0.8B-GGUF",
+                "filename": "Qwen3.5-0.8B-UD-Q4_K_XL.gguf"
+            },
+            "mmproj": {
+                "filename": "mmproj-BF16.gguf"
+            }
+        }
+
+# 加载配置
+_MODEL_CONFIG = _load_model_config()
+
+def get_model_config():
+    """获取模型配置"""
+    return _MODEL_CONFIG
 
 # ==========================================
 # Text Normalization Utility
@@ -77,6 +117,260 @@ TRANSLATION_CACHE = TranslationCache(max_size=200)
 # LLM Configuration & Management
 # ==========================================
 
+# 模型配置常量（从配置文件读取）
+MS_REPO_ID = _MODEL_CONFIG["model"]["ms_repo_id"]
+HF_REPO_ID = _MODEL_CONFIG["model"]["hf_repo_id"]
+MODEL_FILENAME = _MODEL_CONFIG["model"]["filename"]
+MMPROJ_FILENAME = _MODEL_CONFIG["mmproj"]["filename"]
+MODEL_DIR = "Qwen-0.8B"
+
+import threading
+
+# 下载状态管理
+_download_status = {
+    "model": {"downloading": False, "progress": 0, "error": None},
+    "mmproj": {"downloading": False, "progress": 0, "error": None}
+}
+_download_lock = threading.Lock()
+
+def get_model_paths():
+    """获取模型文件路径"""
+    base_dir = folder_paths.base_path
+    model_dir = os.path.join(base_dir, "models", "LLM",MODEL_DIR)
+    target_path = os.path.join(model_dir, MODEL_FILENAME)
+    mmproj_path = os.path.join(model_dir, MMPROJ_FILENAME)
+    return target_path, mmproj_path
+
+def check_model_status():
+    """
+    检查模型文件是否存在，返回状态信息
+    """
+    target_path, mmproj_path = get_model_paths()
+    
+    model_exists = os.path.exists(target_path)
+    mmproj_exists = os.path.exists(mmproj_path)
+    
+    return {
+        "model_available": model_exists,
+        "mmproj_available": mmproj_exists,
+        "model_filename": MODEL_FILENAME,
+        "mmproj_filename": MMPROJ_FILENAME,
+        "model_repo_id": MS_REPO_ID,
+        "hf_repo_id": HF_REPO_ID,
+        "model_path": target_path if model_exists else None,
+        "mmproj_path": mmproj_path if mmproj_exists else None,
+        "download_status": _download_status
+    }
+
+def _download_file_background(file_type):
+    """
+    后台下载文件（在独立线程中运行）
+    file_type: "model" 或 "mmproj"
+    优先从 ModelScope 下载，失败后尝试 HuggingFace
+    """
+    global _download_status
+    
+    with _download_lock:
+        if _download_status[file_type]["downloading"]:
+            logger.warning(f"Download already in progress for {file_type}")
+            return False
+        
+        _download_status[file_type]["downloading"] = True
+        _download_status[file_type]["progress"] = 0
+        _download_status[file_type]["error"] = None
+    
+    try:
+        base_dir = folder_paths.base_path
+        model_dir = os.path.join(base_dir, "models", "LLM",MODEL_DIR)
+        os.makedirs(model_dir, exist_ok=True)
+        
+        filename = MODEL_FILENAME if file_type == "model" else MMPROJ_FILENAME
+        target_path = os.path.join(model_dir, filename)
+        
+        # 如果文件已存在，直接成功
+        if os.path.exists(target_path):
+            _download_status[file_type]["downloading"] = False
+            _download_status[file_type]["progress"] = 100
+            logger.info(f"File already exists: {target_path}")
+            return True
+        
+        # 尝试从 ModelScope 下载
+        success = _download_from_modelscope(model_dir, filename, file_type)
+        
+        if not success:
+            logger.info("ModelScope download failed, trying HuggingFace...")
+            success = _download_from_huggingface(model_dir, filename, file_type)
+        
+        if success:
+            _download_status[file_type]["progress"] = 100
+            _download_status[file_type]["downloading"] = False
+            logger.info(f"Download complete: {target_path}")
+            return True
+        else:
+            _download_status[file_type]["error"] = "Both ModelScope and HuggingFace downloads failed"
+            _download_status[file_type]["downloading"] = False
+            logger.error("All download attempts failed")
+            return False
+    except Exception as e:
+        _download_status[file_type]["error"] = str(e)
+        _download_status[file_type]["downloading"] = False
+        logger.error(f"Download failed: {e}")
+        return False
+
+def _download_from_modelscope(model_dir, filename, file_type):
+    """从 ModelScope 下载模型"""
+    try:
+        logger.info(f"Attempting download from ModelScope...")
+        from modelscope import snapshot_download
+        
+        target_path = os.path.join(model_dir, filename)
+        estimated_size = 500 * 1024 * 1024  # 默认500MB
+        
+        # 监控文件大小的进度更新
+        def monitor_file_progress():
+            """监控文件下载进度"""
+            import time
+            last_size = 0
+            no_change_count = 0
+            max_size_seen = 0
+            
+            while _download_status[file_type]["downloading"]:
+                if os.path.exists(target_path):
+                    current_size = os.path.getsize(target_path)
+                    if current_size > 0:
+                        # 更新最大文件大小
+                        if current_size > max_size_seen:
+                            max_size_seen = current_size
+                            # 动态调整估算大小
+                            if current_size > estimated_size:
+                                estimated_size = current_size * 1.5
+                        
+                        progress = min(int((current_size / estimated_size) * 100), 99)
+                        _download_status[file_type]["progress"] = progress
+                        
+                        # 检查文件大小是否稳定
+                        if current_size == last_size and current_size > 0:
+                            no_change_count += 1
+                            if no_change_count >= 5:  # 连续5次大小不变，可能完成
+                                _download_status[file_type]["progress"] = 100
+                                break
+                        else:
+                            no_change_count = 0
+                            last_size = current_size
+                time.sleep(0.3)
+        
+        progress_thread = threading.Thread(target=monitor_file_progress, daemon=True)
+        progress_thread.start()
+        
+        # 下载指定模型到指定目录
+        download_path = snapshot_download(
+            MS_REPO_ID,
+            allow_patterns=MODEL_FILENAME,  # 精确匹配要下载的GGUF文件
+            local_dir=model_dir,
+            revision='master',
+        )
+        
+        # 等待进度线程完成
+        progress_thread.join(timeout=3)
+        
+        # 检查目标文件是否存在
+        if os.path.exists(target_path):
+            _download_status[file_type]["progress"] = 100
+            logger.info(f"Downloaded from ModelScope: {target_path}")
+            return True
+        else:
+            logger.warning(f"ModelScope download did not create expected file")
+            return False
+    except ImportError:
+        logger.warning("modelscope not installed, trying HuggingFace...")
+        return False
+    except Exception as e:
+        logger.error(f"ModelScope download failed: {e}")
+        return False
+
+def _download_from_huggingface(model_dir, filename, file_type):
+    """从 HuggingFace 下载模型"""
+    try:
+        logger.info(f"Attempting download from HuggingFace...")
+        from huggingface_hub import hf_hub_download
+        
+        target_path = os.path.join(model_dir, filename)
+        estimated_size = 500 * 1024 * 1024  # 默认500MB
+        
+        # 监控文件大小的进度更新
+        def monitor_file_progress():
+            """监控文件下载进度"""
+            import time
+            last_size = 0
+            no_change_count = 0
+            max_size_seen = 0
+            
+            while _download_status[file_type]["downloading"]:
+                if os.path.exists(target_path):
+                    current_size = os.path.getsize(target_path)
+                    if current_size > 0:
+                        # 更新最大文件大小
+                        if current_size > max_size_seen:
+                            max_size_seen = current_size
+                            # 动态调整估算大小
+                            if current_size > estimated_size:
+                                estimated_size = current_size * 1.5
+                        
+                        progress = min(int((current_size / estimated_size) * 100), 99)
+                        _download_status[file_type]["progress"] = progress
+                        
+                        # 检查文件大小是否稳定
+                        if current_size == last_size and current_size > 0:
+                            no_change_count += 1
+                            if no_change_count >= 5:  # 连续5次大小不变，可能完成
+                                _download_status[file_type]["progress"] = 100
+                                break
+                        else:
+                            no_change_count = 0
+                            last_size = current_size
+                time.sleep(0.3)
+        
+        progress_thread = threading.Thread(target=monitor_file_progress, daemon=True)
+        progress_thread.start()
+        
+        downloaded_path = hf_hub_download(
+            repo_id=str(HF_REPO_ID),
+            filename=str(filename),
+            local_dir=str(model_dir),
+            force_download=False,
+        )
+        
+        # 等待进度线程完成
+        progress_thread.join(timeout=3)
+        
+        _download_status[file_type]["progress"] = 100
+        logger.info(f"Downloaded from HuggingFace: {downloaded_path}")
+        return True
+    except Exception as e:
+        logger.error(f"HuggingFace download failed: {e}")
+        return False
+
+def start_download(file_type):
+    """
+    启动后台下载任务（非阻塞）
+    """
+    if file_type not in ["model", "mmproj"]:
+        return {"error": "Invalid file type"}
+    
+    target_path, _ = get_model_paths()
+    if file_type == "model" and os.path.exists(target_path):
+        return {"status": "already_exists"}
+    
+    _, mmproj_path = get_model_paths()
+    if file_type == "mmproj" and os.path.exists(mmproj_path):
+        return {"status": "already_exists"}
+    
+    # 在后台线程中下载
+    thread = threading.Thread(target=_download_file_background, args=(file_type,), daemon=True)
+    thread.start()
+    
+    return {"status": "started", "file_type": file_type}
+
 class LLMSingleton:
     """LLM 单例模式，确保模型只加载一次"""
     _instance = None
@@ -94,59 +388,31 @@ class LLMSingleton:
         self._load_model()
 
     def _load_model(self):
-        """加载 LLM 模型，支持自动下载和多模态项目（mmproj）"""
-        # 使用 Qwen3.5-0.8B 模型，支持图像理解（多模态）
-        MODEL_REPO_ID = "lmstudio-community/Qwen3.5-0.8B-GGUF"
-        MODEL_FILENAME = "Qwen3.5-0.8B-Q4_K_M.gguf"
-        MMPROJ_FILENAME = "mmproj-Qwen3.5-0.8B-BF16.gguf"
-        
-        base_dir = folder_paths.base_path
-        model_dir = os.path.join(base_dir, "models", "LLM")
-        target_path = os.path.join(model_dir, MODEL_FILENAME)
-        mmproj_path = os.path.join(model_dir, MMPROJ_FILENAME)
+        """加载 LLM 模型，不再自动下载，如果模型不存在则直接报错"""
+        target_path, mmproj_path = get_model_paths()
         
         # 确保模型目录存在
+        model_dir = os.path.dirname(target_path)
         os.makedirs(model_dir, exist_ok=True)
         
-        # 下载主模型文件
+        # 检查主模型文件是否存在（不下载）
         if not os.path.exists(target_path):
-            logger.info(f"LLM model not found in ComfyUI models directory.")
-            logger.info(f"Attempting to download from HuggingFace to: {target_path}")
-            
-            try:
-                from huggingface_hub import hf_hub_download
-                downloaded_path = hf_hub_download(
-                    repo_id=str(MODEL_REPO_ID),
-                    filename=str(MODEL_FILENAME),
-                    local_dir=str(model_dir),
-                )
-                logger.info(f"Model download complete: {downloaded_path}")
-                target_path = downloaded_path
-            except Exception as e:
-                logger.error(f"Model download failed: {e}")
-                raise RuntimeError(f"LLM Model download failed: {e}")
+            raise RuntimeError(
+                f"LLM model not found. "
+                f"Please download {MODEL_FILENAME} from ModelScope or HuggingFace "
+                f"and place it in: {model_dir}/"
+            )
 
-        # 下载 mmproj 文件
+        # 检查 mmproj 文件（可选，不下载）
         if not os.path.exists(mmproj_path):
-            logger.info(f"mmproj file not found. Attempting to download from HuggingFace.")
-            
-            try:
-                from huggingface_hub import hf_hub_download
-                downloaded_path = hf_hub_download(
-                    repo_id=str(MODEL_REPO_ID),
-                    filename=str(MMPROJ_FILENAME),
-                    local_dir=str(model_dir),
-                )
-                logger.info(f"mmproj download complete: {downloaded_path}")
-                mmproj_path = downloaded_path
-            except Exception as e:
-                logger.error(f"mmproj download failed: {e}")
-                logger.warning("Continuing without mmproj file. Image understanding will not work.")
-                mmproj_path = None
+            logger.warning(
+                f"mmproj file not found: {mmproj_path}. "
+                f"Image understanding will not work. "
+                f"Please download {MMPROJ_FILENAME} from ModelScope or HuggingFace "
+                f"and place it in: {model_dir}/"
+            )
+            mmproj_path = None
         
-        if not os.path.exists(target_path):
-            raise RuntimeError(f"Could not find or download LLM model at {target_path}")
-
         from llama_cpp import Llama
         
         # 构建模型加载参数

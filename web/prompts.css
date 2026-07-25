@@ -725,3 +725,202 @@
     background: #3a1a1a;
     color: #f87171;
 }
+
+/* ============================================
+   Download Modal
+   ============================================ */
+.rs-download-modal {
+    position: absolute;
+    display: none;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: #2a2a2a;
+    border: 1px solid #5090cc;
+    border-radius: 8px;
+    z-index: 10000;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.9);
+    width: 320px;
+    overflow: hidden;
+}
+
+.rs-download-header {
+    background: linear-gradient(135deg, #1a3a5a 0%, #2a4a6a 100%);
+    padding: 12px 16px;
+    border-bottom: 1px solid #3a5a7a;
+    color: #fff;
+    font-size: 14px;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.rs-download-content {
+    padding: 16px;
+}
+
+.rs-download-info {
+    margin-bottom: 12px;
+}
+
+.rs-download-title {
+    color: #fbbf24;
+    font-size: 13px;
+    font-weight: bold;
+    margin-bottom: 4px;
+}
+
+.rs-download-desc {
+    color: #999;
+    font-size: 11px;
+}
+
+.rs-download-model-info {
+    background: #1a1a1a;
+    border: 1px solid #333;
+    border-radius: 4px;
+    padding: 10px;
+    margin-bottom: 12px;
+}
+
+.rs-download-model-name {
+    color: #60a5fa;
+    font-size: 12px;
+    font-weight: 600;
+    margin-bottom: 4px;
+    word-break: break-all;
+}
+
+.rs-download-repo {
+    color: #666;
+    font-size: 10px;
+    word-break: break-all;
+}
+
+.rs-download-progress-container {
+    margin-bottom: 12px;
+}
+
+.rs-download-progress-bar {
+    width: 100%;
+    height: 8px;
+    background: #1a1a1a;
+    border: 1px solid #333;
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 6px;
+}
+
+.rs-download-progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #5090cc 0%, #60a0dc 50%, #5090cc 100%);
+    width: 0%;
+    transition: width 0.3s ease;
+    border-radius: 3px;
+}
+
+.rs-download-progress-text {
+    color: #60a5fa;
+    font-size: 11px;
+    text-align: center;
+    font-weight: 600;
+}
+
+.rs-download-status {
+    color: #999;
+    font-size: 11px;
+    text-align: center;
+    margin-bottom: 12px;
+    min-height: 16px;
+}
+
+.rs-download-buttons {
+    display: flex;
+    gap: 8px;
+}
+
+.rs-download-btn {
+    flex: 1;
+    padding: 8px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 6px rgba(16, 185, 129, 0.3);
+}
+
+.rs-download-btn:hover {
+    background: linear-gradient(135deg, #34d399 0%, #10b981 100%);
+    box-shadow: 0 2px 8px rgba(16, 185, 129, 0.5);
+    transform: translateY(-1px);
+}
+
+.rs-download-btn:active {
+    transform: translateY(0);
+}
+
+.rs-download-btn:disabled {
+    background: #2a2a2a !important;
+    color: #666 !important;
+    cursor: not-allowed !important;
+    opacity: 0.5 !important;
+    transform: none !important;
+}
+
+.rs-download-cancel-btn {
+    padding: 8px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    background: linear-gradient(135deg, #4b5563 0%, #374151 100%);
+    color: #e5e5e5;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 6px rgba(75, 85, 99, 0.3);
+}
+
+.rs-download-cancel-btn:hover {
+    background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
+    box-shadow: 0 2px 8px rgba(75, 85, 99, 0.5);
+    transform: translateY(-1px);
+}
+
+.rs-download-cancel-btn:active {
+    transform: translateY(0);
+}
+
+.rs-download-close-btn {
+    padding: 8px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    background: linear-gradient(135deg, #1a2a2a 0%, #2a3a3a 100%);
+    color: #ccc;
+    border: 1px solid #444;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.rs-download-close-btn:hover {
+    background: linear-gradient(135deg, #2a3a3a 0%, #3a4a4a 100%);
+    color: #fff;
+    border-color: #555;
+}
+
+/* Download status indicator in status bar */
+.rs-status-downloading {
+    background: #3a2a1a !important;
+    color: #fbbf24 !important;
+    animation: status-pulse 2s ease-in-out infinite;
+}
+
+@keyframes status-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}

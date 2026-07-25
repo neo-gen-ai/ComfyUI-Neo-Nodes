@@ -26,6 +26,8 @@ _tags_lock = threading.Lock()
 # 从 llm 模块导入 LLM 相关功能
 from .llm import (
     handle_llm_api_request,
+    check_model_status,
+    start_download,
 )
 
 
@@ -92,8 +94,8 @@ class NeoPrompts:
             }
         }
 
-    RETURN_TYPES = ("CONDITIONING", "CONDITIONING", "STRING")
-    RETURN_NAMES = ("POSITIVE", "NEGATIVE", "PROMPT")
+    RETURN_TYPES = ("CONDITIONING",  "STRING")
+    RETURN_NAMES = ("POSITIVE",  "PROMPT")
     FUNCTION = "encode_prompts"
     CATEGORY = "Neo-Nodes"
     DESCRIPTION = "AI-powered text encoder supports save/select prompt, LLM-based prompt enhancement, translation, classification, title extraction, and intelligent caching."
@@ -267,6 +269,36 @@ async def rs_prompts_generate_prompt(request):
 @server.PromptServer.instance.routes.post("/rs_prompts/random_prompt")
 async def rs_prompts_random_prompt(request):
     return await handle_llm_api_request("random_prompt", request)
+
+@server.PromptServer.instance.routes.get("/rs_prompts/check_model")
+async def rs_prompts_check_model(request):
+    """检查 LLM 模型是否已下载，不触发下载"""
+    try:
+        status = check_model_status()
+        return web.json_response(status)
+    except Exception as e:
+        logger.error(f"Error checking model status: {e}")
+        return web.json_response({
+            "model_available": False,
+            "mmproj_available": False,
+            "error": str(e)
+        }, status=500)
+
+@server.PromptServer.instance.routes.post("/rs_prompts/download_model")
+async def rs_prompts_download_model(request):
+    """启动后台下载任务（非阻塞）"""
+    try:
+        data = await request.json()
+        file_type = data.get("file_type", "model")
+        
+        if file_type not in ["model", "mmproj"]:
+            return web.json_response({"error": "Invalid file type"}, status=400)
+        
+        result = start_download(file_type)
+        return web.json_response(result)
+    except Exception as e:
+        logger.error(f"Error starting download: {e}")
+        return web.json_response({"error": str(e)}, status=500)
 
 
 # ==========================================

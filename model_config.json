@@ -1,0 +1,10 @@
+{
+  "model": {
+    "ms_repo_id": "unsloth/Qwen3.5-0.8B-GGUF",
+    "hf_repo_id": "unsloth/Qwen3.5-0.8B-GGUF",
+    "filename": "Qwen3.5-0.8B-UD-Q4_K_XL.gguf"
+  },
+  "mmproj": {
+    "filename": "mmproj-BF16.gguf"
+  }
+}

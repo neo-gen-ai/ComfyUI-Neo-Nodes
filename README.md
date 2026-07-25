@@ -11,19 +11,14 @@
 
 - `huggingface_hub`（用于下载 LLM 模型）
 - `llama_cpp_python`（用于本地 LLM 推理）
+- `modelscope`（可选，用于从 ModelScope 下载模型）
 
 
 ## 功能特性
 
-### 1. 模型加载器
 
-提供带目录前缀过滤功能的模型加载器节点：
 
-- **UNetLoaderWithPrefix** - 加载扩散模型（UNet），支持目录前缀过滤
-- **CheckpointLoaderWithPrefix** - 加载检查点模型，支持目录前缀过滤
-- **LoraLoaderWithPrefix** - 加载 LoRA 模型，支持目录前缀过滤（仅模型参数，不包含 CLIP）
-
-### 2. 智能提示词管理
+###  智能提示词管理
 
 #### NeoPrompts -  AI 驱动的文本编码器，带提示词管理节点
 
@@ -37,6 +32,16 @@
 - **提示词分类提取** - 自动分类提示词
 - **提示词标题提取** - 自动提取提示词标题
 - **智能缓存** - 本地缓存提示词
+- **现代化下载界面** - 带实时进度条的模型下载体验
+
+#### 模型下载体验优化
+
+- **可视化下载进度** - 实时显示下载进度条和百分比
+- **状态栏集成** - 下载状态实时显示在节点状态栏
+- **自动重试机制** - 下载失败时提供重试选项
+- **后台下载** - 下载在后台进行，不阻塞用户操作
+- **多源支持** - 优先从 ModelScope 下载，失败后自动切换到 HuggingFace
+- **智能进度监控** - 基于文件大小的实时进度估算
 
 #### 节点按钮说明
 
@@ -50,28 +55,10 @@
 | 🚀 | 根据快捷描述生成提示词 |
 
 
-## 节点说明
-
-### 模型加载器节点
-
-#### UNetLoaderWithPrefix
-- **model_directory**: 选择模型目录，`__all__` 表示显示所有模型
-- **unet_name**: 要加载的扩散模型文件
-- **weight_dtype**: 模型权重数据类型（default, fp8_e4m3fn, fp8_e4m3fn_fast, fp8_e5m2）
-
-#### CheckpointLoaderWithPrefix
-- **model_directory**: 选择模型目录
-- **ckpt_name**: 要加载的检查点模型文件
-
-#### LoraLoaderWithPrefix
-- **model**: 要应用 LoRA 的扩散模型
-- **model_directory**: 选择模型目录
-- **lora_name**: LoRA 模型文件
-- **strength_model**: 模型强度
 
 ### 提示词节点
 
-#### NeoPrompts
+#### Neo Prompts
 提供完整的提示词管理 UI：
 - **text**: 提示词文本（隐藏）
 - **disable_text_input**: 禁用外部文本输入（隐藏）

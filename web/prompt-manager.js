@@ -11,7 +11,9 @@ import {
     extractTitle,
     extractClassify,
     generatePromptFromText,
-    randomPrompt as randomPromptAPI
+    randomPrompt as randomPromptAPI,
+    downloadModel,
+    monitorDownloadProgress
 } from "./prompt-service.js";
 
 // ==========================================
@@ -120,6 +122,69 @@ function createDeleteModal() {
     return { modal, textDiv, okBtn, cancelBtn };
 }
 
+function createDownloadModal() {
+    const modal = mkEl("div", "rs-download-modal");
+    
+    const header = mkEl("div", "rs-download-header");
+    header.innerHTML = "📦 Model Download";
+    
+    const content = mkEl("div", "rs-download-content");
+    
+    const infoText = mkEl("div", "rs-download-info");
+    infoText.innerHTML = `
+        <div class="rs-download-title">LLM Model Required</div>
+        <div class="rs-download-desc">Download the model to enable AI features</div>
+    `;
+    
+    const modelInfo = mkEl("div", "rs-download-model-info");
+    modelInfo.innerHTML = `
+        <div class="rs-download-model-name">Qwen3.5-0.8B-Q4_K_M.gguf</div>
+        <div class="rs-download-repo">lmstudio-community/Qwen3.5-0.8B-GGUF</div>
+    `;
+    
+    const progressContainer = mkEl("div", "rs-download-progress-container");
+    progressContainer.style.display = "none";
+    
+    const progressBar = mkEl("div", "rs-download-progress-bar");
+    const progressFill = mkEl("div", "rs-download-progress-fill");
+    const progressText = mkEl("div", "rs-download-progress-text");
+    progressText.textContent = "0%";
+    
+    progressBar.appendChild(progressFill);
+    progressContainer.appendChild(progressBar);
+    progressContainer.appendChild(progressText);
+    
+    const statusText = mkEl("div", "rs-download-status");
+    statusText.textContent = "Ready to download";
+    
+    const btnsDiv = mkEl("div", "rs-download-buttons");
+    const downloadBtn = mkEl("button", "rs-download-btn");
+    downloadBtn.textContent = "🚀 Start Download";
+    const cancelBtn = mkEl("button", "rs-download-cancel-btn");
+    cancelBtn.textContent = "Cancel";
+    const closeBtn = mkEl("button", "rs-download-close-btn");
+    closeBtn.textContent = "✕";
+    closeBtn.style.display = "none";
+    
+    btnsDiv.append(downloadBtn, cancelBtn, closeBtn);
+    
+    content.append(infoText, modelInfo, progressContainer, statusText, btnsDiv);
+    modal.append(header, content);
+    
+    return { 
+        modal, 
+        infoText, 
+        modelInfo, 
+        progressContainer, 
+        progressFill, 
+        progressText, 
+        statusText, 
+        downloadBtn, 
+        cancelBtn, 
+        closeBtn 
+    };
+}
+
 function createStatusBars() {
     const statusBar = mkEl("div", "rs-status-bar-local");
     statusBar.style.cssText = "width:100%;padding:4px 8px;font-size:11px;font-weight:bold;text-align:center;border-radius:4px 4px 0 0;margin-bottom:4px;display:flex;align-items:center;justify-content:center;gap:6px;line-height:1.2;";
@@ -180,6 +245,7 @@ function createPromptManagerUI() {
     const { overlay: presetListOverlay, searchInput: presetSearchInput, body: presetListBody } = createOverlayWithSearch("📋 Prompt Presets");
     const { modal: presetNameInput, aiStatus, field: inputField, tagsContainer, selectedTags, okBtn: inputOk, cancelBtn: inputCancel } = createInputModal();
     const { modal: deleteConfirmOverlay, textDiv: deleteText, okBtn: deleteOk, cancelBtn: deleteCancel } = createDeleteModal();
+    const downloadModal = createDownloadModal();
 
     // 创建 root 容器
     const root = mkEl("div", "rs-root");
@@ -192,6 +258,7 @@ function createPromptManagerUI() {
     root.appendChild(presetListOverlay);
     root.appendChild(presetNameInput);
     root.appendChild(deleteConfirmOverlay);
+    root.appendChild(downloadModal.modal);
 
     // 配置 preset list body 样式
     presetListBody.style.scrollbarWidth = "thin";
@@ -447,6 +514,40 @@ function createPromptManagerUI() {
             pendingDeleteName = null;
         });
 
+        // Download modal button handlers
+        downloadModal.downloadBtn.addEventListener("click", async () => {
+            downloadModal.downloadBtn.disabled = true;
+            downloadModal.downloadBtn.textContent = "⏳ Starting...";
+            
+            const result = await downloadModel("model");
+            if (result.error) {
+                downloadModal.statusText.textContent = "Failed to start download: " + result.error;
+                downloadModal.statusText.style.color = "#f87171";
+                downloadModal.downloadBtn.disabled = false;
+                downloadModal.downloadBtn.textContent = "🔄 Retry Download";
+                return;
+            }
+            
+            // Show progress
+            downloadModal.progressContainer.style.display = "block";
+            downloadModal.downloadBtn.style.display = "none";
+            downloadModal.cancelBtn.style.display = "none";
+            downloadModal.closeBtn.style.display = "none";
+            downloadModal.statusText.textContent = "Download started...";
+            downloadModal.statusText.style.color = "#999";
+            
+            // Start monitoring
+            monitorDownloadProgress(downloadModal, statusBar);
+        });
+
+        downloadModal.cancelBtn.addEventListener("click", () => {
+            downloadModal.modal.style.display = "none";
+        });
+
+        downloadModal.closeBtn.addEventListener("click", () => {
+            downloadModal.modal.style.display = "none";
+        });
+
         // 返回需要外部引用的元素
         return {
             enhanceBtn,
@@ -459,7 +560,9 @@ function createPromptManagerUI() {
             // 返回模态框元素供外部管理
             presetListOverlay,
             presetNameInput,
-            deleteConfirmOverlay
+            deleteConfirmOverlay,
+            // 返回下载模态框元素
+            downloadModal
         };
     }
 
