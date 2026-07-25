@@ -1,14 +1,8 @@
 /* ComfyUI-Neo-Nodes - Prompt Management Styles */
 
-/* ============================================
-   Waiting Overlay
-   ============================================ */
 .rs-waiting-overlay {
     position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
+    top: 0; left: 0; right: 0; bottom: 0;
     background: rgba(0, 0, 0, 0.85);
     display: flex;
     align-items: center;
@@ -25,14 +19,10 @@
     text-align: center;
 }
 
-/* ============================================
-   Preset List Overlay
-   ============================================ */
 .rs-preset-list-overlay {
     position: absolute;
     display: none;
-    top: 50%;
-    left: 50%;
+    top: 50%; left: 50%;
     transform: translate(-50%, -50%);
     flex-direction: column;
     background: #2a2a2a;
@@ -79,9 +69,7 @@
     box-shadow: 0 0 0 2px rgba(80, 144, 204, 0.3);
 }
 
-.rs-preset-search-input::placeholder {
-    color: #666;
-}
+.rs-preset-search-input::placeholder { color: #666; }
 
 .rs-preset-list-body {
     max-height: calc(450px - 80px);
@@ -90,18 +78,9 @@
     flex: 1;
 }
 
-.rs-preset-list-body::-webkit-scrollbar {
-    width: 8px;
-}
-
-.rs-preset-list-body::-webkit-scrollbar-track {
-    background: #1a1a1a;
-}
-
-.rs-preset-list-body::-webkit-scrollbar-thumb {
-    background: #5090cc;
-    border-radius: 4px;
-}
+.rs-preset-list-body::-webkit-scrollbar { width: 8px; }
+.rs-preset-list-body::-webkit-scrollbar-track { background: #1a1a1a; }
+.rs-preset-list-body::-webkit-scrollbar-thumb { background: #5090cc; border-radius: 4px; }
 
 .rs-preset-list-footer {
     padding: 8px 12px;
@@ -131,8 +110,7 @@
 
 .rs-close-btn.top-right {
     position: absolute;
-    top: 8px;
-    right: 8px;
+    top: 8px; right: 8px;
     z-index: 10;
     padding: 4px 10px;
     font-size: 12px;
@@ -156,17 +134,9 @@
     cursor: pointer;
 }
 
-.rs-preset-item:hover {
-    background: #3a3a3a;
-}
-
-.rs-preset-item:last-child {
-    border-bottom: none;
-}
-
-.rs-preset-item.hidden {
-    display: none !important;
-}
+.rs-preset-item:hover { background: #3a3a3a; }
+.rs-preset-item:last-child { border-bottom: none; }
+.rs-preset-item.hidden { display: none !important; }
 
 .rs-preset-content {
     flex: 1;
@@ -176,13 +146,8 @@
     user-select: none;
 }
 
-.rs-preset-item:hover .rs-preset-content {
-    color: #fff;
-}
-
-.rs-preset-content:hover {
-    background: #3a3a3a;
-}
+.rs-preset-item:hover .rs-preset-content { color: #fff; }
+.rs-preset-content:hover { background: #3a3a3a; }
 
 .rs-preset-content > span.rs-tags-part {
     color: #666;
@@ -192,9 +157,7 @@
     opacity: 0.7;
 }
 
-.rs-preset-item:hover .rs-preset-content > span.rs-tags-part {
-    color: #888;
-}
+.rs-preset-item:hover .rs-preset-content > span.rs-tags-part { color: #888; }
 
 .rs-match-highlight {
     background: rgba(80, 144, 204, 0.3);
@@ -221,18 +184,12 @@
     transform: scale(1.1);
 }
 
-.rs-preset-delete-btn:active {
-    transform: scale(0.95);
-}
+.rs-preset-delete-btn:active { transform: scale(0.95); }
 
-/* ============================================
-   Preset Name Input Modal
-   ============================================ */
 .rs-preset-name-input {
     position: absolute;
     display: none;
-    top: 50%;
-    left: 50%;
+    top: 50%; left: 50%;
     transform: translate(-50%, -50%);
     background: #2a2a2a;
     padding: 10px;
@@ -275,9 +232,7 @@
     box-shadow: 0 0 0 2px rgba(80, 144, 204, 0.3);
 }
 
-.rs-input-field:hover {
-    border-color: #666;
-}
+.rs-input-field:hover { border-color: #666; }
 
 .rs-input-buttons {
     display: flex;
@@ -287,8 +242,7 @@
     border-top: 1px solid #3a3a3a;
 }
 
-.rs-input-ok-btn,
-.rs-input-cancel-btn {
+.rs-input-ok-btn, .rs-input-cancel-btn {
     flex: 1;
     padding: 6px 10px;
     font-size: 11px;
@@ -303,15 +257,13 @@
 
 .rs-input-ok-btn {
     background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-    color: #ffffff;
-    box-shadow: 0 2px 6px rgba(16, 185, 129, 0.3),
-                inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    color: #fff;
+    box-shadow: 0 2px 6px rgba(16, 185, 129, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.2);
 }
 
 .rs-input-ok-btn:hover {
     background: linear-gradient(135deg, #34d399 0%, #10b981 100%);
-    box-shadow: 0 2px 8px rgba(16, 185, 129, 0.5),
-                inset 0 1px 0 rgba(255, 255, 255, 0.3);
+    box-shadow: 0 2px 8px rgba(16, 185, 129, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.3);
     transform: translateY(-1px);
 }
 
@@ -323,14 +275,12 @@
 .rs-input-cancel-btn {
     background: linear-gradient(135deg, #4b5563 0%, #374151 100%);
     color: #e5e5e5;
-    box-shadow: 0 2px 6px rgba(75, 85, 99, 0.3),
-                inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    box-shadow: 0 2px 6px rgba(75, 85, 99, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
 .rs-input-cancel-btn:hover {
     background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
-    box-shadow: 0 2px 8px rgba(75, 85, 99, 0.5),
-                inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    box-shadow: 0 2px 8px rgba(75, 85, 99, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.2);
     transform: translateY(-1px);
 }
 
@@ -339,22 +289,17 @@
     box-shadow: 0 1px 2px rgba(75, 85, 99, 0.3);
 }
 
-.rs-input-ok-btn:disabled,
-.rs-input-cancel-btn:disabled {
+.rs-input-ok-btn:disabled, .rs-input-cancel-btn:disabled {
     background: #2a2a2a !important;
     color: #666 !important;
     cursor: not-allowed !important;
     transform: none !important;
 }
 
-/* ============================================
-   Delete Confirm Modal
-   ============================================ */
 .rs-delete-confirm-overlay {
     position: absolute;
     display: none;
-    top: 50%;
-    left: 50%;
+    top: 50%; left: 50%;
     transform: translate(-50%, -50%);
     background: #2a2a2a;
     padding: 10px;
@@ -380,7 +325,7 @@
 
 .rs-delete-ok-btn {
     background: linear-gradient(135deg, #5090cc 0%, #3a70b0 100%);
-    color: #ffffff;
+    color: #fff;
     border: none;
     box-shadow: 0 2px 8px rgba(80, 144, 204, 0.4);
 }
@@ -402,31 +347,11 @@
     border-color: #555;
 }
 
-/* ============================================
-   Status Bar States
-   ============================================ */
-.rs-status-bar-local {
-    background: #1a3a1a !important;
-    color: #4ade80 !important;
-}
+.rs-status-bar-local { background: #1a3a1a !important; color: #4ade80 !important; }
+.rs-status-bar-external { background: #1a2a3a !important; color: #60a5fa !important; }
+.rs-status-bar-waiting { background: #3a2a1a !important; color: #fbbf24 !important; }
 
-.rs-status-bar-external {
-    background: #1a2a3a !important;
-    color: #60a5fa !important;
-}
-
-.rs-status-bar-waiting {
-    background: #3a2a1a !important;
-    color: #fbbf24 !important;
-}
-
-/* ============================================
-   Button States
-   ============================================ */
-.rs-btn,
-.rs-btn-local,
-.rs-btn-external,
-.rs-btn-waiting {
+.rs-btn, .rs-btn-local, .rs-btn-external, .rs-btn-waiting {
     flex: 1;
     padding: 5px 3px;
     font-size: 9px;
@@ -442,26 +367,22 @@
 .rs-btn {
     background: linear-gradient(135deg, #1a3a5a 0%, #2a4a6a 100%);
     color: #aadaff;
-    box-shadow: 0 0 0 1px rgba(80, 144, 204, 0.3),
-                0 2px 8px rgba(26, 58, 90, 0.3);
+    box-shadow: 0 0 0 1px rgba(80, 144, 204, 0.3), 0 2px 8px rgba(26, 58, 90, 0.3);
 }
 
 .rs-btn:hover {
     background: linear-gradient(135deg, #2a4a6a 0%, #3a5a7a 100%);
-    color: #ffffff;
-    box-shadow: 0 4px 12px rgba(26, 58, 90, 0.4),
-                inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    color: #fff;
+    box-shadow: 0 4px 12px rgba(26, 58, 90, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2);
     transform: translateY(-1px);
 }
 
 .rs-btn:active {
     transform: translateY(0);
-    box-shadow: 0 1px 4px rgba(26, 58, 90, 0.3),
-                inset 0 2px 4px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 1px 4px rgba(26, 58, 90, 0.3), inset 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
-.rs-btn:disabled,
-.rs-btn-disabled {
+.rs-btn:disabled, .rs-btn-disabled {
     background: linear-gradient(135deg, #1a2a3a 0%, #2a3a4a 100%) !important;
     color: #666 !important;
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2) !important;
@@ -469,13 +390,7 @@
     opacity: 0.5 !important;
 }
 
-/* ============================================
-   Textarea States
-   ============================================ */
-.rs-custom-textarea,
-.rs-textarea-local,
-.rs-textarea-external,
-.rs-textarea-waiting {
+.rs-custom-textarea, .rs-textarea-local, .rs-textarea-external, .rs-textarea-waiting {
     background-color: var(--bg-2, #1a1a1a);
     color: var(--text-1, #fff);
     border-color: var(--bg-3, #444);
@@ -494,9 +409,6 @@
     border-color: #fbbf24 !important;
 }
 
-/* ============================================
-   Quick Input Styles
-   ============================================ */
 .rs-quick-input-wrapper {
     width: 100%;
     display: flex;
@@ -523,9 +435,7 @@
     box-shadow: 0 0 0 2px rgba(80, 144, 204, 0.3);
 }
 
-.rs-quick-input::placeholder {
-    color: #666;
-}
+.rs-quick-input::placeholder { color: #666; }
 
 .rs-generate-btn {
     padding: 2px 6px;
@@ -543,12 +453,10 @@
 
 .rs-generate-btn:hover {
     background: linear-gradient(135deg, #3a5a7a 0%, #2a4a6a 100%);
-    color: #ffffff;
+    color: #fff;
 }
 
-.rs-generate-btn:active {
-    transform: translateY(0);
-}
+.rs-generate-btn:active { transform: translateY(0); }
 
 .rs-generate-btn:disabled {
     background: #1a2a3a !important;
@@ -573,12 +481,10 @@
 
 .rs-random-btn:hover {
     background: linear-gradient(135deg, #6a3a7a 0%, #5a2a6a 100%);
-    color: #ffffff;
+    color: #fff;
 }
 
-.rs-random-btn:active {
-    transform: translateY(0);
-}
+.rs-random-btn:active { transform: translateY(0); }
 
 .rs-random-btn:disabled {
     background: #2a1a3a !important;
@@ -587,9 +493,6 @@
     opacity: 0.5 !important;
 }
 
-/* ============================================
-   Common Layout Styles
-   ============================================ */
 .rs-root {
     display: flex;
     flex-direction: column;
@@ -627,8 +530,7 @@
     margin-top: 4px;
 }
 
-.rs-btn-row,
-.rs-action-row {
+.rs-btn-row, .rs-action-row {
     display: flex;
     gap: 6px;
     width: 100%;
@@ -640,9 +542,6 @@
     width: 100%;
 }
 
-/* ============================================
-   Tag Selection Container
-   ============================================ */
 .rs-tags-container {
     display: flex;
     gap: 6px;
@@ -675,16 +574,15 @@
     background: linear-gradient(135deg, #5090cc 0%, #3a70b0 100%);
     color: #fff !important;
     border-color: #5090cc;
-    box-shadow: 0 0 4px rgba(80, 144, 204, 0.3),
-                inset 0 0 3px rgba(255, 255, 255, 0.15);
+    box-shadow: 0 0 4px rgba(80, 144, 204, 0.3), inset 0 0 3px rgba(255, 255, 255, 0.15);
     transform: scale(1.05);
     font-weight: 600;
+    animation: tag-pulse 0.3s ease;
 }
 
 .rs-tag-btn.rs-tag-selected:hover {
     background: linear-gradient(135deg, #60a0dc 0%, #4a80c0 100%);
-    box-shadow: 0 0 6px rgba(80, 144, 204, 0.4),
-                inset 0 0 3px rgba(255, 255, 255, 0.2);
+    box-shadow: 0 0 6px rgba(80, 144, 204, 0.4), inset 0 0 3px rgba(255, 255, 255, 0.2);
     transform: scale(1.08);
 }
 
@@ -693,13 +591,6 @@
     50% { transform: scale(1.08); }
 }
 
-.rs-tag-btn.rs-tag-selected {
-    animation: tag-pulse 0.3s ease;
-}
-
-/* ============================================
-   AI Status Indicator
-   ============================================ */
 .rs-ai-status {
     padding: 6px 10px;
     background: #2a3a4a;
@@ -710,29 +601,14 @@
     transition: all 0.3s ease;
 }
 
-.rs-ai-status.processing {
-    background: #2a3a4a;
-    color: #5090cc;
-}
+.rs-ai-status.processing { background: #2a3a4a; color: #5090cc; }
+.rs-ai-status.success { background: #1a3a1a; color: #4ade80; }
+.rs-ai-status.error { background: #3a1a1a; color: #f87171; }
 
-.rs-ai-status.success {
-    background: #1a3a1a;
-    color: #4ade80;
-}
-
-.rs-ai-status.error {
-    background: #3a1a1a;
-    color: #f87171;
-}
-
-/* ============================================
-   Download Modal
-   ============================================ */
 .rs-download-modal {
     position: absolute;
     display: none;
-    top: 50%;
-    left: 50%;
+    top: 50%; left: 50%;
     transform: translate(-50%, -50%);
     background: #2a2a2a;
     border: 1px solid #5090cc;
@@ -744,7 +620,7 @@
 }
 
 .rs-download-header {
-    background: linear-gradient(135deg, #1a3a5a 0%, #2a4a6a 100%);
+    background: #1a3a5a;
     padding: 12px 16px;
     border-bottom: 1px solid #3a5a7a;
     color: #fff;
@@ -755,13 +631,8 @@
     gap: 8px;
 }
 
-.rs-download-content {
-    padding: 16px;
-}
-
-.rs-download-info {
-    margin-bottom: 12px;
-}
+.rs-download-content { padding: 16px; }
+.rs-download-info { margin-bottom: 12px; }
 
 .rs-download-title {
     color: #fbbf24;
@@ -797,9 +668,7 @@
     word-break: break-all;
 }
 
-.rs-download-progress-container {
-    margin-bottom: 12px;
-}
+.rs-download-progress-container { margin-bottom: 12px; }
 
 .rs-download-progress-bar {
     width: 100%;
@@ -813,7 +682,7 @@
 
 .rs-download-progress-fill {
     height: 100%;
-    background: linear-gradient(90deg, #5090cc 0%, #60a0dc 50%, #5090cc 100%);
+    background: #5090cc;
     width: 0%;
     transition: width 0.3s ease;
     border-radius: 3px;
@@ -844,7 +713,7 @@
     padding: 8px 12px;
     font-size: 11px;
     font-weight: 600;
-    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    background: #10b981;
     color: #fff;
     border: none;
     border-radius: 4px;
@@ -854,14 +723,12 @@
 }
 
 .rs-download-btn:hover {
-    background: linear-gradient(135deg, #34d399 0%, #10b981 100%);
+    background: #34d399;
     box-shadow: 0 2px 8px rgba(16, 185, 129, 0.5);
     transform: translateY(-1px);
 }
 
-.rs-download-btn:active {
-    transform: translateY(0);
-}
+.rs-download-btn:active { transform: translateY(0); }
 
 .rs-download-btn:disabled {
     background: #2a2a2a !important;
@@ -875,7 +742,7 @@
     padding: 8px 12px;
     font-size: 11px;
     font-weight: 600;
-    background: linear-gradient(135deg, #4b5563 0%, #374151 100%);
+    background: #4b5563;
     color: #e5e5e5;
     border: none;
     border-radius: 4px;
@@ -885,20 +752,18 @@
 }
 
 .rs-download-cancel-btn:hover {
-    background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
+    background: #6b7280;
     box-shadow: 0 2px 8px rgba(75, 85, 99, 0.5);
     transform: translateY(-1px);
 }
 
-.rs-download-cancel-btn:active {
-    transform: translateY(0);
-}
+.rs-download-cancel-btn:active { transform: translateY(0); }
 
 .rs-download-close-btn {
     padding: 8px 12px;
     font-size: 11px;
     font-weight: 600;
-    background: linear-gradient(135deg, #1a2a2a 0%, #2a3a3a 100%);
+    background: #1a2a2a;
     color: #ccc;
     border: 1px solid #444;
     border-radius: 4px;
@@ -907,12 +772,11 @@
 }
 
 .rs-download-close-btn:hover {
-    background: linear-gradient(135deg, #2a3a3a 0%, #3a4a4a 100%);
+    background: #2a3a3a;
     color: #fff;
     border-color: #555;
 }
 
-/* Download status indicator in status bar */
 .rs-status-downloading {
     background: #3a2a1a !important;
     color: #fbbf24 !important;
@@ -924,14 +788,9 @@
     50% { opacity: 0.7; }
 }
 
-/* ==========================================
-   Settings Modal Styles
-   ========================================== */
-
 .rs-settings-modal {
     position: fixed;
-    top: 0;
-    left: 0;
+    top: 0; left: 0;
     width: 100%;
     height: 100%;
     background: rgba(0, 0, 0, 0.7);
@@ -951,12 +810,10 @@
     overflow: hidden;
 }
 
-.rs-settings-modal.show {
-    display: flex !important;
-}
+.rs-settings-modal.show { display: flex !important; }
 
 .rs-settings-header {
-    background: linear-gradient(135deg, #1a2a3a 0%, #2a3a4a 100%);
+    background: #1a2a3a;
     color: #fff;
     padding: 12px 16px;
     font-size: 14px;
@@ -969,12 +826,10 @@
     min-height: 44px;
 }
 
-.rs-settings-header .rs-settings-title-bar {
-    flex: 1;
-}
+.rs-settings-header .rs-settings-title-bar { flex: 1; }
 
 .rs-settings-content {
-    background: linear-gradient(135deg, #1a1a2a 0%, #2a2a3a 100%);
+    background: #1a1a2a;
     border-radius: 0 0 8px 8px;
     padding: 16px;
     min-width: 320px;
@@ -985,9 +840,7 @@
     flex-direction: column;
 }
 
-.rs-settings-info {
-    margin-bottom: 16px;
-}
+.rs-settings-info { margin-bottom: 16px; }
 
 .rs-settings-title {
     color: #fff;
@@ -1001,9 +854,6 @@
     font-size: 12px;
 }
 
-/* ============================================
-   Compact Model List Styles
-   ============================================ */
 .rs-settings-model-list {
     margin-bottom: 16px;
     max-height: 200px;
@@ -1031,7 +881,7 @@
 }
 
 .rs-settings-model-item.active {
-    background: linear-gradient(135deg, #1a2a3a 0%, #2a3a4a 100%);
+    background: #1a2a3a;
     border-color: #5090cc;
     box-shadow: 0 0 0 1px rgba(80, 144, 204, 0.3);
 }
@@ -1071,9 +921,7 @@
     border-radius: 2px;
 }
 
-.rs-settings-model-filename {
-    display: none;
-}
+.rs-settings-model-filename { display: none; }
 
 .rs-settings-download-status {
     color: #888;
@@ -1096,15 +944,13 @@
     font-weight: bold;
 }
 
-.rs-settings-model-item.active .rs-settings-model-check {
-    opacity: 1;
-}
+.rs-settings-model-item.active .rs-settings-model-check { opacity: 1; }
 
 .rs-download-btn-small {
     padding: 2px 6px;
     font-size: 9px;
     font-weight: 600;
-    background: linear-gradient(135deg, #5090cc 0%, #3a70b0 100%);
+    background: #5090cc;
     color: #fff;
     border: none;
     border-radius: 3px;
@@ -1115,14 +961,12 @@
 }
 
 .rs-download-btn-small:hover {
-    background: linear-gradient(135deg, #60a0dc 0%, #4a80c0 100%);
+    background: #60a0dc;
     box-shadow: 0 1px 4px rgba(80, 144, 204, 0.5);
     transform: translateY(-1px);
 }
 
-.rs-download-btn-small:active {
-    transform: translateY(0);
-}
+.rs-download-btn-small:active { transform: translateY(0); }
 
 .rs-download-btn-small:disabled {
     background: #333 !important;
@@ -1144,7 +988,7 @@
 
 .rs-download-progress-fill {
     height: 100%;
-    background: linear-gradient(90deg, #5090cc 0%, #60a0dc 50%, #5090cc 100%);
+    background: #5090cc;
     width: 0%;
     transition: width 0.3s ease;
 }
@@ -1180,8 +1024,7 @@
 
 .rs-settings-close-btn {
     position: absolute;
-    top: 50%;
-    right: 12px;
+    top: 50%; right: 12px;
     transform: translateY(-50%);
     padding: 2px 6px;
     font-size: 12px;
@@ -1204,5 +1047,3 @@
     color: #fff;
     transform: translateY(-50%) scale(1.1);
 }
-
-
