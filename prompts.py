@@ -27,7 +27,10 @@ _tags_lock = threading.Lock()
 from .llm import (
     handle_llm_api_request,
     check_model_status,
+    check_all_models_status,
     start_download,
+    get_available_models,
+    set_current_model,
 )
 
 
@@ -241,6 +244,32 @@ async def rs_prompts_delete_prompt(request):
         logger.error(f"Error deleting prompt: {e}")
         return web.Response(status=500, text=str(e))
 
+@server.PromptServer.instance.routes.get("/rs_prompts/get_models")
+async def rs_prompts_get_models(request):
+    try:
+        models = get_available_models()
+        return web.json_response(models)
+    except Exception as e:
+        logger.error(f"Error getting models: {e}")
+        return web.Response(status=500, text=str(e))
+
+@server.PromptServer.instance.routes.post("/rs_prompts/set_model")
+async def rs_prompts_set_model(request):
+    try:
+        data = await request.json()
+        model_key = data.get("model_key")
+        if not model_key:
+            return web.Response(status=400, text="model_key required")
+        
+        success = set_current_model(model_key)
+        if success:
+            return web.json_response({"success": True, "current_model": model_key})
+        else:
+            return web.Response(status=400, text="Invalid model key")
+    except Exception as e:
+        logger.error(f"Error setting model: {e}")
+        return web.Response(status=500, text=str(e))
+
 
 # ==========================================
 # API Routes Registration (LLM API)
@@ -272,7 +301,7 @@ async def rs_prompts_random_prompt(request):
 
 @server.PromptServer.instance.routes.get("/rs_prompts/check_model")
 async def rs_prompts_check_model(request):
-    """检查 LLM 模型是否已下载，不触发下载"""
+    """检查当前 LLM 模型是否已下载，不触发下载"""
     try:
         status = check_model_status()
         return web.json_response(status)
@@ -281,6 +310,20 @@ async def rs_prompts_check_model(request):
         return web.json_response({
             "model_available": False,
             "mmproj_available": False,
+            "error": str(e)
+        }, status=500)
+
+@server.PromptServer.instance.routes.get("/rs_prompts/check_all_models")
+async def rs_prompts_check_all_models(request):
+    """检查所有 LLM 模型的下载状态"""
+    try:
+        status = check_all_models_status()
+        return web.json_response(status)
+    except Exception as e:
+        logger.error(f"Error checking all models status: {e}")
+        return web.json_response({
+            "models": [],
+            "current_model": "",
             "error": str(e)
         }, status=500)
 

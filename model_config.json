@@ -1,8 +1,24 @@
 {
-  "model": {
-    "ms_repo_id": "unsloth/Qwen3.5-0.8B-GGUF",
-    "hf_repo_id": "unsloth/Qwen3.5-0.8B-GGUF",
-    "filename": "Qwen3.5-0.8B-UD-Q4_K_XL.gguf"
+  "current_model": "Qwen3.5-2B",
+  "models": {
+    "Qwen3.5-0.8B": {
+      "ms_repo_id": "unsloth/Qwen3.5-0.8B-GGUF",
+      "hf_repo_id": "unsloth/Qwen3.5-0.8B-GGUF",
+      "filename": "Qwen3.5-0.8B-UD-Q4_K_XL.gguf",
+      "model_dir": "Qwen-0.8B"
+    },
+    "Qwen3.5-2B": {
+      "ms_repo_id": "unsloth/Qwen3.5-2B-GGUF",
+      "hf_repo_id": "unsloth/Qwen3.5-2B-GGUF",
+      "filename": "Qwen3.5-2B-UD-Q4_K_XL.gguf",
+      "model_dir": "Qwen-2B"
+    },
+    "Qwen3.5-4B": {
+      "ms_repo_id": "unsloth/Qwen3.5-4B-GGUF",
+      "hf_repo_id": "unsloth/Qwen3.5-4B-GGUF",
+      "filename": "Qwen3.5-4B-UD-Q4_K_XL.gguf",
+      "model_dir": "Qwen-4B"
+    }
   },
   "mmproj": {
     "filename": "mmproj-BF16.gguf"

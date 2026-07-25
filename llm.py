@@ -117,12 +117,71 @@ TRANSLATION_CACHE = TranslationCache(max_size=200)
 # LLM Configuration & Management
 # ==========================================
 
-# 模型配置常量（从配置文件读取）
-MS_REPO_ID = _MODEL_CONFIG["model"]["ms_repo_id"]
-HF_REPO_ID = _MODEL_CONFIG["model"]["hf_repo_id"]
-MODEL_FILENAME = _MODEL_CONFIG["model"]["filename"]
+# 当前选择的模型
+_current_model_key = _MODEL_CONFIG.get("current_model", "Qwen3.5-0.8B")
+
+def get_current_model_config():
+    """获取当前模型的配置"""
+    models = _MODEL_CONFIG.get("models", {})
+    if _current_model_key in models:
+        return models[_current_model_key]
+    # 回退到第一个可用模型
+    first_key = list(models.keys())[0] if models else "Qwen3.5-0.8B"
+    return models.get(first_key, {})
+
+def set_current_model(model_key):
+    """设置当前模型"""
+    global _current_model_key
+    models = _MODEL_CONFIG.get("models", {})
+    if model_key in models:
+        _current_model_key = model_key
+        # 更新全局配置常量
+        _update_model_constants()
+        # 保存配置到文件
+        _save_model_config()
+        return True
+    return False
+
+def _update_model_constants():
+    """更新模型配置常量"""
+    global MS_REPO_ID, HF_REPO_ID, MODEL_FILENAME, MODEL_DIR
+    config = get_current_model_config()
+    MS_REPO_ID = config.get("ms_repo_id", "")
+    HF_REPO_ID = config.get("hf_repo_id", "")
+    MODEL_FILENAME = config.get("filename", "")
+    MODEL_DIR = config.get("model_dir", "Qwen-0.8B")
+
+def _save_model_config():
+    """保存模型配置到文件"""
+    config_path = os.path.join(os.path.dirname(__file__), "model_config.json")
+    try:
+        _MODEL_CONFIG["current_model"] = _current_model_key
+        with open(config_path, "w", encoding="utf-8") as f:
+            json.dump(_MODEL_CONFIG, f, indent=2, ensure_ascii=False)
+        logger.info(f"Model config saved: {_current_model_key}")
+    except Exception as e:
+        logger.error(f"Failed to save model config: {e}")
+
+def get_available_models():
+    """获取所有可用模型列表"""
+    models = _MODEL_CONFIG.get("models", {})
+    return {
+        "current_model": _current_model_key,
+        "models": [
+            {
+                "key": key,
+                "name": key,
+                "filename": config.get("filename", ""),
+                "model_dir": config.get("model_dir", "")
+            }
+            for key, config in models.items()
+        ]
+    }
+
+# 初始化模型常量
+_update_model_constants()
+
 MMPROJ_FILENAME = _MODEL_CONFIG["mmproj"]["filename"]
-MODEL_DIR = "Qwen-0.8B"
 
 import threading
 
@@ -150,6 +209,12 @@ def check_model_status():
     model_exists = os.path.exists(target_path)
     mmproj_exists = os.path.exists(mmproj_path)
     
+    # 如果正在下载，记录当前状态用于调试
+    if _download_status["model"]["downloading"]:
+        logger.info(f"Download status check: downloading={_download_status['model']['downloading']}, "
+                    f"progress={_download_status['model']['progress']}%, "
+                    f"model_exists={model_exists}, target_path={target_path}")
+    
     return {
         "model_available": model_exists,
         "mmproj_available": mmproj_exists,
@@ -160,6 +225,34 @@ def check_model_status():
         "model_path": target_path if model_exists else None,
         "mmproj_path": mmproj_path if mmproj_exists else None,
         "download_status": _download_status
+    }
+
+def check_all_models_status():
+    """
+    检查所有模型文件的状态，返回所有模型的下载状态
+    """
+    base_dir = folder_paths.base_path
+    models_config = _MODEL_CONFIG.get("models", {})
+    
+    models_status = []
+    for key, config in models_config.items():
+        model_dir = config.get("model_dir", "")
+        filename = config.get("filename", "")
+        
+        model_path = os.path.join(base_dir, "models", "LLM", model_dir, filename)
+        exists = os.path.exists(model_path)
+        
+        models_status.append({
+            "key": key,
+            "name": key,
+            "filename": filename,
+            "model_dir": model_dir,
+            "available": exists
+        })
+    
+    return {
+        "models": models_status,
+        "current_model": _current_model_key
     }
 
 def _download_file_background(file_type):
@@ -227,37 +320,58 @@ def _download_from_modelscope(model_dir, filename, file_type):
         estimated_size = 500 * 1024 * 1024  # 默认500MB
         
         # 监控文件大小的进度更新
+        download_progress = {"current": 0}
+        
         def monitor_file_progress():
             """监控文件下载进度"""
             import time
             last_size = 0
             no_change_count = 0
             max_size_seen = 0
+            iteration = 0
             
             while _download_status[file_type]["downloading"]:
+                iteration += 1
+                # 检查目标文件和可能的临时文件
+                checked_size = 0
                 if os.path.exists(target_path):
-                    current_size = os.path.getsize(target_path)
-                    if current_size > 0:
-                        # 更新最大文件大小
-                        if current_size > max_size_seen:
-                            max_size_seen = current_size
-                            # 动态调整估算大小
-                            if current_size > estimated_size:
-                                estimated_size = current_size * 1.5
-                        
-                        progress = min(int((current_size / estimated_size) * 100), 99)
-                        _download_status[file_type]["progress"] = progress
-                        
-                        # 检查文件大小是否稳定
-                        if current_size == last_size and current_size > 0:
-                            no_change_count += 1
-                            if no_change_count >= 5:  # 连续5次大小不变，可能完成
-                                _download_status[file_type]["progress"] = 100
-                                break
-                        else:
-                            no_change_count = 0
-                            last_size = current_size
-                time.sleep(0.3)
+                    checked_size = os.path.getsize(target_path)
+                else:
+                    # 检查目录中是否有正在下载的文件
+                    if os.path.exists(model_dir):
+                        for fname in os.listdir(model_dir):
+                            fpath = os.path.join(model_dir, fname)
+                            if os.path.isfile(fpath):
+                                fsize = os.path.getsize(fpath)
+                                if fsize > checked_size:
+                                    checked_size = fsize
+                                    logger.debug(f"Found larger file during download: {fname} = {fsize}")
+                
+                if checked_size > 0:
+                    # 更新最大文件大小
+                    if checked_size > max_size_seen:
+                        max_size_seen = checked_size
+                        logger.info(f"Download progress: size={checked_size}, max={max_size_seen}")
+                    
+                    # 使用已看到的最大文件大小来估算进度
+                    # 假设文件大小在 max_size_seen 的 1.0-1.5 倍之间
+                    estimated_total = max(max_size_seen * 1.2, max_size_seen + (50 * 1024 * 1024))
+                    progress = min(int((checked_size / estimated_total) * 100), 99)
+                    download_progress["current"] = progress
+                    _download_status[file_type]["progress"] = progress
+                    logger.info(f"Updated progress: {progress}% (size={checked_size}, estimated={estimated_total})")
+                    
+                    # 检查文件大小是否稳定
+                    if checked_size == last_size and checked_size > 0:
+                        no_change_count += 1
+                        if no_change_count >= 15:  # 连续15次大小不变，可能完成
+                            logger.info("File size stable, marking download as complete")
+                            _download_status[file_type]["progress"] = 100
+                            break
+                    else:
+                        no_change_count = 0
+                        last_size = checked_size
+                time.sleep(0.2)
         
         progress_thread = threading.Thread(target=monitor_file_progress, daemon=True)
         progress_thread.start()
@@ -265,7 +379,7 @@ def _download_from_modelscope(model_dir, filename, file_type):
         # 下载指定模型到指定目录
         download_path = snapshot_download(
             MS_REPO_ID,
-            allow_patterns=MODEL_FILENAME,  # 精确匹配要下载的GGUF文件
+            allow_patterns=[filename],  # 精确匹配要下载的GGUF文件
             local_dir=model_dir,
             revision='master',
         )
@@ -295,7 +409,6 @@ def _download_from_huggingface(model_dir, filename, file_type):
         from huggingface_hub import hf_hub_download
         
         target_path = os.path.join(model_dir, filename)
-        estimated_size = 500 * 1024 * 1024  # 默认500MB
         
         # 监控文件大小的进度更新
         def monitor_file_progress():
@@ -312,17 +425,17 @@ def _download_from_huggingface(model_dir, filename, file_type):
                         # 更新最大文件大小
                         if current_size > max_size_seen:
                             max_size_seen = current_size
-                            # 动态调整估算大小
-                            if current_size > estimated_size:
-                                estimated_size = current_size * 1.5
                         
-                        progress = min(int((current_size / estimated_size) * 100), 99)
+                        # 使用已看到的最大文件大小来估算进度
+                        # 假设文件大小在 max_size_seen 的 1.2-1.5 倍之间
+                        estimated_total = max(max_size_seen * 1.3, max_size_seen + (100 * 1024 * 1024))
+                        progress = min(int((current_size / estimated_total) * 100), 99)
                         _download_status[file_type]["progress"] = progress
                         
                         # 检查文件大小是否稳定
                         if current_size == last_size and current_size > 0:
                             no_change_count += 1
-                            if no_change_count >= 5:  # 连续5次大小不变，可能完成
+                            if no_change_count >= 10:  # 连续10次大小不变，可能完成
                                 _download_status[file_type]["progress"] = 100
                                 break
                         else:
@@ -528,46 +641,6 @@ LLM_TASKS = {
         "max_tokens": 500,
         "result_key": "translated",
         "description": "翻译提示词"
-    },
-    "describe_image": {
-        "system": (
-            "你是一个专业的图像描述助手。"
-            "请根据给定的图像内容，生成一段文字描述。"
-            "要求：1.描述图像中的主体，人物、衣着，场景、风格、色彩等元素；"
-            "2.使用准确的中文描述；"
-            "3.适合用于文生图模型的提示词；"
-            "4.只返回描述内容，不要包含任何解释或额外文字。"
-        ),
-        "max_tokens": 500,
-        "result_key": "description",
-        "description": "图像描述反推（默认）"
-    },
-    "describe_image_concise": {
-        "system": (
-            "你是一个专业的图像描述助手。"
-            "请根据给定的图像内容，生成一段简洁的文字描述。"
-            "要求：1.只描述图像中的主要主体和场景；"
-            "2.使用相对简短中文描述，不超过200个字；"
-            "3.忽略细节和背景元素；"
-            "4.只返回描述内容，不要包含任何解释或额外文字。"
-        ),
-        "max_tokens": 200,
-        "result_key": "description",
-        "description": "图像描述反推（简约）"
-    },
-    "describe_image_detailed": {
-        "system": (
-            "你是一个专业的图像描述助手。"
-            "请根据给定的图像内容，生成一段详细的文字描述。"
-            "要求：1.详细描述图像中的主体，人物、衣着，场景、风格、色彩、光影等所有元素；"
-            "2.使用丰富、准确的中文描述；"
-            "3.包含环境、氛围、情绪等细节；"
-            "4.适合用于文生图模型的提示词；"
-            "5.只返回描述内容，不要包含任何解释或额外文字。"
-        ),
-        "max_tokens": 500,
-        "result_key": "description",
-        "description": "图像描述反推（详细）"
     },
     "generate_prompt": {
         "system": (

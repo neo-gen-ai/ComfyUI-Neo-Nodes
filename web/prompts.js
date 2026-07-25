@@ -174,8 +174,9 @@ app.registerExtension({
             // 初始化提示词管理器
             const { 
                 enhanceBtn, translateBtn, generateBtn, randomBtn, quickInput, 
-                customTextarea, statusBar,
-                presetListOverlay, presetNameInput, deleteConfirmOverlay, downloadModal 
+                customTextarea, statusBar, settingsBtn,
+                presetListOverlay, presetNameInput, deleteConfirmOverlay, downloadModal,
+                settingsModal
             } = promptUI.init({
                 node,
                 graph: node.graph,
@@ -214,14 +215,24 @@ app.registerExtension({
                 translateBtn.style.cursor = "pointer";
                 customTextarea.style.border = "1px solid #444";
 
+                // 获取状态文字元素（避免用 innerHTML 覆盖整个状态栏）
+                const statusTextEl = statusBar.querySelector("span");
+                
                 if (hasConnection && !isDisabled) {
                     statusBar.style.background = "#1a2a3a";
                     statusBar.style.color = "#60a5fa";
-                    statusBar.innerHTML = "🔵 EXTERNAL INPUT";
+                    if (statusTextEl) statusTextEl.textContent = "🔵 EXTERNAL INPUT";
                 } else {
                     statusBar.style.background = "#1a3a1a";
                     statusBar.style.color = "#4ade80";
-                    statusBar.innerHTML = "🟢 LOCAL PROMPT";
+                    if (statusTextEl) statusTextEl.textContent = "🟢 LOCAL PROMPT";
+                }
+
+                // 确保设置按钮可见
+                if (settingsBtn) {
+                    settingsBtn.style.display = "flex";
+                    settingsBtn.style.visibility = "visible";
+                    settingsBtn.style.opacity = "1";
                 }
 
                 if (node.graph) node.graph.setDirtyCanvas(true, true);

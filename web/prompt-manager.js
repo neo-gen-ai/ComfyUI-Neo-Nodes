@@ -13,7 +13,11 @@ import {
     generatePromptFromText,
     randomPrompt as randomPromptAPI,
     downloadModel,
-    monitorDownloadProgress
+    monitorDownloadProgress,
+    getAvailableModels,
+    setCurrentModel,
+    checkModel,
+    checkAllModels
 } from "./prompt-service.js";
 
 // ==========================================
@@ -185,10 +189,69 @@ function createDownloadModal() {
     };
 }
 
+function createSettingsModal() {
+    const modal = mkEl("div", "rs-settings-modal");
+    
+    const wrapper = mkEl("div", "rs-settings-modal-wrapper");
+    
+    const header = mkEl("div", "rs-settings-header");
+    const titleSpan = mkEl("span", "rs-settings-title-bar");
+    titleSpan.textContent = "⚙️ Model Settings";
+    header.appendChild(titleSpan);
+    
+    const closeBtn = mkEl("button", "rs-settings-close-btn");
+    closeBtn.textContent = "✕";
+    closeBtn.setAttribute("aria-label", "Close");
+    header.appendChild(closeBtn);
+    
+    const content = mkEl("div", "rs-settings-content");
+    
+    const infoText = mkEl("div", "rs-settings-info");
+    infoText.innerHTML = `
+        <div class="rs-settings-title">Select LLM Model</div>
+        <div class="rs-settings-desc">Choose the model to use for AI features</div>
+    `;
+    
+    const modelList = mkEl("div", "rs-settings-model-list");
+    
+    const statusText = mkEl("div", "rs-settings-status");
+    statusText.textContent = "";
+    statusText.style.display = "none";
+    
+    content.append(infoText, modelList, statusText);
+    wrapper.append(header, content);
+    modal.appendChild(wrapper);
+    
+    return { 
+        modal, 
+        modelList, 
+        statusText, 
+        closeBtn 
+    };
+}
+
 function createStatusBars() {
     const statusBar = mkEl("div", "rs-status-bar-local");
-    statusBar.style.cssText = "width:100%;padding:4px 8px;font-size:11px;font-weight:bold;text-align:center;border-radius:4px 4px 0 0;margin-bottom:4px;display:flex;align-items:center;justify-content:center;gap:6px;line-height:1.2;";
-    statusBar.innerHTML = "🟢 LOCAL PROMPT";
+    statusBar.style.cssText = "width:100%;padding:4px 8px;font-size:11px;font-weight:bold;text-align:center;border-radius:4px 4px 0 0;margin-bottom:4px;display:flex;align-items:center;justify-content:center;gap:6px;line-height:1.2;position:relative;";
+    
+    const statusText = mkEl("span");
+    statusText.textContent = "🟢 LOCAL PROMPT";
+    
+    const settingsBtn = mkEl("button", "rs-settings-btn");
+    settingsBtn.textContent = "⚙️";
+    settingsBtn.style.cssText = "background:transparent;border:none;color:#999;font-size:14px;cursor:pointer;padding:2px 6px;border-radius:3px;transition:all 0.2s ease;position:absolute;right:4px;top:50%;transform:translateY(-50%);";
+    // Note: title attribute removed to prevent ComfyUI tooltip popup
+    settingsBtn.addEventListener("mouseenter", () => {
+        settingsBtn.style.color = "#fff";
+        settingsBtn.style.background = "rgba(80, 144, 204, 0.2)";
+    });
+    settingsBtn.addEventListener("mouseleave", () => {
+        settingsBtn.style.color = "#999";
+        settingsBtn.style.background = "transparent";
+    });
+    
+    statusBar.appendChild(statusText);
+    statusBar.appendChild(settingsBtn);
 
     // 简洁输入框 - 用于输入简洁文字描述生成提示词
     const quickInputWrapper = mkEl("div", "rs-quick-input-wrapper");
@@ -228,7 +291,7 @@ function createStatusBars() {
     btnRow.append(enhanceBtn, translateBtn, saveBtn, selectBtn);
     buttonsWrapper.append(btnRow);
 
-    return { statusBar, quickInputWrapper, randomBtn, quickInput, generateBtn, customTextarea, buttonsWrapper, enhanceBtn, translateBtn, saveBtn, selectBtn };
+    return { statusBar, quickInputWrapper, randomBtn, quickInput, generateBtn, customTextarea, buttonsWrapper, enhanceBtn, translateBtn, saveBtn, selectBtn, settingsBtn };
 }
 
 // ==========================================
@@ -241,11 +304,12 @@ function createStatusBars() {
  */
 function createPromptManagerUI() {
     // 创建所有 UI 组件
-    const { statusBar, quickInputWrapper, randomBtn, quickInput, generateBtn, customTextarea, buttonsWrapper, enhanceBtn, translateBtn, saveBtn, selectBtn } = createStatusBars();
+    const { statusBar, quickInputWrapper, randomBtn, quickInput, generateBtn, customTextarea, buttonsWrapper, enhanceBtn, translateBtn, saveBtn, selectBtn, settingsBtn } = createStatusBars();
     const { overlay: presetListOverlay, searchInput: presetSearchInput, body: presetListBody } = createOverlayWithSearch("📋 Prompt Presets");
     const { modal: presetNameInput, aiStatus, field: inputField, tagsContainer, selectedTags, okBtn: inputOk, cancelBtn: inputCancel } = createInputModal();
     const { modal: deleteConfirmOverlay, textDiv: deleteText, okBtn: deleteOk, cancelBtn: deleteCancel } = createDeleteModal();
     const downloadModal = createDownloadModal();
+    const settingsModal = createSettingsModal();
 
     // 创建 root 容器
     const root = mkEl("div", "rs-root");
@@ -259,6 +323,7 @@ function createPromptManagerUI() {
     root.appendChild(presetNameInput);
     root.appendChild(deleteConfirmOverlay);
     root.appendChild(downloadModal.modal);
+    root.appendChild(settingsModal.modal);
 
     // 配置 preset list body 样式
     presetListBody.style.scrollbarWidth = "thin";
@@ -548,6 +613,225 @@ function createPromptManagerUI() {
             downloadModal.modal.style.display = "none";
         });
 
+        // 下载进度轮询
+        let downloadPollInterval = null;
+        
+        // 停止下载进度轮询
+        function stopDownloadPolling() {
+            if (downloadPollInterval) {
+                clearInterval(downloadPollInterval);
+                downloadPollInterval = null;
+            }
+        }
+        
+        // 开始下载进度轮询
+        function startDownloadPolling() {
+            stopDownloadPolling();
+            downloadPollInterval = setInterval(async () => {
+                try {
+                    const status = await checkModel();
+                    if (status.download_status?.model?.downloading) {
+                        const progress = status.download_status.model.progress || 0;
+                        
+                        // 更新进度条
+                        const progressFill = settingsModal.modelList.querySelector(".rs-download-progress-fill");
+                        if (progressFill) {
+                            progressFill.style.width = progress + "%";
+                        }
+                        
+                        // 更新状态指示器显示进度
+                        const statusIndicator = settingsModal.modelList.querySelector(".rs-settings-download-status");
+                        if (statusIndicator) {
+                            statusIndicator.textContent = `⏳ Downloading ${progress}%`;
+                            statusIndicator.style.color = "#fbbf24";
+                        }
+                    } else {
+                        // 下载完成或取消，停止轮询并刷新列表
+                        stopDownloadPolling();
+                        loadModelsIntoSettings();
+                    }
+                } catch (e) {
+                    console.error("Failed to check download status:", e);
+                }
+            }, 500); // 每 500ms 检查一次
+        }
+        
+        // Load models into settings modal with download status
+        async function loadModelsIntoSettings() {
+            try {
+                stopDownloadPolling();
+                const modelsData = await getAvailableModels();
+                const allModelsStatus = await checkAllModels();
+                const currentModelStatus = await checkModel();
+                settingsModal.modelList.innerHTML = "";
+                
+                // 创建模型状态映射
+                const modelStatusMap = {};
+                allModelsStatus.models.forEach(m => {
+                    modelStatusMap[m.key] = m.available;
+                });
+                
+                modelsData.models.forEach(model => {
+                    const modelItem = mkEl("div", "rs-settings-model-item");
+                    const isCurrentModel = model.key === modelsData.current_model;
+                    if (isCurrentModel) {
+                        modelItem.classList.add("active");
+                    }
+                    
+                    const modelInfo = mkEl("div", "rs-settings-model-info");
+                    
+                    // Download status
+                    const isModelAvailable = modelStatusMap[model.key] || false;
+                    const isDownloading = modelStatusMap[model.key] === undefined && isCurrentModel && currentModelStatus.download_status?.model?.downloading;
+                    const downloadProgress = currentModelStatus.download_status?.model?.progress || 0;
+                    
+                    // Model name with status icon
+                    const modelName = mkEl("div", "rs-settings-model-name");
+                    
+                    // Status icon
+                    const statusIcon = mkEl("span", "rs-model-status-icon");
+                    if (isDownloading) {
+                        statusIcon.textContent = "⏳";
+                        statusIcon.title = `Downloading ${downloadProgress}%`;
+                    } else if (isModelAvailable) {
+                        statusIcon.textContent = "✅";
+                        statusIcon.title = "Downloaded";
+                    } else {
+                        statusIcon.textContent = "⬇";
+                        statusIcon.title = "Not downloaded";
+                    }
+                    modelName.appendChild(statusIcon);
+                    
+                    // Name text
+                    const nameText = mkEl("span");
+                    nameText.textContent = model.name;
+                    modelName.appendChild(nameText);
+                    
+                    // File size
+                    const modelSize = mkEl("span", "rs-model-size");
+                    modelSize.textContent = model.size || "";
+                    modelName.appendChild(modelSize);
+                    
+                    modelInfo.appendChild(modelName);
+                    
+                    // 未下载的模型才显示文件名
+                    if (!isModelAvailable) {
+                        const modelFilename = mkEl("div", "rs-settings-model-filename");
+                        modelFilename.textContent = model.filename;
+                        modelInfo.appendChild(modelFilename);
+                    }
+                    
+                    // 右侧区域
+                    const rightSection = mkEl("div", "rs-settings-model-right");
+                    
+                    // 下载按钮（未下载时显示，无论是否当前模型）
+                    if (!isModelAvailable) {
+                        const downloadBtn = mkEl("button", "rs-download-btn-small");
+                        downloadBtn.textContent = "⬇";
+                        downloadBtn.title = "Download this model";
+                        downloadBtn.addEventListener("click", async (e) => {
+                            e.stopPropagation();
+                            downloadBtn.disabled = true;
+                            downloadBtn.textContent = "⏳";
+                            
+                            // 如果不是当前模型，先切换
+                            if (!isCurrentModel) {
+                                const switchResult = await setCurrentModel(model.key);
+                                if (!switchResult.success) {
+                                    downloadBtn.disabled = false;
+                                    downloadBtn.textContent = "⬇";
+                                    settingsModal.statusText.style.display = "block";
+                                    settingsModal.statusText.textContent = "Switch failed: " + (switchResult.error || "Unknown error");
+                                    settingsModal.statusText.className = "rs-settings-status";
+                                    return;
+                                }
+                            }
+                            
+                            // 开始下载
+                            const downloadResult = await downloadModel("model");
+                            if (downloadResult.error) {
+                                downloadBtn.disabled = false;
+                                downloadBtn.textContent = "⬇";
+                                settingsModal.statusText.style.display = "block";
+                                settingsModal.statusText.textContent = "Download failed: " + downloadResult.error;
+                                settingsModal.statusText.className = "rs-settings-status";
+                            } else {
+                                // 显示进度条并开始轮询
+                                const progressBar = mkEl("div", "rs-download-progress-bar");
+                                const progressFill = mkEl("div", "rs-download-progress-fill");
+                                progressFill.style.width = "0%";
+                                progressBar.appendChild(progressFill);
+                                
+                                const progressText = mkEl("div", "rs-download-progress-text");
+                                progressText.textContent = "Starting download...";
+                                
+                                modelItem.appendChild(progressBar);
+                                modelItem.appendChild(progressText);
+                                
+                                startDownloadPolling();
+                            }
+                        });
+                        rightSection.appendChild(downloadBtn);
+                    }
+                    
+                    // 切换指示器
+                    const indicator = mkEl("div", "rs-settings-model-check");
+                    indicator.textContent = "✓";
+                    rightSection.appendChild(indicator);
+                    
+                    modelItem.appendChild(modelInfo);
+                    modelItem.appendChild(rightSection);
+                    
+                    modelItem.addEventListener("click", async () => {
+                        if (model.key === modelsData.current_model) return;
+                        
+                        settingsModal.statusText.style.display = "block";
+                        settingsModal.statusText.textContent = "Switching model...";
+                        settingsModal.statusText.className = "rs-settings-status";
+                        
+                        const result = await setCurrentModel(model.key);
+                        
+                        if (result.success) {
+                            settingsModal.statusText.textContent = "Model switched successfully!";
+                            settingsModal.statusText.className = "rs-settings-status success";
+                            
+                            // 重新加载模型列表以更新状态
+                            loadModelsIntoSettings();
+                            
+                            setTimeout(() => {
+                                settingsModal.statusText.style.display = "none";
+                            }, 1000);
+                        } else {
+                            settingsModal.statusText.textContent = "Failed to switch model: " + (result.error || "Unknown error");
+                            settingsModal.statusText.className = "rs-settings-status";
+                        }
+                    });
+                    
+                    settingsModal.modelList.appendChild(modelItem);
+                });
+            } catch (e) {
+                console.error("Failed to load models:", e);
+                settingsModal.modelList.textContent = "Failed to load models";
+            }
+        }
+
+        settingsBtn.addEventListener("click", () => {
+            settingsModal.modal.style.display = "flex";
+            loadModelsIntoSettings();
+        });
+        
+        // 绑定设置模态框关闭按钮点击事件
+        settingsModal.closeBtn.addEventListener("click", () => {
+            settingsModal.modal.style.display = "none";
+        });
+        
+        // 点击模态框背景关闭
+        settingsModal.modal.addEventListener("click", (e) => {
+            if (e.target === settingsModal.modal) {
+                settingsModal.modal.style.display = "none";
+            }
+        });
+
         // 返回需要外部引用的元素
         return {
             enhanceBtn,
@@ -557,12 +841,16 @@ function createPromptManagerUI() {
             quickInput,
             customTextarea,
             statusBar,
+            settingsBtn,
             // 返回模态框元素供外部管理
             presetListOverlay,
             presetNameInput,
             deleteConfirmOverlay,
             // 返回下载模态框元素
-            downloadModal
+            downloadModal,
+            // 返回设置模态框元素
+            settingsModal,
+            loadModelsIntoSettings
         };
     }
 

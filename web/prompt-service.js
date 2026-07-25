@@ -10,6 +10,9 @@ let modelStatusCache = null;
 let modelStatusCacheTime = 0;
 const MODEL_STATUS_CACHE_TTL = 5000; // 5秒缓存，下载时频繁检查
 
+let allModelsStatusCache = null;
+let allModelsStatusCacheTime = 0;
+
 /**
  * 检查 LLM 模型是否已下载
  * @returns {Promise<{model_available: boolean, mmproj_available: boolean, model_repo_id: string, model_filename: string, download_status: object}>}
@@ -37,6 +40,41 @@ async function checkModel() {
             }
         };
     }
+}
+
+/**
+ * 检查所有模型的状态
+ * @returns {Promise<{models: Array<{key: string, name: string, filename: string, model_dir: string, available: boolean}>, current_model: string}>}
+ */
+async function checkAllModels() {
+    // 使用缓存减少请求
+    const now = Date.now();
+    if (allModelsStatusCache && (now - allModelsStatusCacheTime) < MODEL_STATUS_CACHE_TTL) {
+        return allModelsStatusCache;
+    }
+
+    try {
+        const res = await fetch("/rs_prompts/check_all_models");
+        allModelsStatusCache = await res.json();
+        allModelsStatusCacheTime = now;
+        return allModelsStatusCache;
+    } catch (e) {
+        console.error("Failed to check all models status:", e);
+        return {
+            models: [],
+            current_model: ""
+        };
+    }
+}
+
+/**
+ * 清除模型状态缓存
+ */
+function clearModelStatusCache() {
+    modelStatusCache = null;
+    modelStatusCacheTime = 0;
+    allModelsStatusCache = null;
+    allModelsStatusCacheTime = 0;
 }
 
 /**
@@ -428,12 +466,55 @@ async function randomPrompt() {
     return await res.json();
 }
 
+/**
+ * 获取可用模型列表
+ * @returns {Promise<{current_model: string, models: Array<{key: string, name: string, filename: string, model_dir: string}>}>}
+ */
+async function getAvailableModels() {
+    try {
+        const res = await fetch("/rs_prompts/get_models");
+        return await res.json();
+    } catch (e) {
+        console.error("Failed to get available models:", e);
+        return {
+            current_model: "Qwen3.5-0.8B",
+            models: []
+        };
+    }
+}
+
+/**
+ * 设置当前模型
+ * @param {string} modelKey - 模型键值
+ * @returns {Promise<{success: boolean, current_model?: string, error?: string}>}
+ */
+async function setCurrentModel(modelKey) {
+    try {
+        const res = await fetch("/rs_prompts/set_model", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ model_key: modelKey })
+        });
+        const data = await res.json();
+        if (res.ok) {
+            // 清除模型状态缓存，强制重新检查
+            clearModelStatusCache();
+        }
+        return data;
+    } catch (e) {
+        console.error("Failed to set current model:", e);
+        return { success: false, error: e.message };
+    }
+}
+
 // ==========================================
 // 导出
 // ==========================================
 
 export {
     checkModel,
+    checkAllModels,
+    clearModelStatusCache,
     downloadModel,
     checkModelAndPrompt,
     showDownloadModal,
@@ -447,5 +528,7 @@ export {
     extractTitle,
     extractClassify,
     generatePromptFromText,
-    randomPrompt
+    randomPrompt,
+    getAvailableModels,
+    setCurrentModel
 };

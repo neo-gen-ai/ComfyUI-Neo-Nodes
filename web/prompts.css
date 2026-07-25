@@ -513,7 +513,6 @@
     background: #1a1a1a;
     color: #ccc;
     border: 1px solid #444;
-    /* border-radius: 4px 0 0 4px; */
     outline: none;
     transition: all 0.2s ease;
     min-width: 0;
@@ -924,3 +923,286 @@
     0%, 100% { opacity: 1; }
     50% { opacity: 0.7; }
 }
+
+/* ==========================================
+   Settings Modal Styles
+   ========================================== */
+
+.rs-settings-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    display: none;
+    justify-content: center;
+    align-items: center;
+    z-index: 10000;
+    backdrop-filter: blur(4px);
+}
+
+.rs-settings-modal-wrapper {
+    display: flex;
+    flex-direction: column;
+    min-width: 320px;
+    max-width: 400px;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.rs-settings-modal.show {
+    display: flex !important;
+}
+
+.rs-settings-header {
+    background: linear-gradient(135deg, #1a2a3a 0%, #2a3a4a 100%);
+    color: #fff;
+    padding: 12px 16px;
+    font-size: 14px;
+    font-weight: 600;
+    border-bottom: 1px solid #3a4a5a;
+    border-radius: 8px 8px 0 0;
+    position: relative;
+    display: flex;
+    align-items: center;
+    min-height: 44px;
+}
+
+.rs-settings-header .rs-settings-title-bar {
+    flex: 1;
+}
+
+.rs-settings-content {
+    background: linear-gradient(135deg, #1a1a2a 0%, #2a2a3a 100%);
+    border-radius: 0 0 8px 8px;
+    padding: 16px;
+    min-width: 320px;
+    max-width: 400px;
+    border: 1px solid #3a4a5a;
+    border-top: none;
+    display: flex;
+    flex-direction: column;
+}
+
+.rs-settings-info {
+    margin-bottom: 16px;
+}
+
+.rs-settings-title {
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.rs-settings-desc {
+    color: #999;
+    font-size: 12px;
+}
+
+/* ============================================
+   Compact Model List Styles
+   ============================================ */
+.rs-settings-model-list {
+    margin-bottom: 16px;
+    max-height: 200px;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+.rs-settings-model-item {
+    background: #1e1e2e;
+    border: 1px solid #333;
+    border-radius: 4px;
+    padding: 4px 8px;
+    margin-bottom: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 28px;
+    transition: all 0.15s ease;
+}
+
+.rs-settings-model-item:hover {
+    background: #2a2a3a;
+    border-color: #5090cc;
+}
+
+.rs-settings-model-item.active {
+    background: linear-gradient(135deg, #1a2a3a 0%, #2a3a4a 100%);
+    border-color: #5090cc;
+    box-shadow: 0 0 0 1px rgba(80, 144, 204, 0.3);
+}
+
+.rs-settings-model-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.rs-settings-model-name {
+    color: #fff;
+    font-size: 11px;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: nowrap;
+}
+
+.rs-settings-model-name .rs-model-status-icon {
+    font-size: 12px;
+    flex-shrink: 0;
+    width: 16px;
+    text-align: center;
+}
+
+.rs-settings-model-name .rs-model-size {
+    color: #888;
+    font-size: 9px;
+    font-weight: 400;
+    margin-left: auto;
+    padding: 1px 4px;
+    background: rgba(80, 144, 204, 0.1);
+    border-radius: 2px;
+}
+
+.rs-settings-model-filename {
+    display: none;
+}
+
+.rs-settings-download-status {
+    color: #888;
+    font-size: 9px;
+    margin-top: 1px;
+}
+
+.rs-settings-model-right {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+.rs-settings-model-check {
+    color: #5090cc;
+    font-size: 12px;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+    font-weight: bold;
+}
+
+.rs-settings-model-item.active .rs-settings-model-check {
+    opacity: 1;
+}
+
+.rs-download-btn-small {
+    padding: 2px 6px;
+    font-size: 9px;
+    font-weight: 600;
+    background: linear-gradient(135deg, #5090cc 0%, #3a70b0 100%);
+    color: #fff;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+    box-shadow: 0 1px 3px rgba(80, 144, 204, 0.3);
+}
+
+.rs-download-btn-small:hover {
+    background: linear-gradient(135deg, #60a0dc 0%, #4a80c0 100%);
+    box-shadow: 0 1px 4px rgba(80, 144, 204, 0.5);
+    transform: translateY(-1px);
+}
+
+.rs-download-btn-small:active {
+    transform: translateY(0);
+}
+
+.rs-download-btn-small:disabled {
+    background: #333 !important;
+    color: #666 !important;
+    cursor: not-allowed !important;
+    box-shadow: none !important;
+    transform: none !important;
+}
+
+.rs-download-progress-bar {
+    width: 100%;
+    height: 4px;
+    background: #1a1a1a;
+    border: 1px solid #333;
+    border-radius: 2px;
+    overflow: hidden;
+    margin-top: 2px;
+}
+
+.rs-download-progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #5090cc 0%, #60a0dc 50%, #5090cc 100%);
+    width: 0%;
+    transition: width 0.3s ease;
+}
+
+.rs-download-progress-text {
+    color: #60a5fa;
+    font-size: 9px;
+    text-align: center;
+    margin-top: 1px;
+}
+
+.rs-settings-status {
+    color: #f87171;
+    font-size: 10px;
+    margin-bottom: 8px;
+    padding: 4px 6px;
+    background: rgba(248, 113, 113, 0.1);
+    border-radius: 3px;
+    border: 1px solid rgba(248, 113, 113, 0.3);
+}
+
+.rs-settings-status.success {
+    color: #4ade80;
+    background: rgba(74, 222, 128, 0.1);
+    border-color: rgba(74, 222, 128, 0.3);
+}
+
+.rs-settings-buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+}
+
+.rs-settings-close-btn {
+    position: absolute;
+    top: 50%;
+    right: 12px;
+    transform: translateY(-50%);
+    padding: 2px 6px;
+    font-size: 12px;
+    font-weight: 600;
+    background: transparent;
+    color: #999;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    line-height: 1;
+}
+
+.rs-settings-close-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    transform: translateY(-50%) scale(1.1);
+}
+
+
