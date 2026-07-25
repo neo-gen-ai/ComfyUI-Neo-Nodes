@@ -2,12 +2,15 @@
 # ComfyUI-Neo-Nodes - LLM (Large Language Model)
 # LLM 公共代码模块，包含大模型加载、推理、任务定义等功能
 
+from __future__ import annotations
+
 import os
 import re
 import json
 import logging
 import base64
 import io
+from typing import Any, Dict, List, Optional
 import folder_paths
 from collections import OrderedDict
 
@@ -46,7 +49,7 @@ def _load_model_config():
         }
 
 # 加载配置
-_MODEL_CONFIG = _load_model_config()
+_MODEL_CONFIG: Dict[str, Any] = _load_model_config()
 
 def get_model_config():
     """获取模型配置"""
@@ -118,16 +121,22 @@ TRANSLATION_CACHE = TranslationCache(max_size=200)
 # ==========================================
 
 # 当前选择的模型
-_current_model_key = _MODEL_CONFIG.get("current_model", "Qwen3.5-0.8B")
+_current_model_key: str = _MODEL_CONFIG.get("current_model", "Qwen3.5-0.8B") or "Qwen3.5-0.8B"
 
-def get_current_model_config():
+# 模型配置常量（将在 _update_model_constants() 中初始化）
+MS_REPO_ID: str = ""
+HF_REPO_ID: str = ""
+MODEL_FILENAME: str = ""
+MODEL_DIR: str = "Qwen-0.8B"
+
+def get_current_model_config() -> Dict[str, Any]:
     """获取当前模型的配置"""
-    models = _MODEL_CONFIG.get("models", {})
+    models: Dict[str, Any] = _MODEL_CONFIG.get("models", {})
     if _current_model_key in models:
-        return models[_current_model_key]
+        return models[_current_model_key]  # type: ignore[return-value]
     # 回退到第一个可用模型
     first_key = list(models.keys())[0] if models else "Qwen3.5-0.8B"
-    return models.get(first_key, {})
+    return models.get(first_key, {})  # type: ignore[type-abstract]
 
 def set_current_model(model_key):
     """设置当前模型"""
@@ -164,24 +173,26 @@ def _save_model_config():
 
 def get_available_models():
     """获取所有可用模型列表"""
-    models = _MODEL_CONFIG.get("models", {})
+    models: Dict[str, Any] = _MODEL_CONFIG.get("models", {})
+    model_list: List[Dict[str, str]] = []
+    for key, config in models.items():
+        config_dict: Dict[str, str] = config  # type: ignore[assignment]
+        model_list.append({
+            "key": key,
+            "name": key,
+            "filename": config_dict.get("filename", ""),  # type: ignore[union-attr]
+            "model_dir": config_dict.get("model_dir", "")  # type: ignore[union-attr]
+        })
     return {
         "current_model": _current_model_key,
-        "models": [
-            {
-                "key": key,
-                "name": key,
-                "filename": config.get("filename", ""),
-                "model_dir": config.get("model_dir", "")
-            }
-            for key, config in models.items()
-        ]
+        "models": model_list
     }
 
 # 初始化模型常量
 _update_model_constants()
 
-MMPROJ_FILENAME = _MODEL_CONFIG["mmproj"]["filename"]
+_MMPROJ_CONFIG: Dict[str, Any] = _MODEL_CONFIG.get("mmproj", {})  # type: ignore[union-attr]
+MMPROJ_FILENAME: str = _MMPROJ_CONFIG.get("filename", "")  # type: ignore[union-attr]
 
 import threading
 
@@ -232,12 +243,13 @@ def check_all_models_status():
     检查所有模型文件的状态，返回所有模型的下载状态
     """
     base_dir = folder_paths.base_path
-    models_config = _MODEL_CONFIG.get("models", {})
+    models_config: Dict[str, Any] = _MODEL_CONFIG.get("models", {})
     
-    models_status = []
+    models_status: List[Dict[str, Any]] = []
     for key, config in models_config.items():
-        model_dir = config.get("model_dir", "")
-        filename = config.get("filename", "")
+        config_dict: Dict[str, Any] = config  # type: ignore[assignment]
+        model_dir: str = config_dict.get("model_dir", "")  # type: ignore[union-attr]
+        filename: str = config_dict.get("filename", "")  # type: ignore[union-attr]
         
         model_path = os.path.join(base_dir, "models", "LLM", model_dir, filename)
         exists = os.path.exists(model_path)
