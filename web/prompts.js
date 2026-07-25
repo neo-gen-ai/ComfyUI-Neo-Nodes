@@ -122,6 +122,7 @@ app.registerExtension({
             }
             if (disableWidget) {
                 disableWidget.value = node.properties.rs_disable_state;
+                disableWidget.hidden = true;
             }
 
             // 隐藏虚拟插槽
@@ -174,9 +175,9 @@ app.registerExtension({
             // 初始化提示词管理器
             const { 
                 enhanceBtn, translateBtn, generateBtn, randomBtn, quickInput, 
-                customTextarea, statusBar, settingsBtn,
+                customTextarea, statusBar, settingsBtn, toggleSwitch, toggleKnob,
                 presetListOverlay, presetNameInput, deleteConfirmOverlay, downloadModal,
-                settingsModal
+                settingsModal, loadModelsIntoSettings
             } = promptUI.init({
                 node,
                 graph: node.graph,
@@ -228,6 +229,21 @@ app.registerExtension({
                     if (statusTextEl) statusTextEl.textContent = "🟢 LOCAL PROMPT";
                 }
 
+                // 更新toggle开关状态
+                if (toggleSwitch && toggleKnob) {
+                    if (isDisabled) {
+                        toggleSwitch.style.background = "#4a4a4a";
+                        toggleSwitch.style.borderColor = "#666";
+                        toggleKnob.style.transform = "translateX(12px)";
+                        toggleKnob.style.background = "#fff";
+                    } else {
+                        toggleSwitch.style.background = "#3a3a3a";
+                        toggleSwitch.style.borderColor = "#555";
+                        toggleKnob.style.transform = "translateX(0)";
+                        toggleKnob.style.background = "#999";
+                    }
+                }
+
                 // 确保设置按钮可见
                 if (settingsBtn) {
                     settingsBtn.style.display = "flex";
@@ -260,6 +276,44 @@ app.registerExtension({
                     enforcementInterval = null;
                 }
             };
+
+            // Toggle switch click handler
+            if (toggleSwitch) {
+                toggleSwitch.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    const currentState = node.properties.rs_disable_state;
+                    node.properties.rs_disable_state = !currentState;
+                    
+                    // Update widget value
+                    if (disableWidget) {
+                        disableWidget.value = node.properties.rs_disable_state;
+                    }
+                    
+                    // Update UI
+                    updateStatusAndUI();
+                    
+                    // Mark graph as dirty
+                    if (node.graph) {
+                        node.graph.setDirtyCanvas(true, true);
+                    }
+                });
+            }
+
+            // Settings button click handler
+            if (settingsBtn && settingsModal && loadModelsIntoSettings) {
+                settingsBtn.addEventListener("click", async (e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    console.log("Settings button clicked");
+                    try {
+                        await loadModelsIntoSettings();
+                        settingsModal.modal.style.display = "flex";
+                    } catch (err) {
+                        console.error("Error opening settings modal:", err);
+                    }
+                });
+            }
 
             node.onRemoved = function () {
                 stopEnforcement();

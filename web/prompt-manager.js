@@ -232,14 +232,29 @@ function createSettingsModal() {
 
 function createStatusBars() {
     const statusBar = mkEl("div", "rs-status-bar-local");
-    statusBar.style.cssText = "width:100%;padding:4px 8px;font-size:11px;font-weight:bold;text-align:center;border-radius:4px 4px 0 0;margin-bottom:4px;display:flex;align-items:center;justify-content:center;gap:6px;line-height:1.2;position:relative;";
+    statusBar.style.cssText = "width:100%;padding:4px 8px;font-size:11px;font-weight:bold;text-align:center;border-radius:4px 4px 0 0;margin-bottom:4px;display:flex;align-items:center;justify-content:center;gap:6px;line-height:1.2;position:relative;pointer-events:none;";
+    
+    // Toggle switch for disable_text_input (left side)
+    const toggleWrapper = mkEl("div", "rs-toggle-wrapper");
+    toggleWrapper.style.cssText = "position:absolute;left:4px;top:50%;transform:translateY(-50%);display:flex;align-items:center;gap:4px;pointer-events:auto;";
+    
+    const toggleSwitch = mkEl("div", "rs-toggle-switch");
+    toggleSwitch.style.cssText = "width:28px;height:16px;background:#3a3a3a;border-radius:8px;position:relative;cursor:pointer;transition:background 0.2s ease;border:1px solid #555;pointer-events:auto;";
+    toggleSwitch.setAttribute("data-rs-tooltip", "Toggle external text input");
+    
+    const toggleKnob = mkEl("div", "rs-toggle-knob");
+    toggleKnob.style.cssText = "width:12px;height:12px;background:#999;border-radius:50%;position:absolute;top:1px;left:1px;transition:transform 0.2s ease;";
+    
+    toggleSwitch.appendChild(toggleKnob);
+    toggleWrapper.appendChild(toggleSwitch);
     
     const statusText = mkEl("span");
     statusText.textContent = "🟢 LOCAL PROMPT";
     
     const settingsBtn = mkEl("button", "rs-settings-btn");
     settingsBtn.textContent = "⚙️";
-    settingsBtn.style.cssText = "background:transparent;border:none;color:#999;font-size:14px;cursor:pointer;padding:2px 6px;border-radius:3px;transition:all 0.2s ease;position:absolute;right:4px;top:50%;transform:translateY(-50%);";
+    settingsBtn.style.cssText = "background:transparent;border:none;color:#999;font-size:14px;cursor:pointer;padding:2px 6px;border-radius:3px;transition:all 0.2s ease;position:absolute;right:4px;top:50%;transform:translateY(-50%);z-index:10;pointer-events:auto;";
+    settingsBtn.setAttribute("data-rs-tooltip", "Model settings");
     // Note: title attribute removed to prevent ComfyUI tooltip popup
     settingsBtn.addEventListener("mouseenter", () => {
         settingsBtn.style.color = "#fff";
@@ -250,6 +265,7 @@ function createStatusBars() {
         settingsBtn.style.background = "transparent";
     });
     
+    statusBar.appendChild(toggleWrapper);
     statusBar.appendChild(statusText);
     statusBar.appendChild(settingsBtn);
 
@@ -259,6 +275,7 @@ function createStatusBars() {
     const randomBtn = mkEl("button", "rs-random-btn");
     randomBtn.textContent = "🎲";
     randomBtn.style.cssText = "padding:2px 6px;font-size:14px;background:linear-gradient(135deg,#5a2a6a 0%,#4a1a5a 100%);color:#d8a0ff;border:1px solid #7a4a9a;border-radius:4px 0 0 0;cursor:pointer;white-space:nowrap;height:22px;flex-shrink:0;";
+    randomBtn.setAttribute("data-rs-tooltip", "Random prompt");
 
     const quickInput = mkEl("input", "rs-quick-input");
     quickInput.placeholder = "💡 Quick description...";
@@ -266,6 +283,7 @@ function createStatusBars() {
     const generateBtn = mkEl("button", "rs-generate-btn");
     generateBtn.textContent = "🚀";
     generateBtn.style.cssText = "padding:2px 6px;font-size:12px;background:linear-gradient(135deg,#2a4a6a 0%,#1a3a5a 100%);color:#60a5fa;border:1px solid #3a6a9a;border-radius:0 4px 4px 0;cursor:pointer;white-space:nowrap;height:22px;flex-shrink:0;";
+    generateBtn.setAttribute("data-rs-tooltip", "Generate from description");
 
     quickInputWrapper.appendChild(randomBtn);
     quickInputWrapper.appendChild(quickInput);
@@ -281,17 +299,21 @@ function createStatusBars() {
 
     const enhanceBtn = mkEl("button", "rs-btn");
     enhanceBtn.textContent = "✨ Enhance";
+    enhanceBtn.setAttribute("data-rs-tooltip", "Enhance prompt with AI");
     const translateBtn = mkEl("button", "rs-btn");
     translateBtn.textContent = "🌐 Translate";
+    translateBtn.setAttribute("data-rs-tooltip", "Translate prompt");
     const saveBtn = mkEl("button", "rs-btn");
     saveBtn.textContent = "💾 Save";
+    saveBtn.setAttribute("data-rs-tooltip", "Save as preset");
     const selectBtn = mkEl("button", "rs-btn");
     selectBtn.textContent = "📋 Select";
+    selectBtn.setAttribute("data-rs-tooltip", "Load preset");
 
     btnRow.append(enhanceBtn, translateBtn, saveBtn, selectBtn);
     buttonsWrapper.append(btnRow);
 
-    return { statusBar, quickInputWrapper, randomBtn, quickInput, generateBtn, customTextarea, buttonsWrapper, enhanceBtn, translateBtn, saveBtn, selectBtn, settingsBtn };
+    return { statusBar, quickInputWrapper, randomBtn, quickInput, generateBtn, customTextarea, buttonsWrapper, enhanceBtn, translateBtn, saveBtn, selectBtn, settingsBtn, toggleSwitch, toggleKnob };
 }
 
 // ==========================================
@@ -304,7 +326,7 @@ function createStatusBars() {
  */
 function createPromptManagerUI() {
     // 创建所有 UI 组件
-    const { statusBar, quickInputWrapper, randomBtn, quickInput, generateBtn, customTextarea, buttonsWrapper, enhanceBtn, translateBtn, saveBtn, selectBtn, settingsBtn } = createStatusBars();
+    const { statusBar, quickInputWrapper, randomBtn, quickInput, generateBtn, customTextarea, buttonsWrapper, enhanceBtn, translateBtn, saveBtn, selectBtn, settingsBtn, toggleSwitch, toggleKnob } = createStatusBars();
     const { overlay: presetListOverlay, searchInput: presetSearchInput, body: presetListBody } = createOverlayWithSearch("📋 Prompt Presets");
     const { modal: presetNameInput, aiStatus, field: inputField, tagsContainer, selectedTags, okBtn: inputOk, cancelBtn: inputCancel } = createInputModal();
     const { modal: deleteConfirmOverlay, textDiv: deleteText, okBtn: deleteOk, cancelBtn: deleteCancel } = createDeleteModal();
@@ -842,6 +864,8 @@ function createPromptManagerUI() {
             customTextarea,
             statusBar,
             settingsBtn,
+            toggleSwitch,
+            toggleKnob,
             // 返回模态框元素供外部管理
             presetListOverlay,
             presetNameInput,
