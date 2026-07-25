@@ -91,7 +91,7 @@
 }
 
 .rs-close-btn {
-    background: linear-gradient(135deg, #1a2a2a 0%, #2a3a3a 100%);
+    background: #2a3a3a;
     color: #ccc;
     border: 1px solid #444;
     padding: 6px 20px;
@@ -102,7 +102,7 @@
 }
 
 .rs-close-btn:hover {
-    background: linear-gradient(135deg, #2a3a3a 0%, #3a4a4a 100%);
+    background: #3a4a4a;
     color: #fff;
     border-color: #555;
     transform: translateY(-1px);
@@ -120,7 +120,7 @@
 }
 
 .rs-close-btn.top-right:hover {
-    background: linear-gradient(135deg, #2a3a3a 0%, #3a4a4a 100%);
+    background: #3a4a4a;
     color: #fff;
     transform: scale(1.05);
 }
@@ -256,14 +256,14 @@
 }
 
 .rs-input-ok-btn {
-    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    background: #10b981;
     color: #fff;
-    box-shadow: 0 2px 6px rgba(16, 185, 129, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    box-shadow: 0 2px 6px rgba(16, 185, 129, 0.3);
 }
 
 .rs-input-ok-btn:hover {
-    background: linear-gradient(135deg, #34d399 0%, #10b981 100%);
-    box-shadow: 0 2px 8px rgba(16, 185, 129, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+    background: #34d399;
+    box-shadow: 0 2px 8px rgba(16, 185, 129, 0.5);
     transform: translateY(-1px);
 }
 
@@ -273,14 +273,14 @@
 }
 
 .rs-input-cancel-btn {
-    background: linear-gradient(135deg, #4b5563 0%, #374151 100%);
+    background: #4b5563;
     color: #e5e5e5;
-    box-shadow: 0 2px 6px rgba(75, 85, 99, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    box-shadow: 0 2px 6px rgba(75, 85, 99, 0.3);
 }
 
 .rs-input-cancel-btn:hover {
-    background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
-    box-shadow: 0 2px 8px rgba(75, 85, 99, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    background: #6b7280;
+    box-shadow: 0 2px 8px rgba(75, 85, 99, 0.5);
     transform: translateY(-1px);
 }
 
@@ -324,25 +324,25 @@
 }
 
 .rs-delete-ok-btn {
-    background: linear-gradient(135deg, #5090cc 0%, #3a70b0 100%);
+    background: #5090cc;
     color: #fff;
     border: none;
     box-shadow: 0 2px 8px rgba(80, 144, 204, 0.4);
 }
 
 .rs-delete-ok-btn:hover {
-    background: linear-gradient(135deg, #60a0dc 0%, #4a80c0 100%);
+    background: #60a0dc;
     box-shadow: 0 4px 12px rgba(80, 144, 204, 0.5);
 }
 
 .rs-delete-cancel-btn {
-    background: linear-gradient(135deg, #1a2a2a 0%, #2a3a3a 100%);
+    background: #2a3a3a;
     color: #ccc;
     border: 1px solid #444;
 }
 
 .rs-delete-cancel-btn:hover {
-    background: linear-gradient(135deg, #2a3a3a 0%, #3a4a4a 100%);
+    background: #3a4a4a;
     color: #fff;
     border-color: #555;
 }
@@ -365,15 +365,15 @@
 }
 
 .rs-btn {
-    background: linear-gradient(135deg, #1a3a5a 0%, #2a4a6a 100%);
+    background: #1a3a5a;
     color: #aadaff;
     box-shadow: 0 0 0 1px rgba(80, 144, 204, 0.3), 0 2px 8px rgba(26, 58, 90, 0.3);
 }
 
 .rs-btn:hover {
-    background: linear-gradient(135deg, #2a4a6a 0%, #3a5a7a 100%);
+    background: #2a4a6a;
     color: #fff;
-    box-shadow: 0 4px 12px rgba(26, 58, 90, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    box-shadow: 0 4px 12px rgba(26, 58, 90, 0.4);
     transform: translateY(-1px);
 }
 
@@ -383,7 +383,7 @@
 }
 
 .rs-btn:disabled, .rs-btn-disabled {
-    background: linear-gradient(135deg, #1a2a3a 0%, #2a3a4a 100%) !important;
+    background: #2a3a4a !important;
     color: #666 !important;
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2) !important;
     cursor: not-allowed !important;
@@ -440,7 +440,7 @@
 .rs-generate-btn {
     padding: 2px 6px;
     font-size: 9px;
-    background: linear-gradient(135deg, #2a4a6a 0%, #1a3a5a 100%);
+    background: #1a3a5a;
     color: #60a5fa;
     border: 1px solid #3a6a9a;
     cursor: pointer;
@@ -452,7 +452,7 @@
 }
 
 .rs-generate-btn:hover {
-    background: linear-gradient(135deg, #3a5a7a 0%, #2a4a6a 100%);
+    background: #2a4a6a;
     color: #fff;
 }
 
@@ -468,7 +468,7 @@
 .rs-random-btn {
     padding: 2px 6px;
     font-size: 14px;
-    background: linear-gradient(135deg, #5a2a6a 0%, #4a1a5a 100%);
+    background: #4a1a5a;
     color: #d8a0ff;
     border: 1px solid #7a4a9a;
     border-radius: 4px 0 0 0;
@@ -480,7 +480,7 @@
 }
 
 .rs-random-btn:hover {
-    background: linear-gradient(135deg, #6a3a7a 0%, #5a2a6a 100%);
+    background: #5a2a6a;
     color: #fff;
 }
 
@@ -571,18 +571,18 @@
 }
 
 .rs-tag-btn.rs-tag-selected {
-    background: linear-gradient(135deg, #5090cc 0%, #3a70b0 100%);
+    background: #5090cc;
     color: #fff !important;
     border-color: #5090cc;
-    box-shadow: 0 0 4px rgba(80, 144, 204, 0.3), inset 0 0 3px rgba(255, 255, 255, 0.15);
+    box-shadow: 0 0 4px rgba(80, 144, 204, 0.3);
     transform: scale(1.05);
     font-weight: 600;
     animation: tag-pulse 0.3s ease;
 }
 
 .rs-tag-btn.rs-tag-selected:hover {
-    background: linear-gradient(135deg, #60a0dc 0%, #4a80c0 100%);
-    box-shadow: 0 0 6px rgba(80, 144, 204, 0.4), inset 0 0 3px rgba(255, 255, 255, 0.2);
+    background: #60a0dc;
+    box-shadow: 0 0 6px rgba(80, 144, 204, 0.4);
     transform: scale(1.08);
 }
 
