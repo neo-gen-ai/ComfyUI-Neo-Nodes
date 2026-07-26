@@ -350,15 +350,38 @@
 /* Generate / Random buttons */
 .rs-generate-btn {
     padding: 2px 6px;
-    font-size: 9px;
-    background: #1a3a5a;
+    font-size: 12px;
+    background: linear-gradient(135deg, #2a4a6a 0%, #1a3a5a 100%);
     color: #60a5fa;
     border: 1px solid #3a6a9a;
+    border-radius: 0 4px 4px 0;
     cursor: pointer;
     white-space: nowrap;
-    margin-left: auto;
     flex-shrink: 0;
     height: 22px;
+}
+
+/* Settings button in quick input wrapper */
+.rs-quick-input-wrapper .rs-settings-btn {
+    background: transparent !important;
+    border: none !important;
+    color: #999 !important;
+    font-size: 14px !important;
+    cursor: pointer !important;
+    padding: 2px 6px !important;
+    border-radius: 3px !important;
+    transition: all 0.2s ease !important;
+    pointer-events: auto !important;
+    flex-shrink: 0 !important;
+    height: 22px !important;
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+}
+
+.rs-quick-input-wrapper .rs-settings-btn:hover {
+    color: #fff !important;
+    background: rgba(80, 144, 204, 0.3) !important;
 }
 
 .rs-generate-btn:hover { background: #2a4a6a; color: #fff; }
@@ -398,9 +421,19 @@
     padding: 0;
     margin: 0;
     box-sizing: border-box;
-    overflow: visible;
+    overflow: hidden !important;
     position: relative;
     z-index: 1;
+}
+
+/* Ensure custom textarea doesn't overlap buttons */
+.rs-root > .comfy-multiline-input {
+    flex: 1 !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: auto !important;
+    z-index: 1 !important;
+    pointer-events: auto !important;
 }
 
 .rs-status-bar {
@@ -426,6 +459,20 @@
     padding: 3px 4px;
     box-sizing: border-box;
     margin-top: 4px;
+    position: relative;
+    z-index: 10;
+}
+
+.rs-btn-row {
+    position: relative;
+    z-index: 11;
+}
+
+/* Ensure buttons are always clickable */
+.rs-btn-row .rs-btn {
+    pointer-events: auto !important;
+    position: relative;
+    z-index: 12;
 }
 
 .rs-btn-row, .rs-action-row, .rs-row {
@@ -987,4 +1034,24 @@
 .rs-root.rs-theme-external .rs-settings-btn:hover {
     color: #fff !important;
     background: rgba(96, 165, 250, 0.2) !important;
+}
+
+/* NeoPromptSimple settings button - now unified with generate button, no special CSS needed */
+
+/* Fix for NeoPromptSimple: hide forceInput widget DOM elements that may block clicks */
+.rs-root + input,
+.rs-root + textarea,
+.rs-root ~ .litegraph .comfy-multiline-input,
+.rs-root + .comfy-widget-input {
+    display: none !important;
+    pointer-events: none !important;
+    visibility: hidden !important;
+}
+
+/* Also target any ComfyUI widget elements that might be siblings of rs-root */
+.rs-root ~ input[type="text"],
+.rs-root ~ textarea {
+    display: none !important;
+    pointer-events: none !important;
+    visibility: hidden !important;
 }

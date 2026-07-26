@@ -253,7 +253,7 @@ function createStatusBars() {
     
     const settingsBtn = mkEl("button", "rs-settings-btn");
     settingsBtn.textContent = "⚙️";
-    settingsBtn.style.cssText = "background:transparent;border:none;color:#999;font-size:14px;cursor:pointer;padding:2px 6px;border-radius:3px;transition:all 0.2s ease;position:absolute;right:4px;top:50%;transform:translateY(-50%);z-index:10;pointer-events:auto;";
+    settingsBtn.style.cssText = "background:transparent;border:none;color:#999;font-size:14px;cursor:pointer;padding:2px 6px;border-radius:3px;transition:all 0.2s ease;pointer-events:auto;";
     settingsBtn.setAttribute("data-rs-tooltip", "Model settings");
     // Note: title attribute removed to prevent ComfyUI tooltip popup
     settingsBtn.addEventListener("mouseenter", () => {
@@ -267,7 +267,6 @@ function createStatusBars() {
     
     statusBar.appendChild(toggleWrapper);
     statusBar.appendChild(statusText);
-    statusBar.appendChild(settingsBtn);
 
     // 简洁输入框 - 用于输入简洁文字描述生成提示词
     const quickInputWrapper = mkEl("div", "rs-quick-input-wrapper");
@@ -288,6 +287,7 @@ function createStatusBars() {
     quickInputWrapper.appendChild(randomBtn);
     quickInputWrapper.appendChild(quickInput);
     quickInputWrapper.appendChild(generateBtn);
+    quickInputWrapper.appendChild(settingsBtn);
 
     const customTextarea = document.createElement("textarea");
     customTextarea.className = "comfy-multiline-input";
@@ -566,9 +566,15 @@ function createPromptManagerUI() {
             }
         }
 
-        // 绑定事件
-        saveBtn.addEventListener("click", handleSaveClick);
-        selectBtn.addEventListener("click", loadPromptList);
+        // 绑定事件 - 使用 capture 阶段确保优先处理
+        saveBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            handleSaveClick();
+        }, true);
+        selectBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            loadPromptList();
+        }, true);
 
         inputOk.addEventListener("click", performSave);
         inputCancel.addEventListener("click", () => {
@@ -866,6 +872,9 @@ function createPromptManagerUI() {
             settingsBtn,
             toggleSwitch,
             toggleKnob,
+            // 按钮行中的操作按钮（供 createPopupCloser 使用）
+            saveBtn,
+            selectBtn,
             // 返回模态框元素供外部管理
             presetListOverlay,
             presetNameInput,
@@ -886,5 +895,6 @@ function createPromptManagerUI() {
 
 export {
     mkEl,
-    createPromptManagerUI
+    createPromptManagerUI,
+    createSettingsModal
 };

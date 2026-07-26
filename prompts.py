@@ -345,12 +345,62 @@ async def rs_prompts_download_model(request):
 
 
 # ==========================================
+# NeoPromptGenerator Node Class
+# A simple prompt generator node with settings button only
+# ==========================================
+
+class NeoPromptGenerator:
+    """
+    A simple prompt generator node that outputs text only.
+    - No clip input required
+    - No switch (external/internal input toggle)
+    - Output: STRING (the prompt text)
+    - Has a settings button to select LLM model
+    """
+    
+    _CACHE_MAX_SIZE = 50
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "prompt": ("STRING", {"multiline": True, "default": "",  "hidden": True}),
+                "instance_uid": ("STRING", {"default": "", "hidden": True}),
+            },
+            "hidden": {
+                "unique_id": "UNIQUE_ID",
+                "prompt_ui": ("STRING", {"default": ""}),
+            }
+        }
+
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("PROMPT",)
+    FUNCTION = "get_prompt"
+    CATEGORY = "Neo-Nodes"
+    OUTPUT_NODE = True
+    DESCRIPTION = "Simple prompt generator node with settings button. No clip encoder binding."
+
+    def get_prompt(self, prompt="", instance_uid=""):
+        """Returns the prompt text as output."""
+        return {
+            "ui": {"text": [prompt]},
+            "result": (prompt,)
+        }
+
+    @classmethod
+    def IS_CHANGED(cls, **kwargs):
+        return float("nan")
+
+
+# ==========================================
 # Node Class Mappings
 # ==========================================
 NODE_CLASS_MAPPINGS = {
-    "NeoPrompts": NeoPrompts,
+    "NeoPromptEncoder": NeoPrompts,
+    "NeoPromptGenerator": NeoPromptGenerator,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "NeoPrompts": "Neo Prompts",
+    "NeoPromptEncoder": "Neo Prompt Encoder",
+    "NeoPromptGenerator": "Neo Prompt Generator",
 }

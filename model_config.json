@@ -1,5 +1,5 @@
 {
-  "current_model": "Qwen3.5-0.8B",
+  "current_model": "Qwen3.5-2B",
   "models": {
     "Qwen3.5-0.8B": {
       "ms_repo_id": "unsloth/Qwen3.5-0.8B-GGUF",

@@ -508,6 +508,49 @@ async function setCurrentModel(modelKey) {
 }
 
 // ==========================================
+// 提示词服务包装器 - 为节点行为模块提供统一的 API 调用接口
+// ==========================================
+
+/**
+ * 创建提示词服务包装器
+ * 将原有的 API 函数包装成便于测试和使用的接口
+ */
+function createPromptService() {
+    return {
+        /**
+         * 增强提示词
+         */
+        async enhance(text) {
+            return await enhancePrompt(text);
+        },
+        
+        /**
+         * 翻译提示词
+         */
+        async translate(text) {
+            return await translatePrompt(text);
+        },
+        
+        /**
+         * 从描述生成提示词
+         */
+        async generate(text) {
+            return await generatePromptFromText(text);
+        },
+        
+        /**
+         * 随机生成提示词
+         */
+        async random() {
+            return await randomPrompt();
+        }
+    };
+}
+
+// 创建单例实例
+const promptService = createPromptService();
+
+// ==========================================
 // 导出
 // ==========================================
 
@@ -530,5 +573,8 @@ export {
     generatePromptFromText,
     randomPrompt,
     getAvailableModels,
-    setCurrentModel
+    setCurrentModel,
+    createPromptService
 };
+
+export default promptService;
