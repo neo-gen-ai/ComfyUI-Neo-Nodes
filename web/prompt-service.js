@@ -665,7 +665,11 @@ export default promptService;
 // 暴露到全局 window 对象 (供模态框使用)
 // ==========================================
 if (typeof window !== 'undefined') {
-    window.getRemoteLLMConfig = getRemoteLLMConfig;
-    window.saveRemoteLLMConfig = saveRemoteLLMConfig;
-    window.getLLMMode = getLLMMode;
+    // Namespace to avoid conflicts with other extensions
+    if (!window.NeoNodes) {
+        window.NeoNodes = {};
+    }
+    window.NeoNodes.getRemoteLLMConfig = getRemoteLLMConfig;
+    window.NeoNodes.saveRemoteLLMConfig = saveRemoteLLMConfig;
+    window.NeoNodes.getLLMMode = getLLMMode;
 }

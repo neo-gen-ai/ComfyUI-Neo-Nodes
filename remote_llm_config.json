@@ -1,10 +1,10 @@
 {
-    "enabled": false,
-    "provider": "openai",
-    "api_key": "",
-    "base_url": "",
-    "model": "gpt-4o-mini",
-    "max_tokens": 500,
-    "temperature": 0.0,
-    "timeout": 60
+  "enabled": true,
+  "provider": "lmstudio",
+  "api_key": "",
+  "base_url": "http://localhost:1234",
+  "model": "qwen3.6-35b-a3b-claude-4.7",
+  "max_tokens": 500,
+  "temperature": 0.0,
+  "timeout": 60
 }

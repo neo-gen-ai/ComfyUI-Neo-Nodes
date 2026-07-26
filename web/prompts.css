@@ -351,7 +351,7 @@
 .rs-generate-btn {
     padding: 2px 6px;
     font-size: 12px;
-    background: linear-gradient(135deg, #2a4a6a 0%, #1a3a5a 100%);
+    background: #1a3a5a;
     color: #60a5fa;
     border: 1px solid #3a6a9a;
     border-radius: 0 4px 4px 0;
@@ -449,6 +449,9 @@
     justify-content: center;
     gap: 6px;
     line-height: 1.2;
+    overflow: visible !important;
+    position: relative;
+    z-index: 5;
 }
 
 .rs-buttons-wrapper {
@@ -948,16 +951,19 @@
     display: flex;
     align-items: center;
     gap: 4px;
+    z-index: 10;
 }
 
 .rs-toggle-switch {
     width: 28px;
     height: 16px;
-    background: #3a3a3a;
-    border-radius: 8px;
-    position: relative;
-    cursor: pointer;
-    border: 1px solid #555;
+    background: #3a3a3a !important;
+    border-radius: 8px !important;
+    position: relative !important;
+    cursor: pointer !important;
+    border: 1px solid #555 !important;
+    display: block !important;
+    visibility: visible !important;
 }
 
 .rs-toggle-switch:hover { border-color: #666; }
@@ -965,12 +971,14 @@
 .rs-toggle-knob {
     width: 12px;
     height: 12px;
-    background: #999;
-    border-radius: 50%;
-    position: absolute;
+    background: #999 !important;
+    border-radius: 50% !important;
+    position: absolute !important;
     top: 1px;
     left: 1px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3) !important;
+    display: block !important;
+    visibility: visible !important;
 }
 
 .rs-toggle-switch:hover .rs-toggle-knob { background: #bbb; }
@@ -1079,6 +1087,22 @@
     visibility: hidden !important;
 }
 
+/* Fix: don't hide the remote LLM enabled checkbox */
+.rs-root ~ input.rs-remote-enabled-checkbox {
+    display: block !important;
+    pointer-events: auto !important;
+    visibility: visible !important;
+}
+
+/* Ensure the toggle switch is always visible in status bar */
+.rs-status-bar .rs-toggle-switch,
+.rs-status-bar .rs-toggle-knob,
+.rs-status-bar .rs-toggle-wrapper {
+    display: block !important;
+    visibility: visible !important;
+    pointer-events: auto !important;
+}
+
 /* ==========================================
    Remote LLM Config Styles
    ========================================== */
@@ -1118,17 +1142,22 @@
     display: none;
 }
 
+/* First tab content (local) is visible by default */
+.rs-tab-content-local {
+    display: block;
+}
+
 /* Remote form styles */
 .rs-remote-form {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 12px;
 }
 
 .rs-config-row {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 6px;
 }
 
 .rs-params-row {
@@ -1180,11 +1209,40 @@
     font-weight: 500;
 }
 
-/* Help text */
-.rs-help-text {
-    color: #888;
-    font-size: 11px;
-    margin: 2px 0 0 0;
+/* Remote enabled checkbox - toggle switch */
+.rs-remote-enabled-checkbox {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 40px;
+    height: 20px;
+    background: #3a3a3a;
+    border-radius: 10px;
+    position: relative;
+    cursor: pointer;
+    border: 1px solid #555;
+    transition: background 0.2s;
+    flex-shrink: 0;
+}
+
+.rs-remote-enabled-checkbox:checked {
+    background: #5090cc;
+}
+
+.rs-remote-enabled-checkbox::before {
+    content: "";
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    background: #999;
+    border-radius: 50%;
+    top: 1px;
+    left: 1px;
+    transition: transform 0.2s;
+}
+
+.rs-remote-enabled-checkbox:checked::before {
+    transform: translateX(20px);
+    background: #fff;
 }
 
 /* Provider info box */
@@ -1200,17 +1258,23 @@
 /* Remote save button */
 .rs-remote-save-btn {
     padding: 6px 12px;
-    background: linear-gradient(135deg, #2a4a6a 0%, #1a3a5a 100%);
+    background: #1a3a5a;
     color: #60a5fa;
     border: 1px solid #3a6a9a;
     border-radius: 4px;
     cursor: pointer;
     font-size: 12px;
     transition: all 0.2s;
+    display: block !important;
+    visibility: visible !important;
+    width: 100% !important;
+    text-align: center;
+    font-weight: 500;
+    pointer-events: auto !important;
 }
 
 .rs-remote-save-btn:hover {
-    background: linear-gradient(135deg, #3a5a7a 0%, #2a4a6a 100%);
+    background: #3a5a7a;
     color: #fff;
 }
 
@@ -1240,4 +1304,75 @@
     border-radius: 50%;
     cursor: pointer;
     border: none;
+}
+
+/* ==========================================
+   Utility classes for inline style replacement
+   ========================================== */
+
+/* Loading indicator */
+.rs-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    color: #999;
+    font-size: 12px;
+}
+
+/* Preset list row */
+.rs-preset-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 10px;
+    border-bottom: 1px solid #333;
+}
+
+/* Preset item left section */
+.rs-preset-left {
+    display: flex;
+    align-items: center;
+    flex: 1;
+}
+
+/* Delete button */
+.rs-delete-icon {
+    cursor: pointer;
+    margin-left: 8px;
+    font-size: 16px;
+    opacity: 0.7;
+    background: transparent;
+    color: #f87171;
+    border: none;
+    padding: 2px 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+}
+
+/* Settings modal buttons row */
+.rs-modal-btns {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+/* Remote button row in settings modal */
+.rs-remote-btn-row {
+    display: flex !important;
+    justify-content: flex-end !important;
+    gap: 8px !important;
+    margin-top: 8px !important;
+    visibility: visible !important;
+    width: 100% !important;
+}
+
+/* Remote form container */
+.rs-remote-form {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
 }

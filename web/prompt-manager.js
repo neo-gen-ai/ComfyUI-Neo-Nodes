@@ -58,7 +58,6 @@ function createOverlayWithSearch(title) {
     const closeBtn = mkEl("button", "rs-close-btn top-right");
     closeBtn.textContent = "✕";
     closeBtn.setAttribute("aria-label", "Close");
-    closeBtn.style.cssText = "position:absolute;top:8px;right:8px;padding:4px 10px;font-size:12px;background:linear-gradient(135deg,#1a2a2a 0%,#2a3a3a 100%);color:#ccc;border:1px solid #444;border-radius:4px;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:10;";
 
     closeBtn.addEventListener("click", () => {
         overlay.style.display = "none";
@@ -208,22 +207,18 @@ function createSettingsModal() {
     
     // Tab navigation
     const tabNav = mkEl("div", "rs-tabs-nav");
-    tabNav.style.cssText = "display:flex;border-bottom:1px solid #444;margin-bottom:12px;";
     
     const localTabBtn = mkEl("button", "rs-tab-btn active");
     localTabBtn.textContent = "🏠 Local Model";
-    localTabBtn.style.cssText = "flex:1;padding:8px 12px;background:transparent;border:none;color:#999;font-size:13px;cursor:pointer;border-bottom:2px solid transparent;transition:all 0.2s;";
     
     const remoteTabBtn = mkEl("button", "rs-tab-btn");
     remoteTabBtn.textContent = "🌐 Remote API";
-    remoteTabBtn.style.cssText = "flex:1;padding:8px 12px;background:transparent;border:none;color:#999;font-size:13px;cursor:pointer;border-bottom:2px solid transparent;transition:all 0.2s;";
     
     tabNav.appendChild(localTabBtn);
     tabNav.appendChild(remoteTabBtn);
     
     // Tab content containers
-    const localTabContent = mkEl("div", "rs-tab-content");
-    localTabContent.style.cssText = "display:block;";
+    const localTabContent = mkEl("div", "rs-tab-content rs-tab-content-local");
     
     const localInfoText = mkEl("div", "rs-settings-info");
     localInfoText.innerHTML = `
@@ -241,7 +236,6 @@ function createSettingsModal() {
     
     // Remote API tab content
     const remoteTabContent = mkEl("div", "rs-tab-content");
-    remoteTabContent.style.cssText = "display:none;";
     remoteTabContent.id = "rs-remote-api-content";
     
     const remoteInfoText = mkEl("div", "rs-settings-info");
@@ -252,7 +246,6 @@ function createSettingsModal() {
     
     // Remote config form
     const remoteForm = mkEl("div", "rs-remote-form");
-    remoteForm.style.cssText = "display:flex;flex-direction:column;gap:12px;";
     
     // Enable switch
     const enableRow = mkEl("div", "rs-config-row");
@@ -266,11 +259,18 @@ function createSettingsModal() {
     enableLabel.appendChild(enableText);
     enableRow.appendChild(enableLabel);
     
+    // Enable status indicator
+    const enableStatusText = mkEl("div", "rs-enable-status");
+    enableStatusText.textContent = "";
+    enableStatusText.style.display = "none";
+    enableStatusText.style.fontSize = "11px";
+    enableStatusText.style.color = "#999";
+    enableStatusText.style.marginTop = "2px";
+    
     // Provider select
     const providerRow = mkEl("div", "rs-config-row");
     const providerLabel = mkEl("label", "rs-form-label");
     providerLabel.textContent = "Provider";
-    providerLabel.style.cssText = "font-size:12px;color:#ccc;margin-bottom:4px;";
     
     const providerSelect = mkEl("select", "rs-form-input rs-remote-provider");
     providerSelect.id = "rs-remote-provider";
@@ -284,22 +284,56 @@ function createSettingsModal() {
         <option value="zhipu">智谱 (Zhipu GLM)</option>
         <option value="doubao">豆包 (Doubao)</option>
     `;
-    providerSelect.style.cssText = "width:100%;padding:6px 8px;background:#2a2a2a;border:1px solid #444;color:#ccc;font-size:12px;border-radius:4px;outline:none;";
     
     providerRow.appendChild(providerLabel);
     providerRow.appendChild(providerSelect);
+    
+    // Enable change handler - auto-save
+    enableCheckbox.addEventListener("change", async () => {
+        const config = {
+            enabled: enableCheckbox.checked,
+            provider: providerSelect.value,
+            model: modelInput.value,
+            api_key: apiKeyInput.value,
+            base_url: baseUrlInput.value,
+            max_tokens: parseInt(maxTokensInput.value) || 500,
+            timeout: parseInt(timeoutInput.value) || 60,
+            temperature: parseFloat(temperatureInput?.value) || 0.0
+        };
+        
+        const result = await window.NeoNodes?.saveRemoteLLMConfig?.(config);
+        
+        if (result && result.success) {
+            enableStatusText.textContent = enableCheckbox.checked ? "✅ Remote LLM enabled" : "⚪ Remote LLM disabled";
+            enableStatusText.style.display = "block";
+            enableStatusText.style.color = "#16a34a";
+            
+            setTimeout(() => {
+                enableStatusText.style.display = "none";
+            }, 1500);
+        } else {
+            enableStatusText.textContent = "❌ Save failed";
+            enableStatusText.style.display = "block";
+            enableStatusText.style.color = "#dc2626";
+            
+            setTimeout(() => {
+                enableStatusText.style.display = "none";
+            }, 2000);
+            
+            // Revert checkbox
+            enableCheckbox.checked = !enableCheckbox.checked;
+        }
+    });
     
     // Model input
     const modelRow = mkEl("div", "rs-config-row");
     const modelLabel = mkEl("label", "rs-form-label");
     modelLabel.textContent = "Model";
-    modelLabel.style.cssText = "font-size:12px;color:#ccc;margin-bottom:4px;";
     
     const modelInput = mkEl("input", "rs-form-input rs-remote-model");
     modelInput.type = "text";
     modelInput.id = "rs-remote-model";
     modelInput.placeholder = "e.g., gpt-4o-mini";
-    modelInput.style.cssText = "width:100%;padding:6px 8px;background:#2a2a2a;border:1px solid #444;color:#ccc;font-size:12px;border-radius:4px;outline:none;box-sizing:border-box;";
     
     modelRow.appendChild(modelLabel);
     modelRow.appendChild(modelInput);
@@ -308,13 +342,11 @@ function createSettingsModal() {
     const apiKeyRow = mkEl("div", "rs-config-row");
     const apiKeyLabel = mkEl("label", "rs-form-label");
     apiKeyLabel.textContent = "API Key";
-    apiKeyLabel.style.cssText = "font-size:12px;color:#ccc;margin-bottom:4px;";
     
     const apiKeyInput = mkEl("input", "rs-form-input rs-remote-api-key");
     apiKeyInput.type = "password";
     apiKeyInput.id = "rs-remote-api-key";
-    apiKeyInput.placeholder = "Enter your API key";
-    apiKeyInput.style.cssText = "width:100%;padding:6px 8px;background:#2a2a2a;border:1px solid #444;color:#ccc;font-size:12px;border-radius:4px;outline:none;box-sizing:border-box;";
+    apiKeyInput.placeholder = "Optional for local services";
     
     apiKeyRow.appendChild(apiKeyLabel);
     apiKeyRow.appendChild(apiKeyInput);
@@ -322,33 +354,28 @@ function createSettingsModal() {
     // Base URL input
     const baseUrlRow = mkEl("div", "rs-config-row");
     const baseUrlLabel = mkEl("label", "rs-form-label");
-    baseUrlLabel.textContent = "Base URL (Optional)";
-    baseUrlLabel.style.cssText = "font-size:12px;color:#ccc;margin-bottom:4px;";
+    baseUrlLabel.textContent = "Base URL";
     
     const baseUrlInput = mkEl("input", "rs-form-input rs-remote-base-url");
     baseUrlInput.type = "text";
     baseUrlInput.id = "rs-remote-base-url";
     baseUrlInput.placeholder = "Leave empty for default";
-    baseUrlInput.style.cssText = "width:100%;padding:6px 8px;background:#2a2a2a;border:1px solid #444;color:#ccc;font-size:12px;border-radius:4px;outline:none;box-sizing:border-box;";
     
     baseUrlRow.appendChild(baseUrlLabel);
     baseUrlRow.appendChild(baseUrlInput);
     
     // Max tokens and temperature row
     const paramsRow = mkEl("div", "rs-params-row");
-    paramsRow.style.cssText = "display:flex;gap:12px;";
     
     const maxTokensCol = mkEl("div", "rs-config-col");
     const maxTokensLabel = mkEl("label", "rs-form-label");
     maxTokensLabel.textContent = "Max Tokens";
-    maxTokensLabel.style.cssText = "font-size:12px;color:#ccc;margin-bottom:4px;display:block;";
     
     const maxTokensInput = mkEl("input", "rs-form-input rs-remote-max-tokens");
     maxTokensInput.type = "number";
     maxTokensInput.value = "500";
     maxTokensInput.min = "1";
     maxTokensInput.max = "8192";
-    maxTokensInput.style.cssText = "width:100%;padding:6px 8px;background:#2a2a2a;border:1px solid #444;color:#ccc;font-size:12px;border-radius:4px;outline:none;box-sizing:border-box;";
     
     maxTokensCol.appendChild(maxTokensLabel);
     maxTokensCol.appendChild(maxTokensInput);
@@ -356,36 +383,60 @@ function createSettingsModal() {
     const timeoutCol = mkEl("div", "rs-config-col");
     const timeoutLabel = mkEl("label", "rs-form-label");
     timeoutLabel.textContent = "Timeout (s)";
-    timeoutLabel.style.cssText = "font-size:12px;color:#ccc;margin-bottom:4px;display:block;";
     
     const timeoutInput = mkEl("input", "rs-form-input rs-remote-timeout");
     timeoutInput.type = "number";
     timeoutInput.value = "60";
     timeoutInput.min = "10";
     timeoutInput.max = "300";
-    timeoutInput.style.cssText = "width:100%;padding:6px 8px;background:#2a2a2a;border:1px solid #444;color:#ccc;font-size:12px;border-radius:4px;outline:none;box-sizing:border-box;";
     
     timeoutCol.appendChild(timeoutLabel);
     timeoutCol.appendChild(timeoutInput);
     
+    const temperatureCol = mkEl("div", "rs-config-col");
+    const temperatureLabel = mkEl("label", "rs-form-label");
+    temperatureLabel.textContent = "Temperature";
+    
+    const temperatureInput = mkEl("input", "rs-form-input rs-remote-temperature");
+    temperatureInput.type = "number";
+    temperatureInput.value = "0.0";
+    temperatureInput.step = "0.1";
+    temperatureInput.min = "0";
+    temperatureInput.max = "2";
+    
+    temperatureCol.appendChild(temperatureLabel);
+    temperatureCol.appendChild(temperatureInput);
+    
     paramsRow.appendChild(maxTokensCol);
     paramsRow.appendChild(timeoutCol);
-    
-    // Provider info box
-    const providerInfoBox = mkEl("div", "rs-info-box");
-    providerInfoBox.id = "rs-provider-info";
-    providerInfoBox.style.cssText = "padding:8px 10px;background:#1a2a3a;border:1px solid #2a4a6a;border-radius:4px;font-size:11px;color:#60a5fa;";
-    providerInfoBox.textContent = "OpenAI: GPT-4o, GPT-4o-mini, custom OpenAI-compatible models";
+    paramsRow.appendChild(temperatureCol);
     
     // Remote form buttons row
-    const remoteBtnRow = mkEl("div", "rs-remote-btn-row");
-    remoteBtnRow.style.cssText = "display:flex;justify-content:flex-end;gap:8px;margin-top:8px;";
+    const remoteBtnRow = mkEl("div", "rs-remote-btn-row rs-modal-btns");
     
     const remoteSaveBtn = mkEl("button", "rs-btn rs-remote-save-btn");
-    remoteSaveBtn.textContent = "💾 Save Configuration";
-    remoteSaveBtn.style.cssText = "padding:6px 12px;background:linear-gradient(135deg,#2a4a6a 0%,#1a3a5a 100%);color:#60a5fa;border:1px solid #3a6a9a;border-radius:4px;cursor:pointer;font-size:12px;";
+    remoteSaveBtn.textContent = "💾 Save Provider Settings";
+    remoteSaveBtn.type = "button";
+    remoteSaveBtn.style.cssText = "display:block !important; visibility:visible !important; width:100% !important; padding:6px 12px !important; background:#1a3a5a !important; color:#60a5fa !important; border:1px solid #3a6a9a !important; border-radius:4px !important; cursor:pointer !important; font-size:12px !important; font-weight:500 !important; pointer-events:auto !important;";
     
-    remoteForm.append(enableRow, providerRow, modelRow, apiKeyRow, baseUrlRow, paramsRow, providerInfoBox, remoteBtnRow);
+    // Provider save status indicator
+    const providerSaveStatusText = mkEl("div", "rs-provider-save-status");
+    providerSaveStatusText.textContent = "";
+    providerSaveStatusText.style.display = "none";
+    providerSaveStatusText.style.fontSize = "11px";
+    providerSaveStatusText.style.color = "#999";
+    providerSaveStatusText.style.marginTop = "4px";
+    
+    // 将保存按钮添加到按钮行
+    remoteBtnRow.appendChild(remoteSaveBtn);
+    
+    remoteForm.append(enableRow, enableStatusText, providerRow, modelRow, apiKeyRow, baseUrlRow, paramsRow, remoteBtnRow, providerSaveStatusText);
+    
+    // 调试：打印按钮元素
+    console.log("[Remote Save] Button element:", remoteSaveBtn);
+    console.log("[Remote Save] Button display:", remoteSaveBtn.style.display);
+    console.log("[Remote Save] Remote form:", remoteForm);
+    console.log("[Remote Save] Remote form children:", remoteForm.children.length);
     remoteTabContent.append(remoteInfoText, remoteForm);
     
     content.append(tabNav, localTabContent, remoteTabContent);
@@ -401,10 +452,6 @@ function createSettingsModal() {
     localTabBtn.addEventListener("click", () => {
         localTabBtn.classList.add("active");
         remoteTabBtn.classList.remove("active");
-        localTabBtn.style.color = "#60a5fa";
-        localTabBtn.style.borderBottomColor = "#60a5fa";
-        remoteTabBtn.style.color = "#999";
-        remoteTabBtn.style.borderBottomColor = "transparent";
         localTabContent.style.display = "block";
         remoteTabContent.style.display = "none";
     });
@@ -412,43 +459,115 @@ function createSettingsModal() {
     remoteTabBtn.addEventListener("click", () => {
         remoteTabBtn.classList.add("active");
         localTabBtn.classList.remove("active");
-        remoteTabBtn.style.color = "#60a5fa";
-        remoteTabBtn.style.borderBottomColor = "#60a5fa";
-        localTabBtn.style.color = "#999";
-        localTabBtn.style.borderBottomColor = "transparent";
         localTabContent.style.display = "none";
         remoteTabContent.style.display = "block";
     });
     
+    // Provider save handler
+    remoteSaveBtn.addEventListener("click", async () => {
+        console.log("[Remote Provider Save] Button clicked!");
+        
+        // 禁用按钮显示加载状态
+        remoteSaveBtn.disabled = true;
+        remoteSaveBtn.textContent = "⏳ Saving...";
+        remoteSaveBtn.style.opacity = "0.7";
+        
+        const config = {
+            enabled: enableCheckbox.checked,
+            provider: providerSelect.value,
+            model: modelInput.value,
+            api_key: apiKeyInput.value,
+            base_url: baseUrlInput.value,
+            max_tokens: parseInt(maxTokensInput.value) || 500,
+            timeout: parseInt(timeoutInput.value) || 60,
+            temperature: parseFloat(temperatureInput?.value) || 0.0
+        };
+        
+        console.log("[Remote Provider Save] Config to save:", JSON.stringify(config, null, 2));
+        
+        const result = await window.NeoNodes?.saveRemoteLLMConfig?.(config);
+        console.log("[Remote Provider Save] API response:", result);
+        
+        if (result && result.success) {
+            // 成功反馈：按钮绿色闪烁
+            remoteSaveBtn.textContent = "✅ Saved!";
+            remoteSaveBtn.style.background = "#16a34a";
+            remoteSaveBtn.style.color = "#fff";
+            remoteSaveBtn.style.opacity = "1";
+            
+            // 同时显示状态文本
+            providerSaveStatusText.textContent = "✅ Provider settings saved!";
+            providerSaveStatusText.style.display = "block";
+            providerSaveStatusText.style.color = "#16a34a";
+            
+            setTimeout(() => {
+                remoteSaveBtn.textContent = "💾 Save Provider Settings";
+                remoteSaveBtn.disabled = false;
+                remoteSaveBtn.style.background = "#1a3a5a";
+                remoteSaveBtn.style.color = "#60a5fa";
+                remoteSaveBtn.style.opacity = "1";
+                providerSaveStatusText.style.display = "none";
+            }, 2000);
+        } else {
+            // 失败反馈：按钮红色闪烁
+            remoteSaveBtn.textContent = "❌ Failed";
+            remoteSaveBtn.style.background = "#dc2626";
+            remoteSaveBtn.style.color = "#fff";
+            remoteSaveBtn.style.opacity = "1";
+            
+            providerSaveStatusText.textContent = "❌ Failed to save: " + (result?.error || "Unknown error");
+            providerSaveStatusText.style.display = "block";
+            providerSaveStatusText.style.color = "#dc2626";
+            
+            setTimeout(() => {
+                remoteSaveBtn.textContent = "💾 Save Provider Settings";
+                remoteSaveBtn.disabled = false;
+                remoteSaveBtn.style.background = "#1a3a5a";
+                remoteSaveBtn.style.color = "#60a5fa";
+                remoteSaveBtn.style.opacity = "1";
+                providerSaveStatusText.style.display = "none";
+            }, 3000);
+        }
+    });
+    
     // Provider info update
     providerSelect.addEventListener("change", () => {
-        const providers = {
-            openai: "OpenAI: GPT-4o, GPT-4o-mini, custom OpenAI-compatible models",
-            anthropic: "Anthropic: Claude Opus, Sonnet, Haiku",
-            ollama: "Ollama: Local LLM server (default: http://localhost:11430)",
-            lmstudio: "LM Studio: Local LLM server (default: http://localhost:1234)",
-            llamacpp: "llama.cpp: HTTP server for GGUF models",
-            vllm: "vLLM: High-throughput inference service",
-            zhipu: "智谱 GLM: GLM-4 and other Zhipu models",
-            doubao: "豆包: ByteDance Doubao models"
-        };
-        const provider = providerSelect.value;
-        providerInfoBox.textContent = providers[provider] || "";
+        // Update API Key placeholder based on provider type
+        const localProviders = ["ollama", "lmstudio", "llamacpp", "vllm"];
+        if (localProviders.includes(providerSelect.value)) {
+            apiKeyInput.placeholder = "Optional for local services";
+        } else {
+            apiKeyInput.placeholder = "Required for cloud services";
+        }
         
         // Update default values based on provider
-        if (provider === "openai") {
+        if (providerSelect.value === "openai") {
             modelInput.placeholder = "e.g., gpt-4o-mini";
             if (!modelInput.value) modelInput.value = "gpt-4o-mini";
-        } else if (provider === "anthropic") {
+        } else if (providerSelect.value === "anthropic") {
             modelInput.placeholder = "e.g., claude-sonnet-4-20250514";
             if (!modelInput.value) modelInput.value = "claude-sonnet-4-20250514";
-        } else if (provider === "ollama") {
+        } else if (providerSelect.value === "ollama") {
             modelInput.placeholder = "e.g., llama3";
             if (!modelInput.value) modelInput.value = "llama3";
-        } else if (provider === "zhipu") {
-            baseUrlInput.value = "https://open.bigmodel.cn/api/proxy";
-        } else if (provider === "ollama" || provider === "llamacpp" || provider === "vllm") {
+            baseUrlInput.value = "http://localhost:11430";
+        } else if (providerSelect.value === "lmstudio") {
+            modelInput.placeholder = "e.g., qwen2.5";
+            if (!modelInput.value) modelInput.value = "qwen2.5";
+            baseUrlInput.value = "http://localhost:1234";
+        } else if (providerSelect.value === "llamacpp") {
             modelInput.placeholder = "Enter model name";
+            baseUrlInput.value = "http://localhost:8080";
+        } else if (providerSelect.value === "vllm") {
+            modelInput.placeholder = "Enter model name";
+            baseUrlInput.value = "http://localhost:8000";
+        } else if (providerSelect.value === "zhipu") {
+            modelInput.placeholder = "e.g., glm-4";
+            if (!modelInput.value) modelInput.value = "glm-4";
+            baseUrlInput.value = "https://open.bigmodel.cn/api/proxy";
+        } else if (providerSelect.value === "doubao") {
+            modelInput.placeholder = "e.g., doubao-lite-128k";
+            if (!modelInput.value) modelInput.value = "doubao-lite-128k";
         }
     });
     
@@ -465,28 +584,67 @@ function createSettingsModal() {
         baseUrlInput,
         maxTokensInput,
         timeoutInput,
+        temperatureInput,
         remoteSaveBtn,
-        providerInfoBox,
+        enableStatusText,
+        providerSaveStatusText,
         // Tab buttons for external access
         localTabBtn,
-        remoteTabBtn
+        remoteTabBtn,
+        // Tab content references
+        localTabContent,
+        remoteTabContent
     };
+}
+
+/**
+ * 加载远程 LLM 配置
+ * @param {Object} settingsModal - 设置模态框元素
+ * @returns {Promise<void>}
+ */
+async function loadRemoteLLMConfig(settingsModal) {
+    const config = await window.NeoNodes?.getRemoteLLMConfig?.();
+    if (config) {
+        settingsModal.enableCheckbox.checked = config.enabled || false;
+        settingsModal.providerSelect.value = config.provider || 'openai';
+        settingsModal.apiKeyInput.value = config.api_key === '***' ? '' : (config.api_key || '');
+        settingsModal.maxTokensInput.value = config.max_tokens || 500;
+        settingsModal.timeoutInput.value = config.timeout || 60;
+        if (settingsModal.temperatureInput) {
+            settingsModal.temperatureInput.value = config.temperature || 0.0;
+        }
+        
+        // 只有当有保存的值时才设置，否则让 updateProviderInfo 自动填充默认值
+        if (config.model) {
+            settingsModal.modelInput.value = config.model;
+        }
+        if (config.base_url) {
+            settingsModal.baseUrlInput.value = config.base_url;
+        }
+        
+        // Trigger provider info update to auto-fill defaults
+        settingsModal.providerSelect.dispatchEvent(new Event('change'));
+        
+        // 如果启用了远程 LLM，切换到 remote tab
+        if (config.enabled) {
+            settingsModal.localTabBtn.classList.remove("active");
+            settingsModal.remoteTabBtn.classList.add("active");
+            settingsModal.localTabContent.style.display = "none";
+            settingsModal.remoteTabContent.style.display = "block";
+        }
+    }
 }
 
 function createStatusBars() {
     const statusBar = mkEl("div", "rs-status-bar");
-    statusBar.style.cssText = "width:100%;padding:4px 8px;font-size:11px;font-weight:bold;text-align:center;border-radius:4px 4px 0 0;margin-bottom:4px;display:flex;align-items:center;justify-content:center;gap:6px;line-height:1.2;position:relative;pointer-events:none;";
     
     // Toggle switch for disable_text_input (left side)
     const toggleWrapper = mkEl("div", "rs-toggle-wrapper");
-    toggleWrapper.style.cssText = "position:absolute;left:4px;top:50%;transform:translateY(-50%);display:flex;align-items:center;gap:4px;pointer-events:auto;";
     
     const toggleSwitch = mkEl("div", "rs-toggle-switch");
-    toggleSwitch.style.cssText = "width:28px;height:16px;background:#3a3a3a;border-radius:8px;position:relative;cursor:pointer;transition:background 0.2s ease;border:1px solid #555;pointer-events:auto;";
     toggleSwitch.setAttribute("data-rs-tooltip", "Toggle external text input");
     
     const toggleKnob = mkEl("div", "rs-toggle-knob");
-    toggleKnob.style.cssText = "width:12px;height:12px;background:#999;border-radius:50%;position:absolute;top:1px;left:1px;transition:transform 0.2s ease;";
     
     toggleSwitch.appendChild(toggleKnob);
     toggleWrapper.appendChild(toggleSwitch);
@@ -496,7 +654,6 @@ function createStatusBars() {
     
     const settingsBtn = mkEl("button", "rs-settings-btn");
     settingsBtn.textContent = "⚙️";
-    settingsBtn.style.cssText = "background:transparent;border:none;color:#999;font-size:14px;cursor:pointer;padding:2px 6px;border-radius:3px;transition:all 0.2s ease;pointer-events:auto;";
     settingsBtn.setAttribute("data-rs-tooltip", "Model settings");
     // Note: title attribute removed to prevent ComfyUI tooltip popup
     settingsBtn.addEventListener("mouseenter", () => {
@@ -516,7 +673,6 @@ function createStatusBars() {
 
     const randomBtn = mkEl("button", "rs-random-btn");
     randomBtn.textContent = "🎲";
-    randomBtn.style.cssText = "padding:2px 6px;font-size:14px;background:#1a3a5a;color:#60a5fa;border:1px solid #3a6a9a;border-radius:4px 0 0 0;cursor:pointer;white-space:nowrap;height:22px;flex-shrink:0;";
     randomBtn.setAttribute("data-rs-tooltip", "Random prompt");
 
     const quickInput = mkEl("input", "rs-quick-input");
@@ -524,7 +680,6 @@ function createStatusBars() {
 
     const generateBtn = mkEl("button", "rs-generate-btn");
     generateBtn.textContent = "🚀";
-    generateBtn.style.cssText = "padding:2px 6px;font-size:12px;background:linear-gradient(135deg,#2a4a6a 0%,#1a3a5a 100%);color:#60a5fa;border:1px solid #3a6a9a;border-radius:0 4px 4px 0;cursor:pointer;white-space:nowrap;height:22px;flex-shrink:0;";
     generateBtn.setAttribute("data-rs-tooltip", "Generate from description");
 
     quickInputWrapper.appendChild(randomBtn);
@@ -534,7 +689,6 @@ function createStatusBars() {
 
     const customTextarea = document.createElement("textarea");
     customTextarea.className = "comfy-multiline-input";
-    customTextarea.style.cssText = "flex:1;width:100%;min-height:0;resize:none;outline:none;box-sizing:border-box;";
     customTextarea.placeholder = "Enter your prompt here...";
 
     const buttonsWrapper = mkEl("div", "rs-buttons-wrapper");
@@ -719,8 +873,7 @@ function createPromptManagerUI() {
             presetListBody.innerHTML = "";
             presetListOverlay.style.display = "flex";
 
-            const loadingDiv = mkEl("div", "");
-            loadingDiv.style.cssText = "display:flex;align-items:center;justify-content:center;padding:20px;color:#999;font-size:12px;";
+            const loadingDiv = mkEl("div", "rs-loading");
             loadingDiv.textContent = "Loading...";
             presetListBody.appendChild(loadingDiv);
 
@@ -744,11 +897,9 @@ function createPromptManagerUI() {
 
                     const row = document.createElement("div");
                     row.className = "rs-preset-item";
-                    row.style.cssText = "display:flex;align-items:center;justify-content:space-between;padding:6px 10px;border-bottom:1px solid #333;";
                     row.dataset.name = name;
 
-                    const leftDiv = mkEl("div", "");
-                    leftDiv.style.cssText = "display:flex;align-items:center;flex:1;";
+                    const leftDiv = mkEl("div", "rs-preset-left");
 
                     const contentSpan = mkEl("span", "rs-preset-content");
                     const displayText = tags && tags.length > 0 ? `${name} [${tags.join(", ")}]` : name;
@@ -790,9 +941,8 @@ function createPromptManagerUI() {
                         if (graph) graph.setDirtyCanvas(true, true);
                     };
 
-                    const deleteBtn = mkEl("span", "rs-preset-delete-btn");
+                    const deleteBtn = mkEl("span", "rs-delete-icon");
                     deleteBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>';
-                    deleteBtn.style.cssText = "cursor:pointer;margin-left:8px;font-size:16px;opacity:0.7;background:transparent;color:#f87171;border:none;padding:2px 6px;display:inline-flex;align-items:center;justify-content:center;gap:4px;";
                     deleteBtn.setAttribute("aria-label", "Delete preset");
                     deleteBtn.onclick = async (e) => {
                         e.stopPropagation();
@@ -1127,6 +1277,7 @@ function createPromptManagerUI() {
             settingsModal.modal.style.display = "flex";
             
             loadModelsIntoSettings();
+            loadRemoteLLMConfig(settingsModal);
         });
         
         // 绑定设置模态框关闭按钮点击事件
@@ -1174,8 +1325,10 @@ function createPromptManagerUI() {
     };
 }
 
+// Export loadRemoteLLMConfig for use in prompts.js
 export {
     mkEl,
     createPromptManagerUI,
-    createSettingsModal
+    createSettingsModal,
+    loadRemoteLLMConfig
 };

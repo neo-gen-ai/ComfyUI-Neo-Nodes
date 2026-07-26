@@ -5,7 +5,7 @@
 
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
-import { mkEl, createPromptManagerUI, createSettingsModal } from "./prompt-manager.js";
+import { mkEl, createPromptManagerUI, createSettingsModal, loadRemoteLLMConfig } from "./prompt-manager.js";
 import { 
     enhancePrompt, translatePrompt, generatePromptFromText, randomPrompt as randomPromptAPI, 
     checkModelAndPrompt, downloadModel, showDownloadModal, monitorDownloadProgress,
@@ -225,6 +225,7 @@ app.registerExtension({
                 e.preventDefault();
                 try {
                     await loadModelsIntoSettings();
+                    await loadRemoteLLMConfig(settingsModal);
                     settingsModal.modal.style.display = "flex";
                 } catch (err) {
                     console.error("Error opening settings modal:", err);
@@ -552,53 +553,17 @@ app.registerExtension({
             // Settings button click handler - 共享逻辑
             if (settingsBtn && settingsModal && loadModelsIntoSettings) {
                 settingsBtn.addEventListener("click", async (e) => {
+                    console.log("[NeoPromptEncoder] Settings button clicked");
                     e.stopPropagation();
                     e.preventDefault();
                     try {
                         await loadModelsIntoSettings();
+                        await loadRemoteLLMConfig(settingsModal);
                         settingsModal.modal.style.display = "flex";
                     } catch (err) {
                         console.error("Error opening settings modal:", err);
                     }
                 });
-                
-                // Remote LLM config save handler
-                if (settingsModal.remoteSaveBtn) {
-                    settingsModal.remoteSaveBtn.addEventListener("click", async () => {
-                        const config = {
-                            enabled: settingsModal.enableCheckbox.checked,
-                            provider: settingsModal.providerSelect.value,
-                            model: settingsModal.modelInput.value,
-                            api_key: settingsModal.apiKeyInput.value,
-                            base_url: settingsModal.baseUrlInput.value,
-                            max_tokens: parseInt(settingsModal.maxTokensInput.value) || 500,
-                            timeout: parseInt(settingsModal.timeoutInput.value) || 60,
-                            temperature: 0.0 // TODO: add temp input to modal later
-                        };
-                        
-                        try {
-                            const result = await window.saveRemoteLLMConfig?.(config);
-                            if (result && result.success) {
-                                settingsModal.statusText.style.display = "block";
-                                settingsModal.statusText.textContent = "✅ Remote LLM config saved!";
-                                settingsModal.statusText.className = "rs-settings-status success";
-                                setTimeout(() => {
-                                    settingsModal.modal.style.display = "none";
-                                    settingsModal.statusText.style.display = "none";
-                                }, 1000);
-                            } else {
-                                settingsModal.statusText.style.display = "block";
-                                settingsModal.statusText.textContent = "❌ Failed: " + (result?.error || "Unknown error");
-                                settingsModal.statusText.className = "rs-settings-status";
-                            }
-                        } catch (err) {
-                            console.error("Failed to save remote LLM config:", err);
-                            settingsModal.statusText.style.display = "block";
-                            settingsModal.statusText.textContent = "❌ Error: " + err.message;
-                            settingsModal.statusText.className = "rs-settings-status";
-                        }
-                    });
-                }
             }
 
             // 节点移除清理

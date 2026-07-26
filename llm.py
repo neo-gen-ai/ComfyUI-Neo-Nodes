@@ -19,7 +19,9 @@ from collections import OrderedDict
 # ==========================================
 # HuggingFace Endpoint Configuration
 # ==========================================
-os.environ["HF_ENDPOINT"] = "https://huggingface.co"
+# Allow override via environment variable, default to official HuggingFace endpoint
+hf_endpoint = os.environ.get("HF_ENDPOINT", "https://huggingface.co")
+os.environ["HF_ENDPOINT"] = hf_endpoint
 
 logger = logging.getLogger(__name__)
 
@@ -76,25 +78,38 @@ def _normalize_text(text):
 class TranslationCache:
     """翻译缓存，支持双向缓存和自动淘汰"""
     
+    # Prefixes to distinguish forward/reverse lookups
+    _KEY_TEXT = "T:"
+    _KEY_RESULT = "R:"
+    
     def __init__(self, max_size=200):
         self._store = OrderedDict()
         self.max_size = max_size
     
     def get(self, text):
         normalized = _normalize_text(text)
-        return self._store.get(normalized)
+        # Check both directions
+        result = self._store.get(f"{self._KEY_TEXT}{normalized}")
+        if result:
+            return result
+        return self._store.get(f"{self._KEY_RESULT}{normalized}")
     
     def set(self, text, result):
         normalized_text = _normalize_text(text)
         normalized_result = _normalize_text(result)
         
-        if normalized_text in self._store:
-            del self._store[normalized_text]
-        if normalized_result in self._store:
-            del self._store[normalized_result]
+        text_key = f"{self._KEY_TEXT}{normalized_text}"
+        result_key = f"{self._KEY_RESULT}{normalized_result}"
         
-        self._store[normalized_text] = normalized_result
-        self._store[normalized_result] = normalized_text
+        # Remove old entries
+        if text_key in self._store:
+            del self._store[text_key]
+        if result_key in self._store:
+            del self._store[result_key]
+        
+        # Store both directions with distinct prefixes
+        self._store[text_key] = normalized_result
+        self._store[result_key] = normalized_text
         
         while len(self._store) > self.max_size:
             self._evict_oldest()
@@ -558,7 +573,9 @@ class RemoteLLMClient:
         Returns:
             API 响应字典
         """
-        if not self.api_key:
+        # 本地服务（LM Studio、Ollama、llama.cpp、vLLM）不需要 API key
+        local_providers = (self.PROVIDER_LM_STUDIO, self.PROVIDER_OLLAMA, self.PROVIDER_LLAMACPP, self.PROVIDER_VLLM)
+        if self.provider not in local_providers and not self.api_key:
             raise ValueError("API Key is not configured")
         
         effective_max_tokens = max_tokens or self.max_tokens
@@ -626,12 +643,17 @@ class RemoteLLMClient:
         result = response.json()
         
         # 标准化响应格式为 OpenAI 格式
-        choices = result.get("choices", [])
-        if not choices:
+        # LM Studio 返回格式: {"text": "..."}
+        # OpenAI 返回格式: {"choices": [{"message": {"content": "..."}}]}
+        if "choices" in result and isinstance(result["choices"], list) and len(result["choices"]) > 0:
+            message = result["choices"][0].get("message", {})
+            content = message.get("content", "")
+        elif "text" in result:
+            # LM Studio 原始返回格式
+            content = result["text"]
+        else:
+            logger.warning(f"LM Studio returned unexpected format: {result}")
             return {"choices": []}
-        
-        message = choices[0].get("message", {})
-        content = message.get("content", "")
         
         return {
             "choices": [{
@@ -641,17 +663,19 @@ class RemoteLLMClient:
     
     def _build_url(self) -> str:
         """构建 API URL"""
-        url = f"{self.base_url}/chat/completions" if self.base_url else "https://api.openai.com/v1/chat/completions"
+        # Default endpoint for OpenAI
+        if not self.base_url:
+            return "https://api.openai.com/v1/chat/completions"
         
-        # 如果 base_url 不包含 /v1，自动添加
-        if not self.base_url and self.provider == self.PROVIDER_OPENAI:
-            url = "https://api.openai.com/v1/chat/completions"
-        elif self.base_url and not self.base_url.endswith("/v1") and "/chat/completions" not in url:
-            # 检查 URL 格式
-            if url.endswith("/"):
-                url = f"{url}v1/chat/completions"
-            else:
-                url = f"{url}/v1/chat/completions"
+        # User-provided base URL: ensure it ends with /v1/chat/completions
+        url = self.base_url.rstrip("/")
+        
+        # Append the chat completions endpoint
+        if not url.endswith("/v1"):
+            url = f"{url}/v1"
+        
+        if "/chat/completions" not in url:
+            url = f"{url}/chat/completions"
         
         return url
     
@@ -791,9 +815,11 @@ class RemoteLLMClient:
     
     def is_available(self) -> bool:
         """检查远程 API 是否可用"""
-        if not self.api_key:
-            return False
         if not self.provider:
+            return False
+        # LM Studio 和 Ollama 等本地服务不需要 API key
+        local_providers = (self.PROVIDER_LM_STUDIO, self.PROVIDER_OLLAMA, self.PROVIDER_LLAMACPP, self.PROVIDER_VLLM)
+        if self.provider not in local_providers and not self.api_key:
             return False
         return True
 
@@ -805,12 +831,15 @@ class RemoteLLMClient:
 class LLMSingleton:
     """LLM 单例模式，确保模型只加载一次（本地模式）"""
     _instance = None
-    _lock = False
+    _lock = threading.Lock()
     
     @classmethod
     def get_instance(cls):
         if cls._instance is None:
-            cls._instance = cls()
+            with cls._lock:
+                # Double-check locking pattern
+                if cls._instance is None:
+                    cls._instance = cls()
         return cls._instance
 
     def __init__(self):
@@ -1021,12 +1050,14 @@ def _run_remote_inference(system_prompt: str, user_text: str, max_tokens: int,
                 elif hasattr(img, 'read'):
                     image_bytes_list.append(img.read())
         
+        logger.info(f"Sending request to remote LLM: provider={client.provider}, model={client.model}, url={client._build_url()}")
         response = client.chat_completion(
             messages=messages,
             max_tokens=max_tokens,
             image_bytes_list=image_bytes_list
         )
         
+        logger.info(f"Remote LLM response: {response}")
         choices = response.get("choices", [])
         if not choices:
             logger.warning("Remote LLM response 'choices' is empty.")
