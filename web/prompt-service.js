@@ -4,6 +4,84 @@
  */
 
 // ==========================================
+// 远程 LLM 配置缓存
+// ==========================================
+let remoteLLMConfigCache = null;
+let remoteLLMConfigCacheTime = 0;
+const REMOTE_LLM_CONFIG_CACHE_TTL = 10000; // 10秒缓存
+
+/**
+ * 获取远程 LLM 配置
+ * @returns {Promise<Object>}
+ */
+async function getRemoteLLMConfig() {
+    const now = Date.now();
+    if (remoteLLMConfigCache && (now - remoteLLMConfigCacheTime) < REMOTE_LLM_CONFIG_CACHE_TTL) {
+        return remoteLLMConfigCache;
+    }
+    
+    try {
+        const res = await fetch("/rs_prompts/remote_llm_config");
+        const config = await res.json();
+        remoteLLMConfigCache = config;
+        remoteLLMConfigCacheTime = now;
+        return config;
+    } catch (e) {
+        console.error("Failed to get remote LLM config:", e);
+        return {
+            enabled: false,
+            provider: "openai",
+            api_key: "",
+            base_url: "",
+            model: "gpt-4o-mini",
+            max_tokens: 500,
+            temperature: 0.0,
+            timeout: 60
+        };
+    }
+}
+
+/**
+ * 保存远程 LLM 配置
+ * @param {Object} config - 配置对象
+ * @returns {Promise<Object>}
+ */
+async function saveRemoteLLMConfig(config) {
+    try {
+        const res = await fetch("/rs_prompts/remote_llm_config", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(config)
+        });
+        const result = await res.json();
+        if (result.success) {
+            // 清除缓存
+            remoteLLMConfigCache = null;
+            remoteLLMConfigCacheTime = 0;
+        }
+        return result;
+    } catch (e) {
+        console.error("Failed to save remote LLM config:", e);
+        return { success: false, error: e.message };
+    }
+}
+
+/**
+ * 获取当前 LLM 模式
+ * @returns {Promise<string>} - "local" 或 "remote"
+ */
+async function getLLMMode() {
+    try {
+        const res = await fetch("/rs_prompts/llm_mode");
+        const data = await res.json();
+        return data.mode || "local";
+    } catch (e) {
+        console.error("Failed to get LLM mode:", e);
+        return "local";
+    }
+}
+
+// ==========================================
 // 模型状态缓存
 // ==========================================
 let modelStatusCache = null;
@@ -574,7 +652,20 @@ export {
     randomPrompt,
     getAvailableModels,
     setCurrentModel,
-    createPromptService
+    createPromptService,
+    // 远程 LLM 配置相关
+    getRemoteLLMConfig,
+    saveRemoteLLMConfig,
+    getLLMMode
 };
 
 export default promptService;
+
+// ==========================================
+// 暴露到全局 window 对象 (供模态框使用)
+// ==========================================
+if (typeof window !== 'undefined') {
+    window.getRemoteLLMConfig = getRemoteLLMConfig;
+    window.saveRemoteLLMConfig = saveRemoteLLMConfig;
+    window.getLLMMode = getLLMMode;
+}

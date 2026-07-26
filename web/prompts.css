@@ -421,7 +421,7 @@
     padding: 0;
     margin: 0;
     box-sizing: border-box;
-    overflow: hidden !important;
+    overflow: visible !important;
     position: relative;
     z-index: 1;
 }
@@ -684,14 +684,37 @@
 
 /* Settings modal */
 .rs-settings-modal {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.7);
+    position: absolute;
+    background: rgba(0, 0, 0, 0.85);
     display: none;
-    justify-content: center;
-    align-items: center;
-    z-index: 10000;
-    backdrop-filter: blur(4px);
+    justify-content: flex-start;
+    align-items: flex-start;
+    z-index: 99999;
+    min-width: 300px;
+    max-width: 450px;
+    /* 默认居中显示 */
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+}
+
+/* 当通过 JS 设置为右侧定位时，移除 transform */
+.rs-settings-modal.rs-positioned-right {
+    transform: none;
+    top: 0;
+    left: 0;
+}
+
+.rs-settings-modal-wrapper {
+    display: flex;
+    flex-direction: column;
+    min-width: 320px;
+    max-width: 400px;
+    border-radius: 8px;
+    overflow: visible;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    border: 1px solid #444;
+    background: #1a1a2a;
 }
 
 .rs-settings-modal-wrapper {
@@ -708,15 +731,15 @@
 .rs-settings-header {
     background: #1a2a3a;
     color: #fff;
-    padding: 12px 16px;
-    font-size: 14px;
+    padding: 8px 12px;
+    font-size: 13px;
     font-weight: 600;
     border-bottom: 1px solid #3a4a5a;
     border-radius: 8px 8px 0 0;
     position: relative;
     display: flex;
     align-items: center;
-    min-height: 44px;
+    min-height: 32px;
 }
 
 .rs-settings-header .rs-settings-title-bar { flex: 1; }
@@ -724,25 +747,25 @@
 .rs-settings-content {
     background: #1a1a2a;
     border-radius: 0 0 8px 8px;
-    padding: 16px;
-    min-width: 320px;
-    max-width: 400px;
+    padding: 8px 10px;
+    min-width: 260px;
+    max-width: 360px;
     border: 1px solid #3a4a5a;
     border-top: none;
     display: flex;
     flex-direction: column;
 }
 
-.rs-settings-info { margin-bottom: 16px; }
+.rs-settings-info { margin-bottom: 8px; }
 
 .rs-settings-title {
     color: #fff;
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 600;
-    margin-bottom: 4px;
+    margin-bottom: 2px;
 }
 
-.rs-settings-desc { color: #999; font-size: 12px; }
+.rs-settings-desc { color: #999; font-size: 11px; }
 
 .rs-settings-model-list {
     margin-bottom: 16px;
@@ -1054,4 +1077,167 @@
     display: none !important;
     pointer-events: none !important;
     visibility: hidden !important;
+}
+
+/* ==========================================
+   Remote LLM Config Styles
+   ========================================== */
+
+/* Tab navigation */
+.rs-tabs-nav {
+    display: flex;
+    border-bottom: 1px solid #444;
+    margin-bottom: 6px;
+}
+
+.rs-tab-btn {
+    flex: 1;
+    padding: 5px 8px;
+    background: transparent;
+    border: none;
+    color: #999;
+    font-size: 12px;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s;
+    font-weight: 500;
+}
+
+.rs-tab-btn:hover {
+    color: #60a5fa;
+    background: rgba(80, 144, 204, 0.1);
+}
+
+.rs-tab-btn.active {
+    color: #60a5fa !important;
+    border-bottom-color: #60a5fa !important;
+}
+
+/* Tab content */
+.rs-tab-content {
+    display: none;
+}
+
+/* Remote form styles */
+.rs-remote-form {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.rs-config-row {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.rs-params-row {
+    display: flex;
+    gap: 12px;
+}
+
+.rs-config-col {
+    flex: 1;
+}
+
+.rs-form-label {
+    font-size: 12px;
+    color: #ccc;
+    margin-bottom: 4px;
+}
+
+.rs-form-input {
+    width: 100%;
+    padding: 6px 8px;
+    background: #2a2a2a;
+    border: 1px solid #444;
+    color: #ccc;
+    font-size: 12px;
+    border-radius: 4px;
+    outline: none;
+    box-sizing: border-box;
+}
+
+.rs-form-input:focus {
+    border-color: #5090cc;
+}
+
+.rs-form-input::placeholder {
+    color: #666;
+}
+
+/* Switch container */
+.rs-switch-container {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+}
+
+.rs-switch-label {
+    color: #ccc;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+/* Help text */
+.rs-help-text {
+    color: #888;
+    font-size: 11px;
+    margin: 2px 0 0 0;
+}
+
+/* Provider info box */
+.rs-info-box {
+    padding: 8px 10px;
+    background: #1a2a3a;
+    border: 1px solid #2a4a6a;
+    border-radius: 4px;
+    font-size: 11px;
+    color: #60a5fa;
+}
+
+/* Remote save button */
+.rs-remote-save-btn {
+    padding: 6px 12px;
+    background: linear-gradient(135deg, #2a4a6a 0%, #1a3a5a 100%);
+    color: #60a5fa;
+    border: 1px solid #3a6a9a;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.2s;
+}
+
+.rs-remote-save-btn:hover {
+    background: linear-gradient(135deg, #3a5a7a 0%, #2a4a6a 100%);
+    color: #fff;
+}
+
+/* Range input */
+.rs-form-range {
+    width: 100%;
+    height: 4px;
+    background: #2a2a2a;
+    border-radius: 2px;
+    outline: none;
+}
+
+.rs-form-range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    background: #5090cc;
+    border-radius: 50%;
+    cursor: pointer;
+}
+
+.rs-form-range::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    background: #5090cc;
+    border-radius: 50%;
+    cursor: pointer;
+    border: none;
 }

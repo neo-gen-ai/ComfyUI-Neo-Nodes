@@ -31,6 +31,11 @@ from .llm import (
     start_download,
     get_available_models,
     set_current_model,
+    get_remote_llm_config,
+    set_remote_llm_config,
+    get_current_mode,
+    LLM_MODE_LOCAL,
+    LLM_MODE_REMOTE,
 )
 
 
@@ -268,6 +273,73 @@ async def rs_prompts_set_model(request):
             return web.Response(status=400, text="Invalid model key")
     except Exception as e:
         logger.error(f"Error setting model: {e}")
+        return web.Response(status=500, text=str(e))
+
+
+# ==========================================
+# Remote LLM Configuration API Routes
+# ==========================================
+
+@server.PromptServer.instance.routes.get("/rs_prompts/remote_llm_config")
+async def rs_prompts_get_remote_llm_config(request):
+    """获取远程 LLM 配置"""
+    try:
+        config = get_remote_llm_config()
+        # 返回时隐藏 api_key
+        safe_config = config.copy()
+        safe_config["api_key"] = "***" if safe_config.get("api_key") else ""
+        return web.json_response(safe_config)
+    except Exception as e:
+        logger.error(f"Error getting remote LLM config: {e}")
+        return web.Response(status=500, text=str(e))
+
+
+@server.PromptServer.instance.routes.post("/rs_prompts/remote_llm_config")
+async def rs_prompts_set_remote_llm_config(request):
+    """设置远程 LLM 配置"""
+    try:
+        data = await request.json()
+        config = get_remote_llm_config()
+        
+        # 更新配置
+        if "enabled" in data:
+            config["enabled"] = bool(data["enabled"])
+        if "provider" in data:
+            config["provider"] = data["provider"]
+        if "api_key" in data and data["api_key"]:
+            # 只有当提供新的 api_key 时才更新
+            config["api_key"] = data["api_key"]
+        if "base_url" in data:
+            config["base_url"] = data["base_url"]
+        if "model" in data:
+            config["model"] = data["model"]
+        if "max_tokens" in data:
+            config["max_tokens"] = int(data["max_tokens"])
+        if "temperature" in data:
+            config["temperature"] = float(data["temperature"])
+        if "timeout" in data:
+            config["timeout"] = int(data["timeout"])
+        
+        set_remote_llm_config(config)
+        
+        # 返回成功，隐藏 api_key
+        return web.json_response({
+            "success": True, 
+            "config": {k: v for k, v in config.items() if k != "api_key"}
+        })
+    except Exception as e:
+        logger.error(f"Error setting remote LLM config: {e}")
+        return web.Response(status=500, text=str(e))
+
+
+@server.PromptServer.instance.routes.get("/rs_prompts/llm_mode")
+async def rs_prompts_get_llm_mode(request):
+    """获取当前 LLM 模式"""
+    try:
+        mode = get_current_mode()
+        return web.json_response({"mode": mode})
+    except Exception as e:
+        logger.error(f"Error getting LLM mode: {e}")
         return web.Response(status=500, text=str(e))
 
 

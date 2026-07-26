@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # ComfyUI-Neo-Nodes - LLM (Large Language Model)
-# LLM 公共代码模块，包含大模型加载、推理、任务定义等功能
+# LLM 公共代码模块，支持本地模型和远程 API
 
 from __future__ import annotations
 
@@ -10,21 +10,21 @@ import json
 import logging
 import base64
 import io
+import hashlib
 from typing import Any, Dict, List, Optional
+from pathlib import Path
 import folder_paths
 from collections import OrderedDict
 
 # ==========================================
 # HuggingFace Endpoint Configuration
 # ==========================================
-# Override HF_ENDPOINT to use official HuggingFace endpoint
-# This is needed because some systems set HF_ENDPOINT to a mirror that may be unavailable
 os.environ["HF_ENDPOINT"] = "https://huggingface.co"
 
 logger = logging.getLogger(__name__)
 
 # ==========================================
-# Model Configuration (loaded from JSON)
+# LLM Configuration & Management
 # ==========================================
 
 def _load_model_config():
@@ -36,7 +36,14 @@ def _load_model_config():
         return config
     except Exception as e:
         logger.error(f"Failed to load model config: {e}")
-        # 返回默认配置
+        # 返回空字典，让其他函数使用默认值
+        return {}
+
+_MODEL_CONFIG: Dict[str, Any] = _load_model_config()
+
+def get_model_config():
+    """获取模型配置"""
+    if not _MODEL_CONFIG:
         return {
             "model": {
                 "ms_repo_id": "unsloth/Qwen3.5-0.8B-GGUF",
@@ -47,12 +54,6 @@ def _load_model_config():
                 "filename": "mmproj-BF16.gguf"
             }
         }
-
-# 加载配置
-_MODEL_CONFIG: Dict[str, Any] = _load_model_config()
-
-def get_model_config():
-    """获取模型配置"""
     return _MODEL_CONFIG
 
 # ==========================================
@@ -117,57 +118,109 @@ TRANSLATION_CACHE = TranslationCache(max_size=200)
 
 
 # ==========================================
-# LLM Configuration & Management
+# Remote LLM Configuration
 # ==========================================
 
-# 当前选择的模型
-_current_model_key: str = _MODEL_CONFIG.get("current_model", "Qwen3.5-0.8B") or "Qwen3.5-0.8B"
+# 配置文件路径
+_CONFIG_DIR = os.path.dirname(__file__)
+_REMOTE_CONFIG_PATH = os.path.join(_CONFIG_DIR, "remote_llm_config.json")
 
-# 模型配置常量（将在 _update_model_constants() 中初始化）
-MS_REPO_ID: str = ""
-HF_REPO_ID: str = ""
-MODEL_FILENAME: str = ""
-MODEL_DIR: str = "Qwen-0.8B"
+def _load_remote_config() -> Dict[str, Any]:
+    """加载远程 LLM 配置"""
+    try:
+        if os.path.exists(_REMOTE_CONFIG_PATH):
+            with open(_REMOTE_CONFIG_PATH, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception as e:
+        logger.error(f"Failed to load remote LLM config: {e}")
+    return {
+        "enabled": False,
+        "provider": "openai",
+        "api_key": "",
+        "base_url": "",
+        "model": "gpt-4o-mini",
+        "max_tokens": 500,
+        "temperature": 0.0,
+        "timeout": 60
+    }
+
+def _save_remote_config(config: Dict[str, Any]):
+    """保存远程 LLM 配置"""
+    try:
+        with open(_REMOTE_CONFIG_PATH, "w", encoding="utf-8") as f:
+            json.dump(config, f, indent=2, ensure_ascii=False)
+        logger.info("Remote LLM config saved")
+    except Exception as e:
+        logger.error(f"Failed to save remote LLM config: {e}")
+
+def get_remote_llm_config() -> Dict[str, Any]:
+    """获取远程 LLM 配置"""
+    return _load_remote_config()
+
+def set_remote_llm_config(config: Dict[str, Any]):
+    """设置远程 LLM 配置"""
+    _save_remote_config(config)
+
+# 远程 LLM 模式常量
+LLM_MODE_LOCAL = "local"
+LLM_MODE_REMOTE = "remote"
+
+def get_current_mode() -> str:
+    """获取当前 LLM 模式：local 或 remote"""
+    config = _load_remote_config()
+    if config.get("enabled", False):
+        return LLM_MODE_REMOTE
+    return LLM_MODE_LOCAL
+
+
+# ==========================================
+# Model-Specific System Prompts (for remote mode)
+# ==========================================
+
+# 每个任务对应的模型配置（远程 API 使用）
+_TASK_MODEL_CONFIGS = {
+    "extract_title": {"max_tokens": 20, "model_override": None},
+    "extract_classify": {"max_tokens": 50, "model_override": None},
+    "enhance_prompt": {"max_tokens": 500, "model_override": None},
+    "translate_prompt": {"max_tokens": 500, "model_override": None},
+    "generate_prompt": {"max_tokens": 500, "model_override": None},
+    "random_prompt": {"max_tokens": 500, "model_override": None},
+}
+
+def get_task_config(task_name: str) -> Dict[str, Any]:
+    """获取任务配置"""
+    return _TASK_MODEL_CONFIGS.get(task_name, {"max_tokens": 500, "model_override": None})
+
+
+# ==========================================
+# Text Normalization Utility (for local model config)
+# ==========================================
 
 def get_current_model_config() -> Dict[str, Any]:
     """获取当前模型的配置"""
     models: Dict[str, Any] = _MODEL_CONFIG.get("models", {})
+    _current_model_key: str = _MODEL_CONFIG.get("current_model", "Qwen3.5-0.8B") or "Qwen3.5-0.8B"
     if _current_model_key in models:
         return models[_current_model_key]  # type: ignore[return-value]
-    # 回退到第一个可用模型
     first_key = list(models.keys())[0] if models else "Qwen3.5-0.8B"
     return models.get(first_key, {})  # type: ignore[type-abstract]
 
 def set_current_model(model_key):
     """设置当前模型"""
-    global _current_model_key
+    global _MODEL_CONFIG
     models = _MODEL_CONFIG.get("models", {})
     if model_key in models:
-        _current_model_key = model_key
-        # 更新全局配置常量
-        _update_model_constants()
-        # 保存配置到文件
+        _MODEL_CONFIG["current_model"] = model_key
         _save_model_config()
         return True
     return False
-
-def _update_model_constants():
-    """更新模型配置常量"""
-    global MS_REPO_ID, HF_REPO_ID, MODEL_FILENAME, MODEL_DIR
-    config = get_current_model_config()
-    MS_REPO_ID = config.get("ms_repo_id", "")
-    HF_REPO_ID = config.get("hf_repo_id", "")
-    MODEL_FILENAME = config.get("filename", "")
-    MODEL_DIR = config.get("model_dir", "Qwen-0.8B")
 
 def _save_model_config():
     """保存模型配置到文件"""
     config_path = os.path.join(os.path.dirname(__file__), "model_config.json")
     try:
-        _MODEL_CONFIG["current_model"] = _current_model_key
         with open(config_path, "w", encoding="utf-8") as f:
             json.dump(_MODEL_CONFIG, f, indent=2, ensure_ascii=False)
-        logger.info(f"Model config saved: {_current_model_key}")
     except Exception as e:
         logger.error(f"Failed to save model config: {e}")
 
@@ -180,47 +233,94 @@ def get_available_models():
         model_list.append({
             "key": key,
             "name": key,
-            "filename": config_dict.get("filename", ""),  # type: ignore[union-attr]
-            "model_dir": config_dict.get("model_dir", "")  # type: ignore[union-attr]
+            "filename": config_dict.get("filename", ""),
+            "model_dir": config_dict.get("model_dir", "")
         })
     return {
-        "current_model": _current_model_key,
+        "current_model": _MODEL_CONFIG.get("current_model", "Qwen3.5-0.8B"),
         "models": model_list
     }
 
-# 初始化模型常量
-_update_model_constants()
 
-_MMPROJ_CONFIG: Dict[str, Any] = _MODEL_CONFIG.get("mmproj", {})  # type: ignore[union-attr]
-MMPROJ_FILENAME: str = _MMPROJ_CONFIG.get("filename", "")  # type: ignore[union-attr]
+# ==========================================
+# Download Status Management (for local mode)
+# ==========================================
 
 import threading
 
-# 下载状态管理
 _download_status = {
     "model": {"downloading": False, "progress": 0, "error": None},
     "mmproj": {"downloading": False, "progress": 0, "error": None}
 }
 _download_lock = threading.Lock()
 
+def _read_model_config_from_file():
+    """从文件重新读取模型配置（用于运行时动态获取最新配置）"""
+    config_path = os.path.join(os.path.dirname(__file__), "model_config.json")
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        logger.error(f"Failed to read model config from file: {e}")
+        return {}
+
 def get_model_paths():
-    """获取模型文件路径"""
+    """获取模型文件路径 - 每次都从文件读取最新配置"""
+    # 每次都从文件重新读取配置，确保使用最新的 current_model
+    config = _read_model_config_from_file()
+    
+    if not config:
+        # 如果无法读取配置，使用缓存的
+        config = _MODEL_CONFIG
+    
+    # 获取当前模型配置
+    models: Dict[str, Any] = config.get("models", {})
+    current_model_key: str = config.get("current_model", "Qwen3.5-0.8B") or "Qwen3.5-0.8B"
+    
+    # 如果 models 字典存在，使用当前模型配置
+    if current_model_key in models:
+        model_cfg = models[current_model_key]
+    else:
+        # 回退到旧的单模型配置格式
+        model_cfg = config.get("model", {})
+    
+    MODEL_FILENAME = model_cfg.get("filename", "")
+    MODEL_DIR = model_cfg.get("model_dir", "Qwen-0.8B")
+    
     base_dir = folder_paths.base_path
-    model_dir = os.path.join(base_dir, "models", "LLM",MODEL_DIR)
+    model_dir = os.path.join(base_dir, "models", "LLM", MODEL_DIR)
     target_path = os.path.join(model_dir, MODEL_FILENAME)
+    
+    # mmproj 配置（所有模型共享）
+    MMPROJ_FILENAME = config.get("mmproj", {}).get("filename", "mmproj-BF16.gguf")
     mmproj_path = os.path.join(model_dir, MMPROJ_FILENAME)
     return target_path, mmproj_path
 
 def check_model_status():
-    """
-    检查模型文件是否存在，返回状态信息
-    """
+    """检查模型文件是否存在，返回状态信息"""
     target_path, mmproj_path = get_model_paths()
     
     model_exists = os.path.exists(target_path)
     mmproj_exists = os.path.exists(mmproj_path)
     
-    # 如果正在下载，记录当前状态用于调试
+    # 从文件读取最新配置
+    config = _read_model_config_from_file()
+    if not config:
+        config = _MODEL_CONFIG
+    
+    models: Dict[str, Any] = config.get("models", {})
+    current_model_key: str = config.get("current_model", "Qwen3.5-0.8B") or "Qwen3.5-0.8B"
+    
+    if current_model_key in models:
+        model_cfg = models[current_model_key]
+    else:
+        model_cfg = config.get("model", {})
+    
+    MS_REPO_ID = model_cfg.get("ms_repo_id", "")
+    HF_REPO_ID = model_cfg.get("hf_repo_id", "")
+    MODEL_FILENAME = model_cfg.get("filename", "")
+    MMPROJ_FILENAME = config.get("mmproj", {}).get("filename", "mmproj-BF16.gguf")
+
     if _download_status["model"]["downloading"]:
         logger.info(f"Download status check: downloading={_download_status['model']['downloading']}, "
                     f"progress={_download_status['model']['progress']}%, "
@@ -239,9 +339,7 @@ def check_model_status():
     }
 
 def check_all_models_status():
-    """
-    检查所有模型文件的状态，返回所有模型的下载状态
-    """
+    """检查所有模型文件的状态"""
     base_dir = folder_paths.base_path
     models_config: Dict[str, Any] = _MODEL_CONFIG.get("models", {})
     
@@ -264,15 +362,29 @@ def check_all_models_status():
     
     return {
         "models": models_status,
-        "current_model": _current_model_key
+        "current_model": _MODEL_CONFIG.get("current_model", "Qwen3.5-0.8B")
     }
 
+def start_download(file_type):
+    """启动后台下载任务（非阻塞）"""
+    if file_type not in ["model", "mmproj"]:
+        return {"error": "Invalid file type"}
+    
+    target_path, _ = get_model_paths()
+    if file_type == "model" and os.path.exists(target_path):
+        return {"status": "already_exists"}
+    
+    _, mmproj_path = get_model_paths()
+    if file_type == "mmproj" and os.path.exists(mmproj_path):
+        return {"status": "already_exists"}
+    
+    thread = threading.Thread(target=_download_file_background, args=(file_type,), daemon=True)
+    thread.start()
+    
+    return {"status": "started", "file_type": file_type}
+
 def _download_file_background(file_type):
-    """
-    后台下载文件（在独立线程中运行）
-    file_type: "model" 或 "mmproj"
-    优先从 ModelScope 下载，失败后尝试 HuggingFace
-    """
+    """后台下载文件（在独立线程中运行）"""
     global _download_status
     
     with _download_lock:
@@ -286,25 +398,42 @@ def _download_file_background(file_type):
     
     try:
         base_dir = folder_paths.base_path
-        model_dir = os.path.join(base_dir, "models", "LLM",MODEL_DIR)
+        
+        # 获取当前模型配置
+        if file_type == "model":
+            models: Dict[str, Any] = _MODEL_CONFIG.get("models", {})
+            current_model_key: str = _MODEL_CONFIG.get("current_model", "Qwen3.5-0.8B") or "Qwen3.5-0.8B"
+            
+            if current_model_key in models:
+                model_cfg = models[current_model_key]
+            else:
+                model_cfg = _MODEL_CONFIG.get("model", {})
+            
+            filename = model_cfg.get("filename", "")
+            MODEL_DIR = model_cfg.get("model_dir", "Qwen-0.8B")
+            MS_REPO_ID = model_cfg.get("ms_repo_id", "")
+            HF_REPO_ID = model_cfg.get("hf_repo_id", "")
+        else:
+            filename = _MODEL_CONFIG.get("mmproj", {}).get("filename", "")
+            MODEL_DIR = _MODEL_CONFIG.get("model", {}).get("model_dir", "Qwen-0.8B")
+            MS_REPO_ID = ""
+            HF_REPO_ID = ""
+        
+        model_dir = os.path.join(base_dir, "models", "LLM", MODEL_DIR)
         os.makedirs(model_dir, exist_ok=True)
         
-        filename = MODEL_FILENAME if file_type == "model" else MMPROJ_FILENAME
         target_path = os.path.join(model_dir, filename)
         
-        # 如果文件已存在，直接成功
         if os.path.exists(target_path):
             _download_status[file_type]["downloading"] = False
             _download_status[file_type]["progress"] = 100
             logger.info(f"File already exists: {target_path}")
             return True
         
-        # 尝试从 ModelScope 下载
-        success = _download_from_modelscope(model_dir, filename, file_type)
-        
+        success = _download_from_modelscope(model_dir, filename, file_type, MS_REPO_ID)
         if not success:
             logger.info("ModelScope download failed, trying HuggingFace...")
-            success = _download_from_huggingface(model_dir, filename, file_type)
+            success = _download_from_huggingface(model_dir, filename, file_type, HF_REPO_ID)
         
         if success:
             _download_status[file_type]["progress"] = 100
@@ -322,90 +451,29 @@ def _download_file_background(file_type):
         logger.error(f"Download failed: {e}")
         return False
 
-def _download_from_modelscope(model_dir, filename, file_type):
-    """从 ModelScope 下载模型"""
+def _download_from_modelscope(model_dir, filename, file_type, ms_repo_id):
+    """从 ModelScope 下载模型 - 保留向后兼容"""
     try:
+        if not ms_repo_id:
+            return False
         logger.info(f"Attempting download from ModelScope...")
         from modelscope import snapshot_download
         
         target_path = os.path.join(model_dir, filename)
-        estimated_size = 500 * 1024 * 1024  # 默认500MB
         
-        # 监控文件大小的进度更新
-        download_progress = {"current": 0}
-        
-        def monitor_file_progress():
-            """监控文件下载进度"""
-            import time
-            last_size = 0
-            no_change_count = 0
-            max_size_seen = 0
-            iteration = 0
-            
-            while _download_status[file_type]["downloading"]:
-                iteration += 1
-                # 检查目标文件和可能的临时文件
-                checked_size = 0
-                if os.path.exists(target_path):
-                    checked_size = os.path.getsize(target_path)
-                else:
-                    # 检查目录中是否有正在下载的文件
-                    if os.path.exists(model_dir):
-                        for fname in os.listdir(model_dir):
-                            fpath = os.path.join(model_dir, fname)
-                            if os.path.isfile(fpath):
-                                fsize = os.path.getsize(fpath)
-                                if fsize > checked_size:
-                                    checked_size = fsize
-                                    logger.debug(f"Found larger file during download: {fname} = {fsize}")
-                
-                if checked_size > 0:
-                    # 更新最大文件大小
-                    if checked_size > max_size_seen:
-                        max_size_seen = checked_size
-                        logger.info(f"Download progress: size={checked_size}, max={max_size_seen}")
-                    
-                    # 使用已看到的最大文件大小来估算进度
-                    # 假设文件大小在 max_size_seen 的 1.0-1.5 倍之间
-                    estimated_total = max(max_size_seen * 1.2, max_size_seen + (50 * 1024 * 1024))
-                    progress = min(int((checked_size / estimated_total) * 100), 99)
-                    download_progress["current"] = progress
-                    _download_status[file_type]["progress"] = progress
-                    logger.info(f"Updated progress: {progress}% (size={checked_size}, estimated={estimated_total})")
-                    
-                    # 检查文件大小是否稳定
-                    if checked_size == last_size and checked_size > 0:
-                        no_change_count += 1
-                        if no_change_count >= 15:  # 连续15次大小不变，可能完成
-                            logger.info("File size stable, marking download as complete")
-                            _download_status[file_type]["progress"] = 100
-                            break
-                    else:
-                        no_change_count = 0
-                        last_size = checked_size
-                time.sleep(0.2)
-        
-        progress_thread = threading.Thread(target=monitor_file_progress, daemon=True)
-        progress_thread.start()
-        
-        # 下载指定模型到指定目录
         download_path = snapshot_download(
-            MS_REPO_ID,
-            allow_patterns=[filename],  # 精确匹配要下载的GGUF文件
+            ms_repo_id,
+            allow_patterns=[filename],
             local_dir=model_dir,
             revision='master',
         )
         
-        # 等待进度线程完成
-        progress_thread.join(timeout=3)
-        
-        # 检查目标文件是否存在
         if os.path.exists(target_path):
             _download_status[file_type]["progress"] = 100
             logger.info(f"Downloaded from ModelScope: {target_path}")
             return True
         else:
-            logger.warning(f"ModelScope download did not create expected file")
+            logger.warning("ModelScope download did not create expected file")
             return False
     except ImportError:
         logger.warning("modelscope not installed, trying HuggingFace...")
@@ -414,59 +482,22 @@ def _download_from_modelscope(model_dir, filename, file_type):
         logger.error(f"ModelScope download failed: {e}")
         return False
 
-def _download_from_huggingface(model_dir, filename, file_type):
-    """从 HuggingFace 下载模型"""
+def _download_from_huggingface(model_dir, filename, file_type, hf_repo_id):
+    """从 HuggingFace 下载模型 - 保留向后兼容"""
     try:
+        if not hf_repo_id:
+            return False
         logger.info(f"Attempting download from HuggingFace...")
         from huggingface_hub import hf_hub_download
         
         target_path = os.path.join(model_dir, filename)
         
-        # 监控文件大小的进度更新
-        def monitor_file_progress():
-            """监控文件下载进度"""
-            import time
-            last_size = 0
-            no_change_count = 0
-            max_size_seen = 0
-            
-            while _download_status[file_type]["downloading"]:
-                if os.path.exists(target_path):
-                    current_size = os.path.getsize(target_path)
-                    if current_size > 0:
-                        # 更新最大文件大小
-                        if current_size > max_size_seen:
-                            max_size_seen = current_size
-                        
-                        # 使用已看到的最大文件大小来估算进度
-                        # 假设文件大小在 max_size_seen 的 1.2-1.5 倍之间
-                        estimated_total = max(max_size_seen * 1.3, max_size_seen + (100 * 1024 * 1024))
-                        progress = min(int((current_size / estimated_total) * 100), 99)
-                        _download_status[file_type]["progress"] = progress
-                        
-                        # 检查文件大小是否稳定
-                        if current_size == last_size and current_size > 0:
-                            no_change_count += 1
-                            if no_change_count >= 10:  # 连续10次大小不变，可能完成
-                                _download_status[file_type]["progress"] = 100
-                                break
-                        else:
-                            no_change_count = 0
-                            last_size = current_size
-                time.sleep(0.3)
-        
-        progress_thread = threading.Thread(target=monitor_file_progress, daemon=True)
-        progress_thread.start()
-        
         downloaded_path = hf_hub_download(
-            repo_id=str(HF_REPO_ID),
-            filename=str(filename),
-            local_dir=str(model_dir),
+            repo_id=hf_repo_id,
+            filename=filename,
+            local_dir=model_dir,
             force_download=False,
         )
-        
-        # 等待进度线程完成
-        progress_thread.join(timeout=3)
         
         _download_status[file_type]["progress"] = 100
         logger.info(f"Downloaded from HuggingFace: {downloaded_path}")
@@ -475,29 +506,304 @@ def _download_from_huggingface(model_dir, filename, file_type):
         logger.error(f"HuggingFace download failed: {e}")
         return False
 
-def start_download(file_type):
-    """
-    启动后台下载任务（非阻塞）
-    """
-    if file_type not in ["model", "mmproj"]:
-        return {"error": "Invalid file type"}
+
+# ==========================================
+# Remote API LLM Client
+# ==========================================
+
+class RemoteLLMClient:
+    """远程 LLM API 客户端，支持多种提供商"""
     
-    target_path, _ = get_model_paths()
-    if file_type == "model" and os.path.exists(target_path):
-        return {"status": "already_exists"}
+    # 支持的提供商
+    PROVIDER_OPENAI = "openai"
+    PROVIDER_ANTHROPIC = "anthropic"
+    PROVIDER_OLLAMA = "ollama"
+    PROVIDER_LM_STUDIO = "lmstudio"
+    PROVIDER_LLAMACPP = "llamacpp"
+    PROVIDER_VLLM = "vllm"
+    PROVIDER_ZHIPU = "zhipu"
+    PROVIDER_DOUBAO = "doubao"
     
-    _, mmproj_path = get_model_paths()
-    if file_type == "mmproj" and os.path.exists(mmproj_path):
-        return {"status": "already_exists"}
+    # 提供商对应的系统提示词处理
+    SUPPORTED_PROVIDERS = [PROVIDER_OPENAI, PROVIDER_ANTHROPIC, PROVIDER_OLLAMA, 
+                           PROVIDER_LM_STUDIO, PROVIDER_LLAMACPP, PROVIDER_VLLM, PROVIDER_ZHIPU, PROVIDER_DOUBAO]
     
-    # 在后台线程中下载
-    thread = threading.Thread(target=_download_file_background, args=(file_type,), daemon=True)
-    thread.start()
+    def __init__(self, config: Dict[str, Any]):
+        """
+        初始化远程 LLM 客户端
+        
+        Args:
+            config: 配置字典，包含 provider, api_key, base_url, model, max_tokens, temperature, timeout
+        """
+        self.config = config
+        self.provider = config.get("provider", self.PROVIDER_OPENAI)
+        self.api_key = config.get("api_key", "")
+        self.base_url = config.get("base_url", "").rstrip("/")
+        self.model = config.get("model", "gpt-4o-mini")
+        self.max_tokens = config.get("max_tokens", 500)
+        self.temperature = config.get("temperature", 0.0)
+        self.timeout = config.get("timeout", 60)
+        
+    def chat_completion(self, messages: List[Dict[str, Any]], 
+                       max_tokens: Optional[int] = None,
+                       image_bytes_list: Optional[List[bytes]] = None) -> Dict[str, Any]:
+        """
+        创建聊天补全请求
+        
+        Args:
+            messages: 消息列表，格式为 [{"role": "user", "content": "..."}]
+            max_tokens: 最大 token 数
+            image_bytes_list: 图像字节数据列表（可选）
+            
+        Returns:
+            API 响应字典
+        """
+        if not self.api_key:
+            raise ValueError("API Key is not configured")
+        
+        effective_max_tokens = max_tokens or self.max_tokens
+        
+        # 根据提供商选择对应的请求方法
+        if self.provider in (self.PROVIDER_OPENAI, self.PROVIDER_LLAMACPP, self.PROVIDER_VLLM, 
+                              self.PROVIDER_ZHIPU, self.PROVIDER_DOUBAO, self.PROVIDER_LM_STUDIO):
+            return self._openai_format_request(messages, effective_max_tokens, image_bytes_list)
+        elif self.provider == self.PROVIDER_ANTHROPIC:
+            return self._anthropic_format_request(messages, effective_max_tokens, image_bytes_list)
+        elif self.provider in (self.PROVIDER_OLLAMA,):
+            return self._ollama_format_request(messages, effective_max_tokens, image_bytes_list)
+        else:
+            raise ValueError(f"Unsupported provider: {self.provider}")
     
-    return {"status": "started", "file_type": file_type}
+    def _openai_format_request(self, messages: List[Dict[str, Any]], 
+                                max_tokens: int,
+                                image_bytes_list: Optional[List[bytes]] = None) -> Dict[str, Any]:
+        """OpenAI 格式的请求（兼容 OpenAI、LM Studio、llama.cpp、vLLM、智谱、豆包等）"""
+        import requests
+        
+        # 构建请求消息列表
+        request_messages = []
+        for msg in messages:
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+            
+            # 处理图像（如果有）
+            if image_bytes_list and isinstance(content, str) and role == "user":
+                content = self._text_with_images_to_content(content, image_bytes_list)
+            
+            request_messages.append({"role": role, "content": content})
+        
+        # 构建请求 URL
+        url = self._build_url()
+        
+        # 构建请求体
+        payload = {
+            "model": self.model,
+            "messages": request_messages,
+            "max_tokens": max_tokens,
+            "temperature": self.temperature,
+        }
+        
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}"
+        }
+        
+        # OpenAI 兼容的提供商可能需要特殊的 header
+        if self.provider == self.PROVIDER_ZHIPU:
+            headers["Authorization"] = f"api_key={self.api_key}"
+        elif self.provider == self.PROVIDER_DOUBAO:
+            # 豆包使用 API ID 和 Key
+            pass  # 标准 Bearer token 通常也适用
+        elif self.provider == self.PROVIDER_LM_STUDIO:
+            # LM Studio 不需要 API key（本地服务器）
+            # 但如果配置了则使用
+            if not self.api_key:
+                headers.pop("Authorization", None)
+        
+        response = requests.post(url, json=payload, headers=headers, timeout=self.timeout)
+        response.raise_for_status()
+        
+        result = response.json()
+        
+        # 标准化响应格式为 OpenAI 格式
+        choices = result.get("choices", [])
+        if not choices:
+            return {"choices": []}
+        
+        message = choices[0].get("message", {})
+        content = message.get("content", "")
+        
+        return {
+            "choices": [{
+                "message": {"role": "assistant", "content": content}
+            }]
+        }
+    
+    def _build_url(self) -> str:
+        """构建 API URL"""
+        url = f"{self.base_url}/chat/completions" if self.base_url else "https://api.openai.com/v1/chat/completions"
+        
+        # 如果 base_url 不包含 /v1，自动添加
+        if not self.base_url and self.provider == self.PROVIDER_OPENAI:
+            url = "https://api.openai.com/v1/chat/completions"
+        elif self.base_url and not self.base_url.endswith("/v1") and "/chat/completions" not in url:
+            # 检查 URL 格式
+            if url.endswith("/"):
+                url = f"{url}v1/chat/completions"
+            else:
+                url = f"{url}/v1/chat/completions"
+        
+        return url
+    
+    def _anthropic_format_request(self, messages: List[Dict[str, Any]],
+                                  max_tokens: int,
+                                  image_bytes_list: Optional[List[bytes]] = None) -> Dict[str, Any]:
+        """Anthropic Claude 格式的请求"""
+        import requests
+        
+        # Anthropic API 端点
+        url = f"{self.base_url or 'https://api.anthropic.com'}/v1/messages"
+        
+        # 提取系统提示词和用户消息
+        system_prompt = ""
+        user_messages = []
+        for msg in messages:
+            if msg.get("role") == "system":
+                system_prompt = msg.get("content", "")
+            elif msg.get("role") == "user":
+                user_messages.append(msg.get("content", ""))
+        
+        # 合并用户消息
+        user_content = "\n\n".join(user_messages)
+        
+        # 处理图像
+        if image_bytes_list:
+            content_parts = [{"type": "text", "text": user_content}]
+            for img_bytes in image_bytes_list:
+                b64 = base64.b64encode(img_bytes).decode('utf-8')
+                content_parts.append({
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/png",
+                        "data": b64
+                    }
+                })
+            content = content_parts
+        else:
+            content = user_content
+        
+        payload = {
+            "model": self.model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": content
+                }
+            ],
+            "max_tokens": max_tokens,
+            "temperature": self.temperature,
+        }
+        
+        if system_prompt:
+            payload["system"] = system_prompt
+        
+        headers = {
+            "Content-Type": "application/json",
+            "x-api-key": self.api_key,
+            "anthropic-version": "2023-06-01"
+        }
+        
+        response = requests.post(url, json=payload, headers=headers, timeout=self.timeout)
+        response.raise_for_status()
+        
+        result = response.json()
+        
+        # 转换为标准格式
+        content_blocks = result.get("content", [])
+        assistant_content = ""
+        for block in content_blocks:
+            if isinstance(block, dict) and block.get("type") == "text":
+                assistant_content += block.get("text", "")
+        
+        return {
+            "choices": [{
+                "message": {"role": "assistant", "content": assistant_content.strip()}
+            }]
+        }
+    
+    def _ollama_format_request(self, messages: List[Dict[str, Any]], 
+                                max_tokens: int,
+                                image_bytes_list: Optional[List[bytes]] = None) -> Dict[str, Any]:
+        """Ollama 格式的请求"""
+        import requests
+        
+        # Ollama 默认端点
+        url = f"{self.base_url or 'http://localhost:11430'}/api/chat"
+        
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "stream": False,
+            "options": {
+                "num_predict": max_tokens,
+                "temperature": self.temperature
+            }
+        }
+        
+        headers = {"Content-Type": "application/json"}
+        
+        response = requests.post(url, json=payload, headers=headers, timeout=self.timeout)
+        response.raise_for_status()
+        
+        result = response.json()
+        
+        # Ollama 返回格式
+        message = result.get("message", {})
+        content = message.get("content", "")
+        
+        return {
+            "choices": [{
+                "message": {"role": "assistant", "content": content}
+            }]
+        }
+    
+    def _text_with_images_to_content(self, text: str, image_bytes_list: List[bytes]) -> List[dict]:
+        """将文本和图像转换为 OpenAI 兼容的内容格式"""
+        content = []
+        
+        # 添加图像
+        for img_bytes in image_bytes_list:
+            b64 = base64.b64encode(img_bytes).decode('utf-8')
+            data_uri = f"data:image/png;base64,{b64}"
+            content.append({
+                "type": "image_url",
+                "image_url": {"url": data_uri}
+            })
+        
+        # 添加文本
+        content.append({
+            "type": "text",
+            "text": text
+        })
+        
+        return content
+    
+    def is_available(self) -> bool:
+        """检查远程 API 是否可用"""
+        if not self.api_key:
+            return False
+        if not self.provider:
+            return False
+        return True
+
+
+# ==========================================
+# LLM Singleton (Local Mode)
+# ==========================================
 
 class LLMSingleton:
-    """LLM 单例模式，确保模型只加载一次"""
+    """LLM 单例模式，确保模型只加载一次（本地模式）"""
     _instance = None
     _lock = False
     
@@ -513,34 +819,44 @@ class LLMSingleton:
         self._load_model()
 
     def _load_model(self):
-        """加载 LLM 模型，不再自动下载，如果模型不存在则直接报错"""
+        """加载 LLM 模型，如果不存在则报错"""
         target_path, mmproj_path = get_model_paths()
         
-        # 确保模型目录存在
         model_dir = os.path.dirname(target_path)
         os.makedirs(model_dir, exist_ok=True)
         
-        # 检查主模型文件是否存在（不下载）
         if not os.path.exists(target_path):
+            # 从文件读取最新配置用于错误提示
+            config = _read_model_config_from_file()
+            if not config:
+                config = _MODEL_CONFIG
+            
+            models: Dict[str, Any] = config.get("models", {})
+            current_model_key: str = config.get("current_model", "Qwen3.5-0.8B") or "Qwen3.5-0.8B"
+            
+            if current_model_key in models:
+                model_cfg = models[current_model_key]
+            else:
+                model_cfg = config.get("model", {})
+            
+            MODEL_FILENAME = model_cfg.get("filename", "unknown.gguf")
             raise RuntimeError(
-                f"LLM model not found. "
-                f"Please download {MODEL_FILENAME} from ModelScope or HuggingFace "
-                f"and place it in: {model_dir}/"
+                f"LLM model not found: {MODEL_FILENAME}\n"
+                f"Expected path: {target_path}\n"
+                f"Please download the model and place it in: {model_dir}/\n"
+                f"Or switch to remote API mode in the node settings."
             )
 
-        # 检查 mmproj 文件（可选，不下载）
         if not os.path.exists(mmproj_path):
+            MMPROJ_FILENAME = _MODEL_CONFIG.get("mmproj", {}).get("filename", "")
             logger.warning(
                 f"mmproj file not found: {mmproj_path}. "
-                f"Image understanding will not work. "
-                f"Please download {MMPROJ_FILENAME} from ModelScope or HuggingFace "
-                f"and place it in: {model_dir}/"
+                f"Image understanding will not work."
             )
             mmproj_path = None
         
         from llama_cpp import Llama
         
-        # 构建模型加载参数
         llama_kwargs = {
             "model_path": target_path,
             "n_ctx": 2048,
@@ -549,32 +865,26 @@ class LLMSingleton:
             "verbose": False,
         }
         
-        # 如果找到 mmproj 文件，添加到参数中
         if mmproj_path:
             logger.info(f"Loading mmproj file: {mmproj_path}")
             llama_kwargs["mmproj"] = mmproj_path
             self.mmproj_path = mmproj_path
         else:
-            logger.warning("No mmproj file found, loading text-only model. Image understanding will not work.")
+            logger.warning("No mmproj file found, loading text-only model.")
         
         self.model = Llama(**llama_kwargs)
         self.has_mmproj = mmproj_path is not None
 
     def create_chat_completion(self, messages, max_tokens, image_bytes_list=None):
-        """
-        创建聊天补全请求，支持图像输入
-        图像通过 messages 中的 content 数组传递，使用 base64 data URI 格式
-        """
+        """创建聊天补全请求，支持图像输入"""
         if self.model is None:
             raise RuntimeError("LLM Model not loaded")
         
-        # 如果有图像输入，将图像嵌入到 messages 中
         if image_bytes_list and len(image_bytes_list) > 0:
             new_messages = []
             for msg in messages:
                 if msg.get("role") == "user":
                     content_list = []
-                    # 将图像作为 image_url 添加到内容中
                     for img_bytes in image_bytes_list:
                         if isinstance(img_bytes, (bytes, bytearray)):
                             b64 = base64.b64encode(img_bytes).decode('utf-8')
@@ -584,7 +894,6 @@ class LLMSingleton:
                         else:
                             continue
                         content_list.append({"type": "image_url", "image_url": {"url": data_uri}})
-                    # 添加文本内容
                     content_list.append({"type": "text", "text": msg.get("content", "")})
                     new_messages.append({"role": "user", "content": content_list})
                 else:
@@ -598,8 +907,159 @@ class LLMSingleton:
 
 
 def get_llm_instance():
-    """获取 LLM 单例实例"""
+    """获取 LLM 单例实例（本地模式）"""
     return LLMSingleton.get_instance()
+
+
+# ==========================================
+# Unified LLM Inference Engine
+# ==========================================
+
+def _run_llm_inference(system_prompt: str, user_text: str, max_tokens: int, 
+                       images: Optional[Any] = None, use_remote: bool = False) -> Optional[str]:
+    """
+    执行 LLM 推理，支持本地和远程模式
+    
+    Args:
+        system_prompt: 系统提示词
+        user_text: 用户文本
+        max_tokens: 最大 token 数
+        images: PIL Image 对象列表或字节数据列表（仅本地模式支持）
+        use_remote: 是否使用远程 API
+        
+    Returns:
+        LLM 响应文本
+    """
+    if use_remote:
+        return _run_remote_inference(system_prompt, user_text, max_tokens, images)
+    else:
+        return _run_local_inference(system_prompt, user_text, max_tokens, images)
+
+
+def _run_local_inference(system_prompt: str, user_text: str, max_tokens: int,
+                         images: Optional[Any] = None) -> Optional[str]:
+    """执行本地 LLM 推理"""
+    llm = get_llm_instance()
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_text}
+    ]
+    
+    try:
+        image_bytes_list = None
+        if images is not None and len(images) > 0:
+            image_bytes_list = []
+            for img in images:
+                if hasattr(img, 'tobytes'):
+                    buffer = io.BytesIO()
+                    img.save(buffer, format='PNG')
+                    image_bytes_list.append(buffer.getvalue())
+                elif isinstance(img, (bytes, bytearray)):
+                    image_bytes_list.append(img)
+                elif hasattr(img, 'read'):
+                    image_bytes_list.append(img.read())
+        
+        output = llm.create_chat_completion(
+            messages=messages, 
+            max_tokens=max_tokens,
+            image_bytes_list=image_bytes_list
+        )
+        
+        if not isinstance(output, dict):
+            logger.warning(f"LLM returned non-dict output: {type(output)}")
+            return None
+        
+        choices = output.get('choices')
+        if not isinstance(choices, list) or len(choices) == 0:
+            logger.warning("LLM response 'choices' is empty or invalid.")
+            return None
+        
+        message = choices[0].get('message', {})
+        content = message.get('content', '')
+        
+        if not content:
+            logger.warning("LLM 'content' is None.")
+            return ""
+            
+        return content.strip()
+    except Exception as e:
+        logger.exception(f"Error during local LLM inference: {e}")
+        return None
+
+
+def _run_remote_inference(system_prompt: str, user_text: str, max_tokens: int,
+                          images: Optional[Any] = None) -> Optional[str]:
+    """执行远程 LLM 推理"""
+    config = _load_remote_config()
+    
+    if not config.get("enabled", False):
+        raise RuntimeError("Remote LLM is not enabled. Please configure remote_llm_config.json")
+    
+    client = RemoteLLMClient(config)
+    
+    if not client.is_available():
+        raise RuntimeError("Remote LLM client is not available (missing API key or provider)")
+    
+    # 构建消息
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_text}
+    ]
+    
+    try:
+        # 处理图像（如果有）
+        image_bytes_list = None
+        if images is not None and len(images) > 0:
+            image_bytes_list = []
+            for img in images:
+                if hasattr(img, 'tobytes'):
+                    buffer = io.BytesIO()
+                    img.save(buffer, format='PNG')
+                    image_bytes_list.append(buffer.getvalue())
+                elif isinstance(img, (bytes, bytearray)):
+                    image_bytes_list.append(img)
+                elif hasattr(img, 'read'):
+                    image_bytes_list.append(img.read())
+        
+        response = client.chat_completion(
+            messages=messages,
+            max_tokens=max_tokens,
+            image_bytes_list=image_bytes_list
+        )
+        
+        choices = response.get("choices", [])
+        if not choices:
+            logger.warning("Remote LLM response 'choices' is empty.")
+            return ""
+        
+        message = choices[0].get("message", {})
+        content = message.get("content", "")
+        
+        return content.strip() if content else ""
+    except Exception as e:
+        logger.exception(f"Error during remote LLM inference: {e}")
+        return None
+
+
+# ==========================================
+# Language Detection Utility
+# ==========================================
+
+def _detect_language(text):
+    """检测文本语言"""
+    if not text:
+        return 'English'
+    
+    total_chars = len(text)
+    if total_chars == 0:
+        return 'English'
+    
+    chinese_chars = sum(1 for char in text if '\u4e00' <= char <= '\u9fff')
+    chinese_percentage = (chinese_chars / total_chars) * 100
+    
+    if chinese_percentage >= 50:
+        return 'Chinese'
+    return 'English'
 
 
 # ==========================================
@@ -682,67 +1142,13 @@ LLM_TASKS = {
     },
 }
 
+
 # ==========================================
-# LLM Inference Functions
+# Public LLM Task Runner
 # ==========================================
 
-def _run_llm_inference(system_prompt, user_text, max_tokens, images=None):
-    """
-    执行 LLM 推理，支持图像输入
-    images: PIL Image 对象列表或字节数据列表
-    """
-    llm = get_llm_instance()
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_text}
-    ]
-    
-    try:
-        # 将 PIL 图像或字节数据转换为字节列表
-        image_bytes_list = None
-        if images is not None and len(images) > 0:
-            image_bytes_list = []
-            for img in images:
-                if hasattr(img, 'tobytes'):
-                    # PIL Image 对象
-                    buffer = io.BytesIO()
-                    img.save(buffer, format='PNG')
-                    image_bytes_list.append(buffer.getvalue())
-                elif isinstance(img, (bytes, bytearray)):
-                    image_bytes_list.append(img)
-                elif hasattr(img, 'read'):
-                    # 文件-like 对象
-                    image_bytes_list.append(img.read())
-        
-        output = llm.create_chat_completion(
-            messages=messages, 
-            max_tokens=max_tokens,
-            image_bytes_list=image_bytes_list
-        )
-        
-        if not isinstance(output, dict):
-            logger.warning(f"LLM returned non-dict output: {type(output)}")
-            return None
-        
-        choices = output.get('choices')
-        if not isinstance(choices, list) or len(choices) == 0:
-            logger.warning(f"LLM response 'choices' is empty or invalid.")
-            return None
-        
-        message = choices[0].get('message', {})
-        content = message.get('content', '')
-        
-        if not content:
-            logger.warning(f"LLM 'content' is None.")
-            return ""
-            
-        return content.strip()
-    except Exception as e:
-        logger.exception(f"Error during LLM inference: {e}")
-        return None
-
-
-def run_llm_task(task_name, text, extra_system_prompt=None, images=None):
+def run_llm_task(task_name: str, text: str, extra_system_prompt: Optional[str] = None, 
+                 images: Optional[Any] = None) -> Dict[str, Any]:
     """
     执行 LLM 任务
     
@@ -763,6 +1169,9 @@ def run_llm_task(task_name, text, extra_system_prompt=None, images=None):
     max_tokens = task_config["max_tokens"]
     result_key = task_config["result_key"]
     
+    # 确定使用远程还是本地模式
+    use_remote = get_current_mode() == LLM_MODE_REMOTE
+    
     # 处理翻译任务的特殊逻辑
     if task_name == "translate_prompt":
         source_lang = _detect_language(text)
@@ -775,22 +1184,26 @@ def run_llm_task(task_name, text, extra_system_prompt=None, images=None):
         system_prompt += f"\nTranslation Direction: {source_lang} to {target_lang}"
         logger.info(f"Auto-detected translation direction: {source_lang} -> {target_lang}")
         
-        # 检查缓存
+        # 检查缓存（远程和本地共用）
         result = TRANSLATION_CACHE.get(text)
         if result:
             logger.info(f"Translation cache HIT for: '{text[:20]}...'")
             return {"status": "success", result_key: result}
-        else:
-            logger.info(f"Translation cache MISS for: '{text[:30]}...'")
     
-    # 执行推理
+    # 应用额外的系统提示词
     if extra_system_prompt:
         system_prompt = system_prompt + extra_system_prompt
     
-    result = _run_llm_inference(system_prompt, text, max_tokens, images=images)
+    # 执行推理
+    try:
+        result = _run_llm_inference(system_prompt, text, max_tokens, images=images, use_remote=use_remote)
+    except Exception as e:
+        logger.error(f"Failed to execute task {task_name}: {e}")
+        return {"error": f"LLM inference failed: {str(e)}"}
     
     if not result:
-        logger.warning(f"Failed to execute task: {task_name}")
+        mode_str = "Remote API" if use_remote else "Local model"
+        logger.warning(f"Failed to get response from {mode_str} for task: {task_name}")
         return {"error": f"failed to {task_name.replace('_', ' ')}"}
     
     # 缓存翻译结果
@@ -799,27 +1212,6 @@ def run_llm_task(task_name, text, extra_system_prompt=None, images=None):
         logger.info(f"Saved result to cache: '{text[:20]}...' -> '{result[:20]}...'")
     
     return {"status": "success", result_key: result}
-
-
-# ==========================================
-# Language Detection Utility
-# ==========================================
-
-def _detect_language(text):
-    """检测文本语言"""
-    if not text:
-        return 'English'
-    
-    total_chars = len(text)
-    if total_chars == 0:
-        return 'English'
-    
-    chinese_chars = sum(1 for char in text if '\u4e00' <= char <= '\u9fff')
-    chinese_percentage = (chinese_chars / total_chars) * 100
-    
-    if chinese_percentage >= 50:
-        return 'Chinese'
-    return 'English'
 
 
 # ==========================================
@@ -852,7 +1244,22 @@ async def handle_llm_api_request(task_name, request):
         result_data = run_llm_task(task_name, text)
         
         if "error" in result_data:
-            return web.json_response({"error": result_data["error"]}, status=422)
+            error_msg = result_data["error"]
+            
+            # 如果是本地模式且模型未加载，提供有用的提示
+            if get_current_mode() == LLM_MODE_LOCAL and "LLM model not found" in error_msg or \
+               get_current_mode() == LLM_MODE_LOCAL and "Model not loaded" in error_msg:
+                return web.json_response({
+                    "error": f"Local model is not available. Please download the model first, or switch to remote API mode."
+                }, status=422)
+            
+            # 如果是远程模式且配置不正确，提供有用的提示
+            if get_current_mode() == LLM_MODE_REMOTE:
+                return web.json_response({
+                    "error": f"Remote API error: {error_msg}. Please check your remote_llm_config.json configuration."
+                }, status=422)
+            
+            return web.json_response({"error": error_msg}, status=422)
         
         return web.json_response(result_data)
         
@@ -868,4 +1275,16 @@ async def handle_llm_api_request(task_name, request):
 
 __all__ = [
     "handle_llm_api_request",
+    "run_llm_task",
+    "get_remote_llm_config",
+    "set_remote_llm_config",
+    "get_current_mode",
+    "LLM_MODE_LOCAL",
+    "LLM_MODE_REMOTE",
+    "RemoteLLMClient",
+    "check_model_status",
+    "check_all_models_status",
+    "start_download",
+    "get_available_models",
+    "set_current_model",
 ]

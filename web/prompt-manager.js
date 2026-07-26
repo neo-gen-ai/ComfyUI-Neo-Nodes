@@ -196,7 +196,7 @@ function createSettingsModal() {
     
     const header = mkEl("div", "rs-settings-header");
     const titleSpan = mkEl("span", "rs-settings-title-bar");
-    titleSpan.textContent = "⚙️ Model Settings";
+    titleSpan.textContent = "⚙️ Settings";
     header.appendChild(titleSpan);
     
     const closeBtn = mkEl("button", "rs-settings-close-btn");
@@ -206,27 +206,270 @@ function createSettingsModal() {
     
     const content = mkEl("div", "rs-settings-content");
     
-    const infoText = mkEl("div", "rs-settings-info");
-    infoText.innerHTML = `
-        <div class="rs-settings-title">Select LLM Model</div>
-        <div class="rs-settings-desc">Choose the model to use for AI features</div>
+    // Tab navigation
+    const tabNav = mkEl("div", "rs-tabs-nav");
+    tabNav.style.cssText = "display:flex;border-bottom:1px solid #444;margin-bottom:12px;";
+    
+    const localTabBtn = mkEl("button", "rs-tab-btn active");
+    localTabBtn.textContent = "🏠 Local Model";
+    localTabBtn.style.cssText = "flex:1;padding:8px 12px;background:transparent;border:none;color:#999;font-size:13px;cursor:pointer;border-bottom:2px solid transparent;transition:all 0.2s;";
+    
+    const remoteTabBtn = mkEl("button", "rs-tab-btn");
+    remoteTabBtn.textContent = "🌐 Remote API";
+    remoteTabBtn.style.cssText = "flex:1;padding:8px 12px;background:transparent;border:none;color:#999;font-size:13px;cursor:pointer;border-bottom:2px solid transparent;transition:all 0.2s;";
+    
+    tabNav.appendChild(localTabBtn);
+    tabNav.appendChild(remoteTabBtn);
+    
+    // Tab content containers
+    const localTabContent = mkEl("div", "rs-tab-content");
+    localTabContent.style.cssText = "display:block;";
+    
+    const localInfoText = mkEl("div", "rs-settings-info");
+    localInfoText.innerHTML = `
+        <div class="rs-settings-title">Local LLM Model</div>
+        <div class="rs-settings-desc">Choose the local model to use for AI features (requires download)</div>
     `;
     
     const modelList = mkEl("div", "rs-settings-model-list");
+    
+    const localStatusText = mkEl("div", "rs-settings-status");
+    localStatusText.textContent = "";
+    localStatusText.style.display = "none";
+    
+    localTabContent.append(localInfoText, modelList, localStatusText);
+    
+    // Remote API tab content
+    const remoteTabContent = mkEl("div", "rs-tab-content");
+    remoteTabContent.style.cssText = "display:none;";
+    remoteTabContent.id = "rs-remote-api-content";
+    
+    const remoteInfoText = mkEl("div", "rs-settings-info");
+    remoteInfoText.innerHTML = `
+        <div class="rs-settings-title">Remote LLM API</div>
+        <div class="rs-settings-desc">Use cloud-based AI models (OpenAI, Anthropic, Ollama, etc.)</div>
+    `;
+    
+    // Remote config form
+    const remoteForm = mkEl("div", "rs-remote-form");
+    remoteForm.style.cssText = "display:flex;flex-direction:column;gap:12px;";
+    
+    // Enable switch
+    const enableRow = mkEl("div", "rs-config-row");
+    const enableLabel = mkEl("label", "rs-switch-container");
+    const enableCheckbox = mkEl("input", "rs-remote-enabled-checkbox");
+    enableCheckbox.type = "checkbox";
+    enableCheckbox.id = "rs-remote-enabled";
+    const enableText = mkEl("span", "rs-switch-label");
+    enableText.textContent = "Enable Remote LLM";
+    enableLabel.appendChild(enableCheckbox);
+    enableLabel.appendChild(enableText);
+    enableRow.appendChild(enableLabel);
+    
+    // Provider select
+    const providerRow = mkEl("div", "rs-config-row");
+    const providerLabel = mkEl("label", "rs-form-label");
+    providerLabel.textContent = "Provider";
+    providerLabel.style.cssText = "font-size:12px;color:#ccc;margin-bottom:4px;";
+    
+    const providerSelect = mkEl("select", "rs-form-input rs-remote-provider");
+    providerSelect.id = "rs-remote-provider";
+    providerSelect.innerHTML = `
+        <option value="openai">OpenAI (GPT-4o, etc.)</option>
+        <option value="anthropic">Anthropic (Claude)</option>
+        <option value="ollama">Ollama (Local)</option>
+        <option value="lmstudio">LM Studio</option>
+        <option value="llamacpp">llama.cpp Server</option>
+        <option value="vllm">vLLM</option>
+        <option value="zhipu">智谱 (Zhipu GLM)</option>
+        <option value="doubao">豆包 (Doubao)</option>
+    `;
+    providerSelect.style.cssText = "width:100%;padding:6px 8px;background:#2a2a2a;border:1px solid #444;color:#ccc;font-size:12px;border-radius:4px;outline:none;";
+    
+    providerRow.appendChild(providerLabel);
+    providerRow.appendChild(providerSelect);
+    
+    // Model input
+    const modelRow = mkEl("div", "rs-config-row");
+    const modelLabel = mkEl("label", "rs-form-label");
+    modelLabel.textContent = "Model";
+    modelLabel.style.cssText = "font-size:12px;color:#ccc;margin-bottom:4px;";
+    
+    const modelInput = mkEl("input", "rs-form-input rs-remote-model");
+    modelInput.type = "text";
+    modelInput.id = "rs-remote-model";
+    modelInput.placeholder = "e.g., gpt-4o-mini";
+    modelInput.style.cssText = "width:100%;padding:6px 8px;background:#2a2a2a;border:1px solid #444;color:#ccc;font-size:12px;border-radius:4px;outline:none;box-sizing:border-box;";
+    
+    modelRow.appendChild(modelLabel);
+    modelRow.appendChild(modelInput);
+    
+    // API Key input
+    const apiKeyRow = mkEl("div", "rs-config-row");
+    const apiKeyLabel = mkEl("label", "rs-form-label");
+    apiKeyLabel.textContent = "API Key";
+    apiKeyLabel.style.cssText = "font-size:12px;color:#ccc;margin-bottom:4px;";
+    
+    const apiKeyInput = mkEl("input", "rs-form-input rs-remote-api-key");
+    apiKeyInput.type = "password";
+    apiKeyInput.id = "rs-remote-api-key";
+    apiKeyInput.placeholder = "Enter your API key";
+    apiKeyInput.style.cssText = "width:100%;padding:6px 8px;background:#2a2a2a;border:1px solid #444;color:#ccc;font-size:12px;border-radius:4px;outline:none;box-sizing:border-box;";
+    
+    apiKeyRow.appendChild(apiKeyLabel);
+    apiKeyRow.appendChild(apiKeyInput);
+    
+    // Base URL input
+    const baseUrlRow = mkEl("div", "rs-config-row");
+    const baseUrlLabel = mkEl("label", "rs-form-label");
+    baseUrlLabel.textContent = "Base URL (Optional)";
+    baseUrlLabel.style.cssText = "font-size:12px;color:#ccc;margin-bottom:4px;";
+    
+    const baseUrlInput = mkEl("input", "rs-form-input rs-remote-base-url");
+    baseUrlInput.type = "text";
+    baseUrlInput.id = "rs-remote-base-url";
+    baseUrlInput.placeholder = "Leave empty for default";
+    baseUrlInput.style.cssText = "width:100%;padding:6px 8px;background:#2a2a2a;border:1px solid #444;color:#ccc;font-size:12px;border-radius:4px;outline:none;box-sizing:border-box;";
+    
+    baseUrlRow.appendChild(baseUrlLabel);
+    baseUrlRow.appendChild(baseUrlInput);
+    
+    // Max tokens and temperature row
+    const paramsRow = mkEl("div", "rs-params-row");
+    paramsRow.style.cssText = "display:flex;gap:12px;";
+    
+    const maxTokensCol = mkEl("div", "rs-config-col");
+    const maxTokensLabel = mkEl("label", "rs-form-label");
+    maxTokensLabel.textContent = "Max Tokens";
+    maxTokensLabel.style.cssText = "font-size:12px;color:#ccc;margin-bottom:4px;display:block;";
+    
+    const maxTokensInput = mkEl("input", "rs-form-input rs-remote-max-tokens");
+    maxTokensInput.type = "number";
+    maxTokensInput.value = "500";
+    maxTokensInput.min = "1";
+    maxTokensInput.max = "8192";
+    maxTokensInput.style.cssText = "width:100%;padding:6px 8px;background:#2a2a2a;border:1px solid #444;color:#ccc;font-size:12px;border-radius:4px;outline:none;box-sizing:border-box;";
+    
+    maxTokensCol.appendChild(maxTokensLabel);
+    maxTokensCol.appendChild(maxTokensInput);
+    
+    const timeoutCol = mkEl("div", "rs-config-col");
+    const timeoutLabel = mkEl("label", "rs-form-label");
+    timeoutLabel.textContent = "Timeout (s)";
+    timeoutLabel.style.cssText = "font-size:12px;color:#ccc;margin-bottom:4px;display:block;";
+    
+    const timeoutInput = mkEl("input", "rs-form-input rs-remote-timeout");
+    timeoutInput.type = "number";
+    timeoutInput.value = "60";
+    timeoutInput.min = "10";
+    timeoutInput.max = "300";
+    timeoutInput.style.cssText = "width:100%;padding:6px 8px;background:#2a2a2a;border:1px solid #444;color:#ccc;font-size:12px;border-radius:4px;outline:none;box-sizing:border-box;";
+    
+    timeoutCol.appendChild(timeoutLabel);
+    timeoutCol.appendChild(timeoutInput);
+    
+    paramsRow.appendChild(maxTokensCol);
+    paramsRow.appendChild(timeoutCol);
+    
+    // Provider info box
+    const providerInfoBox = mkEl("div", "rs-info-box");
+    providerInfoBox.id = "rs-provider-info";
+    providerInfoBox.style.cssText = "padding:8px 10px;background:#1a2a3a;border:1px solid #2a4a6a;border-radius:4px;font-size:11px;color:#60a5fa;";
+    providerInfoBox.textContent = "OpenAI: GPT-4o, GPT-4o-mini, custom OpenAI-compatible models";
+    
+    // Remote form buttons row
+    const remoteBtnRow = mkEl("div", "rs-remote-btn-row");
+    remoteBtnRow.style.cssText = "display:flex;justify-content:flex-end;gap:8px;margin-top:8px;";
+    
+    const remoteSaveBtn = mkEl("button", "rs-btn rs-remote-save-btn");
+    remoteSaveBtn.textContent = "💾 Save Configuration";
+    remoteSaveBtn.style.cssText = "padding:6px 12px;background:linear-gradient(135deg,#2a4a6a 0%,#1a3a5a 100%);color:#60a5fa;border:1px solid #3a6a9a;border-radius:4px;cursor:pointer;font-size:12px;";
+    
+    remoteForm.append(enableRow, providerRow, modelRow, apiKeyRow, baseUrlRow, paramsRow, providerInfoBox, remoteBtnRow);
+    remoteTabContent.append(remoteInfoText, remoteForm);
+    
+    content.append(tabNav, localTabContent, remoteTabContent);
     
     const statusText = mkEl("div", "rs-settings-status");
     statusText.textContent = "";
     statusText.style.display = "none";
     
-    content.append(infoText, modelList, statusText);
     wrapper.append(header, content);
     modal.appendChild(wrapper);
+    
+    // Tab switching logic
+    localTabBtn.addEventListener("click", () => {
+        localTabBtn.classList.add("active");
+        remoteTabBtn.classList.remove("active");
+        localTabBtn.style.color = "#60a5fa";
+        localTabBtn.style.borderBottomColor = "#60a5fa";
+        remoteTabBtn.style.color = "#999";
+        remoteTabBtn.style.borderBottomColor = "transparent";
+        localTabContent.style.display = "block";
+        remoteTabContent.style.display = "none";
+    });
+    
+    remoteTabBtn.addEventListener("click", () => {
+        remoteTabBtn.classList.add("active");
+        localTabBtn.classList.remove("active");
+        remoteTabBtn.style.color = "#60a5fa";
+        remoteTabBtn.style.borderBottomColor = "#60a5fa";
+        localTabBtn.style.color = "#999";
+        localTabBtn.style.borderBottomColor = "transparent";
+        localTabContent.style.display = "none";
+        remoteTabContent.style.display = "block";
+    });
+    
+    // Provider info update
+    providerSelect.addEventListener("change", () => {
+        const providers = {
+            openai: "OpenAI: GPT-4o, GPT-4o-mini, custom OpenAI-compatible models",
+            anthropic: "Anthropic: Claude Opus, Sonnet, Haiku",
+            ollama: "Ollama: Local LLM server (default: http://localhost:11430)",
+            lmstudio: "LM Studio: Local LLM server (default: http://localhost:1234)",
+            llamacpp: "llama.cpp: HTTP server for GGUF models",
+            vllm: "vLLM: High-throughput inference service",
+            zhipu: "智谱 GLM: GLM-4 and other Zhipu models",
+            doubao: "豆包: ByteDance Doubao models"
+        };
+        const provider = providerSelect.value;
+        providerInfoBox.textContent = providers[provider] || "";
+        
+        // Update default values based on provider
+        if (provider === "openai") {
+            modelInput.placeholder = "e.g., gpt-4o-mini";
+            if (!modelInput.value) modelInput.value = "gpt-4o-mini";
+        } else if (provider === "anthropic") {
+            modelInput.placeholder = "e.g., claude-sonnet-4-20250514";
+            if (!modelInput.value) modelInput.value = "claude-sonnet-4-20250514";
+        } else if (provider === "ollama") {
+            modelInput.placeholder = "e.g., llama3";
+            if (!modelInput.value) modelInput.value = "llama3";
+        } else if (provider === "zhipu") {
+            baseUrlInput.value = "https://open.bigmodel.cn/api/proxy";
+        } else if (provider === "ollama" || provider === "llamacpp" || provider === "vllm") {
+            modelInput.placeholder = "Enter model name";
+        }
+    });
     
     return { 
         modal, 
         modelList, 
         statusText, 
-        closeBtn 
+        closeBtn,
+        // Remote LLM elements
+        enableCheckbox,
+        providerSelect,
+        modelInput,
+        apiKeyInput,
+        baseUrlInput,
+        maxTokensInput,
+        timeoutInput,
+        remoteSaveBtn,
+        providerInfoBox,
+        // Tab buttons for external access
+        localTabBtn,
+        remoteTabBtn
     };
 }
 
@@ -843,8 +1086,46 @@ function createPromptManagerUI() {
             }
         }
 
-        settingsBtn.addEventListener("click", () => {
+        settingsBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            
+            // 添加右侧定位类
+            settingsModal.modal.classList.add("rs-positioned-right");
+            
+            // 使用 offsetParent 定位，避免缩放导致的计算偏差
+            // 找到 settingsBtn 的 offsetParent（通常是带有 position:relative/absolute 的父元素）
+            let offsetParent = settingsBtn.offsetParent;
+            
+            // 计算按钮相对于根容器的位置
+            // 使用 offsetLeft/offsetTop 而不是 getBoundingClientRect，避免缩放影响
+            let accumulatedTop = 0;
+            let accumulatedLeft = 0;
+            let currentEl = settingsBtn;
+            
+            // 累加到根容器
+            while (currentEl && currentEl !== root) {
+                accumulatedTop += currentEl.offsetTop || 0;
+                accumulatedLeft += currentEl.offsetLeft || 0;
+                currentEl = currentEl.offsetParent;
+            }
+            
+            // 加上按钮自身的尺寸
+            const topPos = accumulatedTop;
+            const leftPos = accumulatedLeft + settingsBtn.offsetWidth + 5; // 按钮右侧 5px
+            
+            settingsModal.modal.style.position = "absolute";
+            settingsModal.modal.style.zIndex = "999999";
+            settingsModal.modal.style.top = topPos + "px";
+            settingsModal.modal.style.left = leftPos + "px";
+            settingsModal.modal.style.transform = "none";
+            settingsModal.modal.style.justifyContent = "flex-start";
+            settingsModal.modal.style.alignItems = "flex-start";
+            settingsModal.modal.style.opacity = "1";
+            settingsModal.modal.style.visibility = "visible";
+            
+            // 显示模态框
             settingsModal.modal.style.display = "flex";
+            
             loadModelsIntoSettings();
         });
         
