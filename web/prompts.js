@@ -190,7 +190,8 @@ app.registerExtension({
                 enhanceBtn, translateBtn, generateBtn, randomBtn, quickInput, 
                 customTextarea, statusBar, settingsBtn,
                 presetListOverlay, presetNameInput, deleteConfirmOverlay, downloadModal,
-                settingsModal, loadModelsIntoSettings
+                settingsModal, loadModelsIntoSettings,
+                quickInputWrapper
             } = promptUI.init({ node, graph: node.graph, textWidget });
 
             // Hide status bar for NeoPromptGenerator
@@ -219,18 +220,6 @@ app.registerExtension({
                 if (node.graph) node.graph.setDirtyCanvas(true, true);
             };
 
-            // Settings button click handler - load models and show modal
-            settingsBtn.addEventListener("click", async (e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                try {
-                    await loadModelsIntoSettings();
-                    await loadRemoteLLMConfig(settingsModal);
-                    settingsModal.modal.style.display = "flex";
-                } catch (err) {
-                    console.error("Error opening settings modal:", err);
-                }
-            });
 
             // Node removal cleanup
             node.onRemoved = function() {
@@ -285,7 +274,7 @@ app.registerExtension({
             // Use shared event listeners
             // ==========================================
             document.addEventListener("click", NodeBehaviors.createPopupCloser({
-                presetListOverlay, presetNameInput, deleteConfirmOverlay, selectBtn: null, saveBtn: null
+                presetListOverlay, presetNameInput, deleteConfirmOverlay, saveBtn: null, listBtn: null, quickInputWrapper
             }));
 
             api.addEventListener("rs.prompt.update", NodeBehaviors.createPromptUpdateHandler(
@@ -415,7 +404,8 @@ app.registerExtension({
                 enhanceBtn, translateBtn, generateBtn, randomBtn, quickInput, 
                 customTextarea, statusBar, settingsBtn, toggleSwitch, toggleKnob,
                 presetListOverlay, presetNameInput, deleteConfirmOverlay, downloadModal,
-                settingsModal, loadModelsIntoSettings
+                settingsModal, loadModelsIntoSettings,
+                quickInputWrapper
             } = promptUI.init({ node, graph: node.graph, textWidget });
 
             // 节点生命周期管理 - 使用共享的 behaviorManager
@@ -550,21 +540,6 @@ app.registerExtension({
                 });
             }
 
-            // Settings button click handler - 共享逻辑
-            if (settingsBtn && settingsModal && loadModelsIntoSettings) {
-                settingsBtn.addEventListener("click", async (e) => {
-                    console.log("[NeoPromptEncoder] Settings button clicked");
-                    e.stopPropagation();
-                    e.preventDefault();
-                    try {
-                        await loadModelsIntoSettings();
-                        await loadRemoteLLMConfig(settingsModal);
-                        settingsModal.modal.style.display = "flex";
-                    } catch (err) {
-                        console.error("Error opening settings modal:", err);
-                    }
-                });
-            }
 
             // 节点移除清理
             node.onRemoved = function() {
@@ -626,10 +601,10 @@ app.registerExtension({
             randomBtn.addEventListener("click", NodeBehaviors.createRandomHandler(promptUIRef, promptService));
 
             // ==========================================
-            // 使用共享的事件监听器 - NeoPromptEncoder 不需要 select/save 按钮的弹窗
+            // Use shared event listeners
             // ==========================================
             document.addEventListener("click", NodeBehaviors.createPopupCloser({
-                presetListOverlay, presetNameInput, deleteConfirmOverlay, selectBtn: null, saveBtn: null
+                presetListOverlay, presetNameInput, deleteConfirmOverlay, saveBtn: null, listBtn: null, quickInputWrapper
             }));
 
             api.addEventListener("rs.prompt.update", NodeBehaviors.createPromptUpdateHandler(

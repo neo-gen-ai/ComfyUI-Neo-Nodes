@@ -252,14 +252,22 @@ function createRandomHandler(promptUI, promptService) {
  */
 function createPopupCloser(promptUIElements) {
     return (e) => {
-        const { presetListOverlay, presetNameInput, deleteConfirmOverlay, selectBtn, saveBtn } = promptUIElements;
+        const { presetListOverlay, presetNameInput, deleteConfirmOverlay, saveBtn, quickInputWrapper } = promptUIElements;
         
         // Check if click is inside our custom UI root
         const clickedRoot = e.target.closest(".rs-root");
         
-        if (presetListOverlay && !presetListOverlay.contains(e.target)) {
-            // Don't close if clicking inside the same rs-root or on the select button
-            if (clickedRoot && (!selectBtn || !selectBtn.contains(e.target))) {
+        if (presetListOverlay) {
+            // 点击 overlay 内部不关闭
+            if (presetListOverlay.contains(e.target)) {
+                return;
+            }
+            // 点击 quickInputWrapper 内部（包括 quickInput、listBtn、randomBtn、generateBtn）不关闭
+            if (quickInputWrapper && quickInputWrapper.contains(e.target)) {
+                return;
+            }
+            // 点击外部（不在 rs-root 内）才关闭
+            if (!clickedRoot) {
                 presetListOverlay.style.display = "none";
             }
         }

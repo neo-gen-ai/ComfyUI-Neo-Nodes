@@ -532,16 +532,37 @@ async function generatePromptFromText(text) {
 }
 
 /**
- * 随机生成文生图提示词
+ * 随机生成文生图提示词（从 preset list 中随机选择一个）
  * @returns {Promise<{status: string, prompt: string, error?: string}>}
  */
 async function randomPrompt() {
-    const res = await fetch("/rs_prompts/random_prompt", {
+    const res = await fetch("/rs_prompts/list_prompts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" }
+    });
+    const list = await res.json();
+    
+    if (!list || list.length === 0) {
+        return { status: "error", prompt: "", error: "No presets available" };
+    }
+    
+    // 随机选择一个
+    const randomIndex = Math.floor(Math.random() * list.length);
+    const selectedItem = list[randomIndex];
+    const name = typeof selectedItem === 'string' ? selectedItem : selectedItem.name;
+    
+    // 加载该 preset 的完整内容
+    const loadRes = await fetch("/rs_prompts/load_prompt", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: "random" })
+        body: JSON.stringify({ name })
     });
-    return await res.json();
+    const data = await loadRes.json();
+    
+    return {
+        status: "success",
+        prompt: data.text || ""
+    };
 }
 
 /**

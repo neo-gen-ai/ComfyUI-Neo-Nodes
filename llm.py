@@ -199,7 +199,6 @@ _TASK_MODEL_CONFIGS = {
     "enhance_prompt": {"max_tokens": 500, "model_override": None},
     "translate_prompt": {"max_tokens": 500, "model_override": None},
     "generate_prompt": {"max_tokens": 500, "model_override": None},
-    "random_prompt": {"max_tokens": 500, "model_override": None},
 }
 
 def get_task_config(task_name: str) -> Dict[str, Any]:
@@ -702,7 +701,7 @@ class RemoteLLMClient:
         
         # 处理图像
         if image_bytes_list:
-            content_parts = [{"type": "text", "text": user_content}]
+            content_parts: list[dict[str, Any]] = [{"type": "text", "text": user_content}]
             for img_bytes in image_bytes_list:
                 b64 = base64.b64encode(img_bytes).decode('utf-8')
                 content_parts.append({
@@ -1157,19 +1156,6 @@ LLM_TASKS = {
         "max_tokens": 500,
         "result_key": "prompt",
         "description": "从简洁文字生成提示词"
-    },
-    "random_prompt": {
-        "system": (
-            "你是一个创意提示词生成助手。"
-            "请随机生成一段有创意的文生图提示词。"
-            "要求：1.包含主体、场景、风格、光影等元素；"
-            "2.使用英文输出，适合文生图模型使用；"
-            "3.添加质量词（如：masterpiece, best quality, high resolution 等）；"
-            "4.只返回生成的提示词内容，不要包含任何解释或额外文字。"
-        ),
-        "max_tokens": 500,
-        "result_key": "prompt",
-        "description": "随机生成提示词"
     },
 }
 

@@ -39,34 +39,11 @@ function mkEl(tag, className, styles = '') {
 // UI 组件创建 (内部使用)
 // ==========================================
 
-function createOverlayWithSearch(title) {
+function createOverlayWithSearch() {
     const overlay = mkEl("div", "rs-preset-list-overlay");
-    const header = mkEl("div", "rs-preset-list-header");
-    const titleSpan = mkEl("span", "rs-preset-list-title");
-    titleSpan.textContent = title;
-    header.appendChild(titleSpan);
-
-    const searchInput = mkEl("input", "rs-preset-search-input");
-    searchInput.placeholder = "🔍 Search presets...";
-
     const body = mkEl("div", "rs-preset-list-body");
-
-    overlay.appendChild(header);
-    overlay.appendChild(searchInput);
     overlay.appendChild(body);
-
-    // 关闭按钮放在 header 右侧
-    const closeBtn = mkEl("button", "rs-close-btn");
-    closeBtn.textContent = "✕";
-    closeBtn.setAttribute("aria-label", "Close");
-
-    closeBtn.addEventListener("click", () => {
-        overlay.style.display = "none";
-    });
-
-    header.appendChild(closeBtn);
-
-    return { overlay, header, searchInput, body, closeBtn };
+    return { overlay, body };
 }
 
 function createInputModal() {
@@ -435,11 +412,6 @@ function createSettingsModal() {
     
     remoteForm.append(enableRow, enableStatusText, providerRow, modelRow, apiKeyRow, baseUrlRow, paramsRow, remoteBtnRow, providerSaveStatusText);
     
-    // 调试：打印按钮元素
-    console.log("[Remote Save] Button element:", remoteSaveBtn);
-    console.log("[Remote Save] Button display:", remoteSaveBtn.style.display);
-    console.log("[Remote Save] Remote form:", remoteForm);
-    console.log("[Remote Save] Remote form children:", remoteForm.children.length);
     remoteTabContent.append(remoteInfoText, remoteForm);
     
     content.append(tabNav, localTabContent, remoteTabContent);
@@ -468,13 +440,6 @@ function createSettingsModal() {
     
     // Provider save handler
     remoteSaveBtn.addEventListener("click", async () => {
-        console.log("[Remote Provider Save] Button clicked!");
-        
-        // 禁用按钮显示加载状态
-        remoteSaveBtn.disabled = true;
-        remoteSaveBtn.textContent = "⏳ Saving...";
-        remoteSaveBtn.style.opacity = "0.7";
-        
         const config = {
             enabled: enableCheckbox.checked,
             provider: providerSelect.value,
@@ -486,19 +451,14 @@ function createSettingsModal() {
             temperature: parseFloat(temperatureInput?.value) || 0.0
         };
         
-        console.log("[Remote Provider Save] Config to save:", JSON.stringify(config, null, 2));
-        
         const result = await window.NeoNodes?.saveRemoteLLMConfig?.(config);
-        console.log("[Remote Provider Save] API response:", result);
         
         if (result && result.success) {
-            // 成功反馈：按钮绿色闪烁
             remoteSaveBtn.textContent = "✅ Saved!";
             remoteSaveBtn.style.background = "#16a34a";
             remoteSaveBtn.style.color = "#fff";
             remoteSaveBtn.style.opacity = "1";
             
-            // 同时显示状态文本
             providerSaveStatusText.textContent = "✅ Provider settings saved!";
             providerSaveStatusText.style.display = "block";
             providerSaveStatusText.style.color = "#16a34a";
@@ -512,7 +472,6 @@ function createSettingsModal() {
                 providerSaveStatusText.style.display = "none";
             }, 2000);
         } else {
-            // 失败反馈：按钮红色闪烁
             remoteSaveBtn.textContent = "❌ Failed";
             remoteSaveBtn.style.background = "#dc2626";
             remoteSaveBtn.style.color = "#fff";
@@ -535,7 +494,6 @@ function createSettingsModal() {
     
     // Provider info update
     providerSelect.addEventListener("change", () => {
-        // Update API Key placeholder based on provider type
         const localProviders = ["ollama", "lmstudio", "llamacpp", "vllm"];
         if (localProviders.includes(providerSelect.value)) {
             apiKeyInput.placeholder = "Optional for local services";
@@ -543,7 +501,6 @@ function createSettingsModal() {
             apiKeyInput.placeholder = "Required for cloud services";
         }
         
-        // Update default values based on provider
         if (providerSelect.value === "openai") {
             modelInput.placeholder = "e.g., gpt-4o-mini";
             if (!modelInput.value) modelInput.value = "gpt-4o-mini";
@@ -579,7 +536,6 @@ function createSettingsModal() {
         modelList, 
         statusText, 
         closeBtn,
-        // Remote LLM elements
         enableCheckbox,
         providerSelect,
         modelInput,
@@ -591,20 +547,13 @@ function createSettingsModal() {
         remoteSaveBtn,
         enableStatusText,
         providerSaveStatusText,
-        // Tab buttons for external access
         localTabBtn,
         remoteTabBtn,
-        // Tab content references
         localTabContent,
         remoteTabContent
     };
 }
 
-/**
- * 加载远程 LLM 配置
- * @param {Object} settingsModal - 设置模态框元素
- * @returns {Promise<void>}
- */
 async function loadRemoteLLMConfig(settingsModal) {
     const config = await window.NeoNodes?.getRemoteLLMConfig?.();
     if (config) {
@@ -616,19 +565,13 @@ async function loadRemoteLLMConfig(settingsModal) {
         if (settingsModal.temperatureInput) {
             settingsModal.temperatureInput.value = config.temperature || 0.0;
         }
-        
-        // 只有当有保存的值时才设置，否则让 updateProviderInfo 自动填充默认值
         if (config.model) {
             settingsModal.modelInput.value = config.model;
         }
         if (config.base_url) {
             settingsModal.baseUrlInput.value = config.base_url;
         }
-        
-        // Trigger provider info update to auto-fill defaults
         settingsModal.providerSelect.dispatchEvent(new Event('change'));
-        
-        // 如果启用了远程 LLM，切换到 remote tab
         if (config.enabled) {
             settingsModal.localTabBtn.classList.remove("active");
             settingsModal.remoteTabBtn.classList.add("active");
@@ -641,7 +584,6 @@ async function loadRemoteLLMConfig(settingsModal) {
 function createStatusBars() {
     const statusBar = mkEl("div", "rs-status-bar");
     
-    // Toggle switch for disable_text_input (left side)
     const toggleWrapper = mkEl("div", "rs-toggle-wrapper");
     
     const toggleSwitch = mkEl("div", "rs-toggle-switch");
@@ -658,34 +600,29 @@ function createStatusBars() {
     const settingsBtn = mkEl("button", "rs-settings-btn");
     settingsBtn.textContent = "⚙️";
     settingsBtn.setAttribute("data-rs-tooltip", "Model settings");
-    // Note: title attribute removed to prevent ComfyUI tooltip popup
-    settingsBtn.addEventListener("mouseenter", () => {
-        settingsBtn.style.color = "#fff";
-        settingsBtn.style.background = "rgba(80, 144, 204, 0.2)";
-    });
-    settingsBtn.addEventListener("mouseleave", () => {
-        settingsBtn.style.color = "#999";
-        settingsBtn.style.background = "transparent";
-    });
     
     statusBar.appendChild(toggleWrapper);
     statusBar.appendChild(statusText);
 
-    // 简洁输入框 - 用于输入简洁文字描述生成提示词
     const quickInputWrapper = mkEl("div", "rs-quick-input-wrapper");
 
     const randomBtn = mkEl("button", "rs-random-btn");
     randomBtn.textContent = "🎲";
     randomBtn.setAttribute("data-rs-tooltip", "Random prompt");
 
+    const listBtn = mkEl("button", "rs-list-btn");
+    listBtn.textContent = "☰";
+    listBtn.setAttribute("data-rs-tooltip", "Preset list");
+
     const quickInput = mkEl("input", "rs-quick-input");
-    quickInput.placeholder = "💡 Quick description...";
+    quickInput.placeholder = '🔍 Search presets or describe...';
 
     const generateBtn = mkEl("button", "rs-generate-btn");
     generateBtn.textContent = "🚀";
     generateBtn.setAttribute("data-rs-tooltip", "Generate from description");
 
     quickInputWrapper.appendChild(randomBtn);
+    quickInputWrapper.appendChild(listBtn);
     quickInputWrapper.appendChild(quickInput);
     quickInputWrapper.appendChild(generateBtn);
     quickInputWrapper.appendChild(settingsBtn);
@@ -706,66 +643,45 @@ function createStatusBars() {
     const saveBtn = mkEl("button", "rs-btn");
     saveBtn.textContent = "💾 Save";
     saveBtn.setAttribute("data-rs-tooltip", "Save as preset");
-    const selectBtn = mkEl("button", "rs-btn");
-    selectBtn.textContent = "📋 Select";
-    selectBtn.setAttribute("data-rs-tooltip", "Load preset");
 
-    btnRow.append(enhanceBtn, translateBtn, saveBtn, selectBtn);
+    btnRow.append(enhanceBtn, translateBtn, saveBtn);
     buttonsWrapper.append(btnRow);
 
-    return { statusBar, quickInputWrapper, randomBtn, quickInput, generateBtn, customTextarea, buttonsWrapper, enhanceBtn, translateBtn, saveBtn, selectBtn, settingsBtn, toggleSwitch, toggleKnob };
+    return { statusBar, quickInputWrapper, randomBtn, listBtn, quickInput, generateBtn, customTextarea, buttonsWrapper, enhanceBtn, translateBtn, saveBtn, settingsBtn, toggleSwitch, toggleKnob };
 }
 
-// ==========================================
-// 提示词管理器工厂
-// ==========================================
-
-/**
- * 创建提示词管理 UI
- * @returns {Object} - 包含 root 容器和 init 方法
- */
 function createPromptManagerUI() {
-    // 创建所有 UI 组件
-    const { statusBar, quickInputWrapper, randomBtn, quickInput, generateBtn, customTextarea, buttonsWrapper, enhanceBtn, translateBtn, saveBtn, selectBtn, settingsBtn, toggleSwitch, toggleKnob } = createStatusBars();
-    const { overlay: presetListOverlay, searchInput: presetSearchInput, body: presetListBody } = createOverlayWithSearch("📋 Prompt Presets");
+    const { statusBar, quickInputWrapper, randomBtn, listBtn, quickInput, generateBtn, customTextarea, buttonsWrapper, enhanceBtn, translateBtn, saveBtn, settingsBtn, toggleSwitch, toggleKnob } = createStatusBars();
+    const { overlay: presetListOverlay, body: presetListBody } = createOverlayWithSearch();
     const { modal: presetNameInput, aiStatus, field: inputField, tagsContainer, selectedTags, okBtn: inputOk, cancelBtn: inputCancel } = createInputModal();
     const { modal: deleteConfirmOverlay, textDiv: deleteText, okBtn: deleteOk, cancelBtn: deleteCancel } = createDeleteModal();
     const downloadModal = createDownloadModal();
     const settingsModal = createSettingsModal();
 
-    // 创建 root 容器
     const root = mkEl("div", "rs-root");
     root.appendChild(statusBar);
     root.appendChild(quickInputWrapper);
     root.appendChild(customTextarea);
     root.appendChild(buttonsWrapper);
 
-    // 将模态框也添加到 root 中
-    root.appendChild(presetListOverlay);
     root.appendChild(presetNameInput);
     root.appendChild(deleteConfirmOverlay);
     root.appendChild(downloadModal.modal);
     root.appendChild(settingsModal.modal);
 
-    // 配置 preset list body 样式
     presetListBody.style.scrollbarWidth = "thin";
     presetListBody.style.scrollbarColor = "#5090cc #1a1a1a";
 
-    // 内部状态
     let pendingDeleteName = null;
-    let filterTimeout = null;
     let context = null;
+    let isLoading = false;
+    let isListOpen = false;
+    let isSettingsBtnClicked = false;
 
-    /**
-     * 初始化提示词管理器
-     * @param {Object} ctx - 上下文 (node, graph, textWidget)
-     * @returns {Object} - 返回增强/翻译按钮和 customTextarea 引用
-     */
     function init(ctx) {
         context = ctx;
         const { node, graph, textWidget } = ctx;
 
-        // 保存按钮点击处理
         function handleSaveClick() {
             presetListOverlay.style.display = "none";
             deleteConfirmOverlay.style.display = "none";
@@ -796,10 +712,7 @@ function createPromptManagerUI() {
 
                     if (dataClassify.status === "success" && dataClassify.classify) {
                         const classifyText = dataClassify.classify.trim();
-                        console.log("📊 Auto-classification result:", classifyText);
-
                         const classifyList = classifyText.split(/[,，]/).map(s => s.trim()).filter(s => s);
-                        console.log("🏷️ Classify list:", classifyList);
 
                         tagButtons.forEach(btn => {
                             const btnText = btn.textContent.trim();
@@ -811,7 +724,6 @@ function createPromptManagerUI() {
                         aiStatus.className = "rs-ai-status success";
                         aiStatus.innerHTML = "✅ AI 分析完成";
                     } else {
-                        console.log("⚠️ Auto-classify failed, using manual selection.");
                         aiStatus.className = "rs-ai-status error";
                         aiStatus.innerHTML = "❌ AI 分析失败，请手动填写";
                     }
@@ -823,53 +735,214 @@ function createPromptManagerUI() {
             }
         }
 
-        // 执行保存
         function performSave() {
             const name = inputField.value.trim();
             if (!name) return;
             presetNameInput.style.display = "none";
             const tags = Array.from(selectedTags);
-            console.log("Tags:", tags);
             savePrompt(name, textWidget ? textWidget.value : "", tags);
         }
 
-        // 搜索过滤
-        function filterPresets(query) {
-            const items = presetListBody.querySelectorAll(".rs-preset-item");
+        async function loadPresetDropdown() {
+            if (isLoading) return;
+            isLoading = true;
+            
+            presetListBody.innerHTML = "";
 
-            if (!query) {
-                items.forEach(item => {
-                    item.classList.remove("hidden");
-                    const contentSpan = item.querySelector(".rs-preset-content");
-                    if (contentSpan) {
-                        const originalText = item.dataset.original;
-                        if (originalText) {
-                            contentSpan.innerHTML = "";
-                            contentSpan.textContent = originalText;
-                        }
-                    }
-                });
-                return;
-            }
+            const loadingDiv = mkEl("div", "rs-loading");
+            loadingDiv.textContent = "Loading...";
+            presetListBody.appendChild(loadingDiv);
 
-            items.forEach(item => {
-                const contentSpan = item.querySelector(".rs-preset-content");
-                if (!contentSpan) return;
+            try {
+                const list = await listPrompts();
 
-                const fullText = contentSpan.textContent.toLowerCase();
+                if (loadingDiv.parentNode) loadingDiv.remove();
 
-                if (fullText.includes(query)) {
-                    item.classList.remove("hidden");
-                    const regex = new RegExp(`(${query})`, "gi");
-                    const highlightedText = fullText.replace(regex, '<span class="rs-match-highlight">$1</span>');
-                    contentSpan.innerHTML = highlightedText;
-                } else {
-                    item.classList.add("hidden");
+                if (!list.length) {
+                    presetListBody.textContent = "No presets found";
+                    isLoading = false;
+                    return;
                 }
-            });
+
+                list.forEach(item => {
+                    const name = typeof item === 'string' ? item : item.name;
+                    const tags = typeof item === 'string' ? [] : (item.tags || []);
+                    const source = typeof item === 'object' ? item.source : "custom";
+
+                    const row = document.createElement("div");
+                    row.className = "rs-preset-item";
+                    row.dataset.name = name;
+
+                    const leftDiv = mkEl("div", "rs-preset-left");
+                    const contentSpan = mkEl("span", "rs-preset-content");
+                    const displayText = tags && tags.length > 0 ? `${name} [${tags.join(", ")}]` : name;
+
+                    if (tags && tags.length > 0) {
+                        contentSpan.textContent = name;
+                        const tagsSpan = document.createElement("span");
+                        tagsSpan.className = "rs-tags-part";
+                        tagsSpan.textContent = ` [${tags.join(", ")}]`;
+                        contentSpan.appendChild(document.createTextNode(" "));
+                        contentSpan.appendChild(tagsSpan);
+                    } else {
+                        contentSpan.textContent = name;
+                    }
+
+                    const sourceBadge = mkEl("span", "rs-source-badge");
+                    sourceBadge.textContent = source === "presets" ? "SYS" : "USR";
+                    sourceBadge.title = source === "presets" ? "System preset (cannot delete)" : "User preset";
+                    contentSpan.appendChild(sourceBadge);
+
+                    contentSpan.dataset.original = displayText;
+                    row.dataset.original = displayText;
+                    leftDiv.appendChild(contentSpan);
+                    row.appendChild(leftDiv);
+
+                    row.onclick = async (e) => {
+                        if (e.target.closest(".rs-delete-icon")) return;
+
+                        const data = await loadPrompt(name);
+
+                        if (textWidget) {
+                            textWidget.value = data.text || "";
+                        }
+                        if (customTextarea) {
+                            customTextarea.value = data.text || "";
+                        }
+
+                        const currentUid = node.properties.rs_instance_uid || node.widgets?.find(w => w.name === "instance_uid")?.value;
+                        const currentTextKey = `rs_prompt_${currentUid}`;
+                        localStorage.setItem(currentTextKey, data.text || "");
+
+                        presetListOverlay.style.display = "none";
+                        if (graph) graph.setDirtyCanvas(true, true);
+                    };
+
+                    if (source === "custom") {
+                        const deleteBtn = mkEl("span", "rs-delete-icon");
+                        deleteBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>';
+                        deleteBtn.setAttribute("aria-label", "Delete preset");
+                        deleteBtn.onclick = async (e) => {
+                            e.stopPropagation();
+                            pendingDeleteName = name;
+                            deleteText.textContent = `Delete "${name}"?`;
+                            deleteConfirmOverlay.style.display = "block";
+                        };
+                        row.appendChild(deleteBtn);
+                    }
+
+                    presetListBody.appendChild(row);
+                });
+            } catch (e) {
+                presetListBody.textContent = "Error loading";
+            } finally {
+                isLoading = false;
+            }
         }
 
-        // 加载提示词列表
+        function filterDropdownByInput(query) {
+            presetListBody.innerHTML = "";
+
+            const loadingDiv = mkEl("div", "rs-loading");
+            loadingDiv.textContent = "Searching...";
+            presetListBody.appendChild(loadingDiv);
+
+            setTimeout(async () => {
+                if (loadingDiv.parentNode) loadingDiv.remove();
+
+                const list = await listPrompts();
+                const queryLower = query.toLowerCase();
+                const matched = list.filter(item => {
+                    const name = typeof item === 'string' ? item : item.name;
+                    const tags = typeof item === 'string' ? [] : (item.tags || []);
+                    return name.toLowerCase().includes(queryLower) || 
+                           tags.some(t => t.toLowerCase().includes(queryLower));
+                });
+
+                if (!matched.length) {
+                    presetListBody.innerHTML = "";
+                    return;
+                }
+
+                matched.forEach(item => {
+                    const name = typeof item === 'string' ? item : item.name;
+                    const tags = typeof item === 'string' ? [] : (item.tags || []);
+                    const source = typeof item === 'object' ? item.source : "custom";
+
+                    const row = document.createElement("div");
+                    row.className = "rs-preset-item";
+                    row.dataset.name = name;
+
+                    const leftDiv = mkEl("div", "rs-preset-left");
+                    const contentSpan = mkEl("span", "rs-preset-content");
+                    const displayText = tags && tags.length > 0 ? `${name} [${tags.join(", ")}]` : name;
+
+                    if (tags && tags.length > 0) {
+                        contentSpan.textContent = name;
+                        const tagsSpan = document.createElement("span");
+                        tagsSpan.className = "rs-tags-part";
+                        tagsSpan.textContent = ` [${tags.join(", ")}]`;
+                        contentSpan.appendChild(document.createTextNode(" "));
+                        contentSpan.appendChild(tagsSpan);
+                    } else {
+                        contentSpan.textContent = name;
+                    }
+
+                    const regex = new RegExp(`(${query})`, "gi");
+                    const highlightedName = name.replace(regex, '<span class="rs-match-highlight">$1</span>');
+                    contentSpan.innerHTML = highlightedName;
+
+                    if (tags && tags.length > 0) {
+                        const tagsSpan = document.createElement("span");
+                        tagsSpan.className = "rs-tags-part";
+                        tagsSpan.textContent = ` [${tags.join(", ")}]`;
+                        contentSpan.appendChild(document.createTextNode(" "));
+                        contentSpan.appendChild(tagsSpan);
+                    }
+
+                    contentSpan.dataset.original = displayText;
+                    row.dataset.original = displayText;
+                    leftDiv.appendChild(contentSpan);
+                    row.appendChild(leftDiv);
+
+                    row.onclick = async (e) => {
+                        if (e.target.closest(".rs-delete-icon")) return;
+
+                        const data = await loadPrompt(name);
+
+                        if (textWidget) {
+                            textWidget.value = data.text || "";
+                        }
+                        if (customTextarea) {
+                            customTextarea.value = data.text || "";
+                        }
+
+                        const currentUid = node.properties.rs_instance_uid || node.widgets?.find(w => w.name === "instance_uid")?.value;
+                        const currentTextKey = `rs_prompt_${currentUid}`;
+                        localStorage.setItem(currentTextKey, data.text || "");
+
+                        presetListOverlay.style.display = "none";
+                        if (graph) graph.setDirtyCanvas(true, true);
+                    };
+
+                    if (source === "custom") {
+                        const deleteBtn = mkEl("span", "rs-delete-icon");
+                        deleteBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>';
+                        deleteBtn.setAttribute("aria-label", "Delete preset");
+                        deleteBtn.onclick = async (e) => {
+                            e.stopPropagation();
+                            pendingDeleteName = name;
+                            deleteText.textContent = `Delete "${name}"?`;
+                            deleteConfirmOverlay.style.display = "block";
+                        };
+                        row.appendChild(deleteBtn);
+                    }
+
+                    presetListBody.appendChild(row);
+                });
+            }, 100);
+        }
+
         async function loadPromptList() {
             presetNameInput.style.display = "none";
             deleteConfirmOverlay.style.display = "none";
@@ -890,10 +963,6 @@ function createPromptManagerUI() {
                     return;
                 }
 
-                setTimeout(() => {
-                    presetSearchInput.focus();
-                }, 100);
-
                 list.forEach(item => {
                     const name = typeof item === 'string' ? item : item.name;
                     const tags = typeof item === 'string' ? [] : (item.tags || []);
@@ -904,7 +973,6 @@ function createPromptManagerUI() {
                     row.dataset.name = name;
 
                     const leftDiv = mkEl("div", "rs-preset-left");
-
                     const contentSpan = mkEl("span", "rs-preset-content");
                     const displayText = tags && tags.length > 0 ? `${name} [${tags.join(", ")}]` : name;
 
@@ -919,7 +987,6 @@ function createPromptManagerUI() {
                         contentSpan.textContent = name;
                     }
 
-                    // 添加来源标识
                     const sourceBadge = mkEl("span", "rs-source-badge");
                     sourceBadge.textContent = source === "presets" ? "SYS" : "USR";
                     sourceBadge.title = source === "presets" ? "System preset (cannot delete)" : "User preset";
@@ -931,9 +998,8 @@ function createPromptManagerUI() {
                     row.appendChild(leftDiv);
 
                     row.onclick = async (e) => {
-                        if (e.target.closest(".rs-preset-delete-btn")) return;
+                        if (e.target.closest(".rs-delete-icon")) return;
 
-                        console.log("✅ Clicked preset:", name);
                         const data = await loadPrompt(name);
 
                         if (textWidget) {
@@ -951,7 +1017,6 @@ function createPromptManagerUI() {
                         if (graph) graph.setDirtyCanvas(true, true);
                     };
 
-                    // 只有用户自定义的提示词才能删除
                     if (source === "custom") {
                         const deleteBtn = mkEl("span", "rs-delete-icon");
                         deleteBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>';
@@ -972,15 +1037,86 @@ function createPromptManagerUI() {
             }
         }
 
-        // 绑定事件 - 使用 capture 阶段确保优先处理
         saveBtn.addEventListener("click", (e) => {
             e.stopPropagation();
             handleSaveClick();
         }, true);
-        selectBtn.addEventListener("click", (e) => {
+
+        // 确保 presetListOverlay 在 quickInputWrapper 内部
+        quickInputWrapper.appendChild(presetListOverlay);
+
+        // presetListOverlay 在 quickInput 下方的下拉样式
+        presetListOverlay.style.top = "100%";
+        presetListOverlay.style.left = "0";
+        presetListOverlay.style.right = "";
+        presetListOverlay.style.bottom = "";
+        presetListOverlay.style.transform = "none";
+        presetListOverlay.style.maxWidth = "100%";
+        presetListOverlay.style.maxHeight = "250px";
+        presetListOverlay.style.marginTop = "2px";
+
+        // 输入框聚焦时关闭列表
+        quickInput.addEventListener("focus", () => {
+            if (isListOpen) {
+                presetListOverlay.style.display = "none";
+                isListOpen = false;
+            }
+        });
+
+        // 输入框输入 → 实时筛选
+        quickInput.addEventListener("input", () => {
+            const query = quickInput.value.trim();
+            if (query) {
+                filterDropdownByInput(query);
+                presetListOverlay.style.display = "flex";
+            } else {
+                presetListOverlay.style.display = "none";
+            }
+        });
+
+        // 输入框失焦时关闭 overlay（但点击列表项时不关闭）
+        quickInput.addEventListener("blur", () => {
+            if (!isListOpen) return;
+            setTimeout(() => {
+                if (!quickInputWrapper.contains(document.activeElement)) {
+                    presetListOverlay.style.display = "none";
+                    isListOpen = false;
+                }
+            }, 100);
+        });
+
+        // 列表按钮点击 → 更新 isListOpen 状态
+        listBtn.addEventListener("click", (e) => {
             e.stopPropagation();
-            loadPromptList();
-        }, true);
+            e.preventDefault();
+            if (presetListOverlay.style.display === "flex") {
+                presetListOverlay.style.display = "none";
+                isListOpen = false;
+            } else {
+                loadPresetDropdown();
+                presetListOverlay.style.display = "flex";
+                isListOpen = true;
+            }
+        });
+
+        // 点击外部时关闭 overlay（但点击 overlay 内部时不关闭）
+        document.addEventListener("mousedown", (e) => {
+            if (!quickInputWrapper.contains(e.target) && !presetListOverlay.contains(e.target)) {
+                presetListOverlay.style.display = "none";
+                isListOpen = false;
+            }
+        });
+
+        // 点击外部时关闭 settings modal（但点击 modal 内部时不关闭）
+        document.addEventListener("mousedown", (e) => {
+            if (isSettingsBtnClicked) {
+                isSettingsBtnClicked = false;
+                return;
+            }
+            if (!settingsModal.modal.contains(e.target)) {
+                settingsModal.modal.style.display = "none";
+            }
+        });
 
         inputOk.addEventListener("click", performSave);
         inputCancel.addEventListener("click", () => {
@@ -991,19 +1127,13 @@ function createPromptManagerUI() {
             if (e.key === "Escape") presetNameInput.style.display = "none";
         });
 
-        presetSearchInput.addEventListener("input", () => {
-            const query = presetSearchInput.value.trim().toLowerCase();
-            if (filterTimeout) clearTimeout(filterTimeout);
-            filterTimeout = setTimeout(() => {
-                filterPresets(query);
-            }, 150);
-        });
-
         deleteOk.addEventListener("click", async () => {
             if (pendingDeleteName) {
                 await deletePrompt(pendingDeleteName);
                 deleteConfirmOverlay.style.display = "none";
-                selectBtn.click();
+                if (!quickInput.value.trim()) {
+                    loadPresetDropdown();
+                }
                 pendingDeleteName = null;
             }
         });
@@ -1013,7 +1143,6 @@ function createPromptManagerUI() {
             pendingDeleteName = null;
         });
 
-        // Download modal button handlers
         downloadModal.downloadBtn.addEventListener("click", async () => {
             downloadModal.downloadBtn.disabled = true;
             downloadModal.downloadBtn.textContent = "⏳ Starting...";
@@ -1027,7 +1156,6 @@ function createPromptManagerUI() {
                 return;
             }
             
-            // Show progress
             downloadModal.progressContainer.style.display = "block";
             downloadModal.downloadBtn.style.display = "none";
             downloadModal.cancelBtn.style.display = "none";
@@ -1035,7 +1163,6 @@ function createPromptManagerUI() {
             downloadModal.statusText.textContent = "Download started...";
             downloadModal.statusText.style.color = "#999";
             
-            // Start monitoring
             monitorDownloadProgress(downloadModal, statusBar);
         });
 
@@ -1047,10 +1174,8 @@ function createPromptManagerUI() {
             downloadModal.modal.style.display = "none";
         });
 
-        // 下载进度轮询
         let downloadPollInterval = null;
         
-        // 停止下载进度轮询
         function stopDownloadPolling() {
             if (downloadPollInterval) {
                 clearInterval(downloadPollInterval);
@@ -1058,7 +1183,6 @@ function createPromptManagerUI() {
             }
         }
         
-        // 开始下载进度轮询
         function startDownloadPolling() {
             stopDownloadPolling();
             downloadPollInterval = setInterval(async () => {
@@ -1066,31 +1190,25 @@ function createPromptManagerUI() {
                     const status = await checkModel();
                     if (status.download_status?.model?.downloading) {
                         const progress = status.download_status.model.progress || 0;
-                        
-                        // 更新进度条
                         const progressFill = settingsModal.modelList.querySelector(".rs-download-progress-fill");
                         if (progressFill) {
                             progressFill.style.width = progress + "%";
                         }
-                        
-                        // 更新状态指示器显示进度
                         const statusIndicator = settingsModal.modelList.querySelector(".rs-settings-download-status");
                         if (statusIndicator) {
                             statusIndicator.textContent = `⏳ Downloading ${progress}%`;
                             statusIndicator.style.color = "#fbbf24";
                         }
                     } else {
-                        // 下载完成或取消，停止轮询并刷新列表
                         stopDownloadPolling();
                         loadModelsIntoSettings();
                     }
                 } catch (e) {
                     console.error("Failed to check download status:", e);
                 }
-            }, 500); // 每 500ms 检查一次
+            }, 500);
         }
         
-        // Load models into settings modal with download status
         async function loadModelsIntoSettings() {
             try {
                 stopDownloadPolling();
@@ -1099,7 +1217,6 @@ function createPromptManagerUI() {
                 const currentModelStatus = await checkModel();
                 settingsModal.modelList.innerHTML = "";
                 
-                // 创建模型状态映射
                 const modelStatusMap = {};
                 allModelsStatus.models.forEach(m => {
                     modelStatusMap[m.key] = m.available;
@@ -1114,15 +1231,12 @@ function createPromptManagerUI() {
                     
                     const modelInfo = mkEl("div", "rs-settings-model-info");
                     
-                    // Download status
                     const isModelAvailable = modelStatusMap[model.key] || false;
                     const isDownloading = modelStatusMap[model.key] === undefined && isCurrentModel && currentModelStatus.download_status?.model?.downloading;
                     const downloadProgress = currentModelStatus.download_status?.model?.progress || 0;
                     
-                    // Model name with status icon
                     const modelName = mkEl("div", "rs-settings-model-name");
                     
-                    // Status icon
                     const statusIcon = mkEl("span", "rs-model-status-icon");
                     if (isDownloading) {
                         statusIcon.textContent = "⏳";
@@ -1136,29 +1250,24 @@ function createPromptManagerUI() {
                     }
                     modelName.appendChild(statusIcon);
                     
-                    // Name text
                     const nameText = mkEl("span");
                     nameText.textContent = model.name;
                     modelName.appendChild(nameText);
                     
-                    // File size
                     const modelSize = mkEl("span", "rs-model-size");
                     modelSize.textContent = model.size || "";
                     modelName.appendChild(modelSize);
                     
                     modelInfo.appendChild(modelName);
                     
-                    // 未下载的模型才显示文件名
                     if (!isModelAvailable) {
                         const modelFilename = mkEl("div", "rs-settings-model-filename");
                         modelFilename.textContent = model.filename;
                         modelInfo.appendChild(modelFilename);
                     }
                     
-                    // 右侧区域
                     const rightSection = mkEl("div", "rs-settings-model-right");
                     
-                    // 下载按钮（未下载时显示，无论是否当前模型）
                     if (!isModelAvailable) {
                         const downloadBtn = mkEl("button", "rs-download-btn-small");
                         downloadBtn.textContent = "⬇";
@@ -1168,7 +1277,6 @@ function createPromptManagerUI() {
                             downloadBtn.disabled = true;
                             downloadBtn.textContent = "⏳";
                             
-                            // 如果不是当前模型，先切换
                             if (!isCurrentModel) {
                                 const switchResult = await setCurrentModel(model.key);
                                 if (!switchResult.success) {
@@ -1181,7 +1289,6 @@ function createPromptManagerUI() {
                                 }
                             }
                             
-                            // 开始下载
                             const downloadResult = await downloadModel("model");
                             if (downloadResult.error) {
                                 downloadBtn.disabled = false;
@@ -1190,7 +1297,6 @@ function createPromptManagerUI() {
                                 settingsModal.statusText.textContent = "Download failed: " + downloadResult.error;
                                 settingsModal.statusText.className = "rs-settings-status";
                             } else {
-                                // 显示进度条并开始轮询
                                 const progressBar = mkEl("div", "rs-download-progress-bar");
                                 const progressFill = mkEl("div", "rs-download-progress-fill");
                                 progressFill.style.width = "0%";
@@ -1208,7 +1314,6 @@ function createPromptManagerUI() {
                         rightSection.appendChild(downloadBtn);
                     }
                     
-                    // 切换指示器
                     const indicator = mkEl("div", "rs-settings-model-check");
                     indicator.textContent = "✓";
                     rightSection.appendChild(indicator);
@@ -1229,7 +1334,6 @@ function createPromptManagerUI() {
                             settingsModal.statusText.textContent = "Model switched successfully!";
                             settingsModal.statusText.className = "rs-settings-status success";
                             
-                            // 重新加载模型列表以更新状态
                             loadModelsIntoSettings();
                             
                             setTimeout(() => {
@@ -1251,30 +1355,30 @@ function createPromptManagerUI() {
 
         settingsBtn.addEventListener("click", (e) => {
             e.stopPropagation();
+            isSettingsBtnClicked = true;
             
-            // 添加右侧定位类
+            // Toggle settings modal
+            if (settingsModal.modal.style.display === "flex") {
+                settingsModal.modal.style.display = "none";
+                return;
+            }
+            
             settingsModal.modal.classList.add("rs-positioned-right");
             
-            // 使用 offsetParent 定位，避免缩放导致的计算偏差
-            // 找到 settingsBtn 的 offsetParent（通常是带有 position:relative/absolute 的父元素）
             let offsetParent = settingsBtn.offsetParent;
             
-            // 计算按钮相对于根容器的位置
-            // 使用 offsetLeft/offsetTop 而不是 getBoundingClientRect，避免缩放影响
             let accumulatedTop = 0;
             let accumulatedLeft = 0;
             let currentEl = settingsBtn;
             
-            // 累加到根容器
             while (currentEl && currentEl !== root) {
                 accumulatedTop += currentEl.offsetTop || 0;
                 accumulatedLeft += currentEl.offsetLeft || 0;
                 currentEl = currentEl.offsetParent;
             }
             
-            // 加上按钮自身的尺寸
             const topPos = accumulatedTop;
-            const leftPos = accumulatedLeft + settingsBtn.offsetWidth + 5; // 按钮右侧 5px
+            const leftPos = accumulatedLeft + settingsBtn.offsetWidth + 5;
             
             settingsModal.modal.style.position = "absolute";
             settingsModal.modal.style.zIndex = "999999";
@@ -1286,47 +1390,49 @@ function createPromptManagerUI() {
             settingsModal.modal.style.opacity = "1";
             settingsModal.modal.style.visibility = "visible";
             
-            // 显示模态框
             settingsModal.modal.style.display = "flex";
             
             loadModelsIntoSettings();
             loadRemoteLLMConfig(settingsModal);
         });
         
-        // 绑定设置模态框关闭按钮点击事件
         settingsModal.closeBtn.addEventListener("click", () => {
             settingsModal.modal.style.display = "none";
         });
-        
-        // 点击模态框背景关闭
+
         settingsModal.modal.addEventListener("click", (e) => {
-            if (e.target === settingsModal.modal) {
+            if (e.target === settingsModal.modal || e.target === settingsModal.wrapper) {
                 settingsModal.modal.style.display = "none";
             }
         });
 
-        // 返回需要外部引用的元素
+        // Global click handler to close modal when clicking outside
+        document.addEventListener("click", (e) => {
+            if (settingsModal.modal.style.display === "flex" &&
+                !settingsModal.modal.contains(e.target) &&
+                !settingsBtn.contains(e.target)) {
+                settingsModal.modal.style.display = "none";
+            }
+        });
+
         return {
+            statusBar,
+            quickInputWrapper,
             enhanceBtn,
             translateBtn,
             generateBtn,
             randomBtn,
+            listBtn,
             quickInput,
             customTextarea,
-            statusBar,
             settingsBtn,
             toggleSwitch,
             toggleKnob,
-            // 按钮行中的操作按钮（供 createPopupCloser 使用）
             saveBtn,
-            selectBtn,
-            // 返回模态框元素供外部管理
             presetListOverlay,
             presetNameInput,
             deleteConfirmOverlay,
-            // 返回下载模态框元素
             downloadModal,
-            // 返回设置模态框元素
             settingsModal,
             loadModelsIntoSettings
         };
@@ -1338,7 +1444,6 @@ function createPromptManagerUI() {
     };
 }
 
-// Export loadRemoteLLMConfig for use in prompts.js
 export {
     mkEl,
     createPromptManagerUI,

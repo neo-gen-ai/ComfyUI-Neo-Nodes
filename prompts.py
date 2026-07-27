@@ -458,7 +458,38 @@ async def rs_prompts_generate_prompt(request):
 
 @server.PromptServer.instance.routes.post("/rs_prompts/random_prompt")
 async def rs_prompts_random_prompt(request):
-    return await handle_llm_api_request("random_prompt", request)
+    """Random prompt - pick a random preset from the list."""
+    try:
+        import random
+        # 获取 preset list
+        presets_prompts = _scan_prompts_recursive(PRESETS_DIR, source="presets")
+        custom_prompts = _scan_prompts_recursive(CUSTOM_DIR, source="custom")
+        all_prompts = custom_prompts + presets_prompts
+        
+        if not all_prompts:
+            return web.json_response({"status": "error", "prompt": "", "error": "No presets available"})
+        
+        # 随机选择一个
+        selected = random.choice(all_prompts)
+        name = selected["name"]
+        
+        # 直接读取文件
+        if name.startswith("presets/"):
+            base_dir = PRESETS_DIR
+            name = name[len("presets/"):]
+        else:
+            base_dir = CUSTOM_DIR
+        
+        filepath = os.path.join(base_dir, f"{name}.json")
+        if os.path.exists(filepath):
+            with open(filepath, 'r', encoding='utf-8') as f:
+                result = json.load(f)
+            return web.json_response({"status": "success", "prompt": result.get("text", "")})
+        
+        return web.json_response({"status": "error", "prompt": "", "error": "Prompt not found"})
+    except Exception as e:
+        logger.error(f"Error in random prompt: {e}")
+        return web.json_response({"status": "error", "prompt": "", "error": str(e)})
 
 @server.PromptServer.instance.routes.get("/rs_prompts/check_model")
 async def rs_prompts_check_model(request):
