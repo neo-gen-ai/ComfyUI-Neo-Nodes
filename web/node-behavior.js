@@ -172,7 +172,7 @@ function createTranslateHandler(promptUI, promptService) {
 }
 
 /**
- * 创建生成提示词的处理函数
+ * 创建生成提示词的处理函数 - 使用 LLM 智能判断
  */
 function createGenerateHandler(promptUI, promptService) {
     return async () => {
@@ -184,6 +184,9 @@ function createGenerateHandler(promptUI, promptService) {
             return;
         }
 
+        // 获取当前提示词（如果有）
+        const currentPrompt = customTextarea?.value?.trim() || "";
+
         const modelOk = await checkModelAndPrompt(downloadModal, statusBar);
         if (!modelOk) return;
 
@@ -191,18 +194,21 @@ function createGenerateHandler(promptUI, promptService) {
         generateBtn.textContent = "⏳";
 
         try {
-            const data = await promptService.generate(quickText);
+            // 使用 LLM 智能判断：LLM 直接判断用户意图并生成/改写
+            generateBtn.textContent = "🤖 Processing...";
+            const data = await promptService.smart(currentPrompt, quickText);
+            
             if (data.status === "success") {
                 customTextarea.value = data.prompt;
                 saveTextToStorage(node, textWidget, customTextarea);
                 if (graph) graph.setDirtyCanvas(true, true);
             } else {
-                console.error("Generate failed:", data);
-                alert("Failed to generate prompt: " + (data.error || "Unknown error"));
+                console.error("Smart prompt failed:", data);
+                alert("Failed to process prompt: " + (data.error || "Unknown error"));
             }
         } catch (e) {
             console.error("Network Error:", e);
-            alert("Network error during generation.");
+            alert("Network error during processing.");
         } finally {
             generateBtn.disabled = false;
             generateBtn.textContent = "🚀";

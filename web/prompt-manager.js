@@ -10,7 +10,6 @@ import {
     deletePrompt,
     extractTitle,
     extractClassify,
-    generatePromptFromText,
     randomPrompt as randomPromptAPI,
     downloadModel,
     monitorDownloadProgress,
@@ -581,6 +580,29 @@ async function loadRemoteLLMConfig(settingsModal) {
     }
 }
 
+// 快速输入功能使用提示 - 随机显示
+const QUICK_INPUT_TIPS = [
+    "✨ 输入描述，AI 自动帮你生成提示词",
+    "📝 输入改写需求，如：'去掉动漫风格，改成写实'",
+    "🌐 输入翻译需求，如：'翻译成中文'",
+    "🎨 输入风格要求，如：'改成赛博朋克风格'",
+    "📷 输入场景描述，如：'夕阳下的海边日落'",
+    "🔍 输入搜索关键词，查找已有提示词",
+    "🎲 点击骰子按钮，随机生成提示词",
+    "📋 点击列表按钮，浏览所有预设提示词",
+    "💾 点击保存按钮，将提示词保存为预设",
+    "⚙️ 点击设置按钮，切换 AI 模型",
+    "🚀 输入描述后点击生成，快速创建提示词",
+    "🔄 输入修改指令，如：'增加细节描述'",
+    "🎭 输入角色描述，如：'一个穿着汉服的女孩'",
+    "🌅 输入时间场景，如：'清晨的森林，阳光穿透树叶'",
+    "🏙️ 输入城市描述，如：'未来科幻城市，高楼林立'"
+];
+
+function getRandomTip() {
+    return QUICK_INPUT_TIPS[Math.floor(Math.random() * QUICK_INPUT_TIPS.length)];
+}
+
 function createStatusBars() {
     const statusBar = mkEl("div", "rs-status-bar");
     
@@ -616,9 +638,42 @@ function createStatusBars() {
 
     const quickInput = mkEl("input", "rs-quick-input");
     quickInput.placeholder = '🔍 Search presets or describe...';
+    
+    // 定时器用于随机切换提示词
+    let tipInterval = null;
+    
+    function startTipRotation() {
+        stopTipRotation();
+        tipInterval = setInterval(() => {
+            if (!quickInput.value.trim()) {
+                quickInput.placeholder = getRandomTip();
+            }
+        }, 5000); // 每 5 秒随机切换一次
+    }
+    
+    function stopTipRotation() {
+        if (tipInterval) {
+            clearInterval(tipInterval);
+            tipInterval = null;
+        }
+    }
+    
+    // 随机显示提示词 - 聚焦时切换
+    quickInput.addEventListener("focus", () => {
+        quickInput.placeholder = getRandomTip();
+        startTipRotation();
+    });
+    
+    // 失焦时恢复默认 placeholder
+    quickInput.addEventListener("blur", () => {
+        stopTipRotation();
+        if (!quickInput.value.trim()) {
+            quickInput.placeholder = '🔍 Search presets or describe...';
+        }
+    });
 
     const generateBtn = mkEl("button", "rs-generate-btn");
-    generateBtn.textContent = "🚀";
+    generateBtn.textContent = "✨";
     generateBtn.setAttribute("data-rs-tooltip", "Generate from description");
 
     quickInputWrapper.appendChild(randomBtn);
@@ -635,7 +690,7 @@ function createStatusBars() {
     const btnRow = mkEl("div", "rs-btn-row");
 
     const enhanceBtn = mkEl("button", "rs-btn");
-    enhanceBtn.textContent = "✨ Enhance";
+    enhanceBtn.textContent = "🔧 Enhance";
     enhanceBtn.setAttribute("data-rs-tooltip", "Enhance prompt with AI");
     const translateBtn = mkEl("button", "rs-btn");
     translateBtn.textContent = "🌐 Translate";

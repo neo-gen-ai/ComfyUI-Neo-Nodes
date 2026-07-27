@@ -198,7 +198,6 @@ _TASK_MODEL_CONFIGS = {
     "extract_classify": {"max_tokens": 50, "model_override": None},
     "enhance_prompt": {"max_tokens": 500, "model_override": None},
     "translate_prompt": {"max_tokens": 500, "model_override": None},
-    "generate_prompt": {"max_tokens": 500, "model_override": None},
 }
 
 def get_task_config(task_name: str) -> Dict[str, Any]:
@@ -1126,7 +1125,7 @@ LLM_TASKS = {
             "请分析给定的文生图提示词，将其扩展为更详细、更丰富的版本。"
             "要求：1.保留原始核心内容；2.添加细节描述（光影、材质、氛围等）；"
             "3.添加质量词（如：masterpiece, best quality, high resolution 等）；"
-            "4.保持英文输出，适合文生图模型使用。"
+            "4.语言跟原文语言保存一致，适合文生图模型使用。"
             "仅返回增强后的提示词内容，不要包含任何解释或额外文字。"
         ),
         "max_tokens": 500,
@@ -1144,18 +1143,25 @@ LLM_TASKS = {
         "result_key": "translated",
         "description": "翻译提示词"
     },
-    "generate_prompt": {
+    "smart_prompt": {
         "system": (
-            "你是一个专业的文生图提示词生成助手。"
-            "请根据用户提供的简洁文字描述，生成一段详细的文生图提示词。"
-            "要求：1.保留用户描述的核心内容；2.添加细节描述（光影、材质、氛围等）；"
-            "3.根据输入语言确定输出语言，适合文生图模型使用；"
-            "4.补充高清，高质量等描述，但不要重复描述"
-            "5.只返回生成的提示词内容，不要包含任何解释或额外文字。"
+            "你是一个智能文生图提示词助手。用户会输入一段描述，你需要判断用户的意图并执行相应的操作。\n\n"
+            "可能的意图包括：\n"
+            "1. 【改写】用户想基于现有提示词进行修改（如：删除、添加、替换风格、调整细节等）\n"
+            "2. 【生成】用户想从头生成一个新的提示词\n"
+            "3. 【增强】用户想增强/优化现有提示词\n"
+            "4. 【翻译】用户想翻译提示词\n\n"
+            "判断规则：\n"
+            "- 如果输入包含改写相关词汇（如：删除、添加、替换、修改、风格、改成、去掉、加上等），对原来的提示词执行改写，需要改写内容，不是直接拼接内容\n"
+            "- 如果输入是简洁的描述，执行生成\n"
+            "- 如果输入是纯描述性文字且没有明确操作指令，执行生成\n\n"
+            "【重要】只返回最终的提示词内容，不要包含任何解释、说明、前言或后缀文字。\n"
+            "不要说'好的'、'这是改写后的提示词'等任何多余内容。直接输出提示词本身。\n\n"
+            "用户指令格式：[原始提示词（如果有）]\n\n---\n\n[用户描述]"
         ),
         "max_tokens": 500,
         "result_key": "prompt",
-        "description": "从简洁文字生成提示词"
+        "description": "智能判断并生成/改写提示词"
     },
 }
 
@@ -1228,6 +1234,7 @@ def run_llm_task(task_name: str, text: str, extra_system_prompt: Optional[str] =
         TRANSLATION_CACHE.set(text, result)
         logger.info(f"Saved result to cache: '{text[:20]}...' -> '{result[:20]}...'")
     
+    logger.info(f"LLM task {task_name} completed: input='{text[:100]}...', output='{result[:100]}...'")
     return {"status": "success", result_key: result}
 
 
@@ -1255,6 +1262,8 @@ async def handle_llm_api_request(task_name, request):
         data = await request.json()
         text = data.get("text", "")
         
+        logger.info(f"LLM API request: task={task_name}, text='{text[:100]}...'")
+        
         if not text or not text.strip():
             return web.json_response({"error": "text content is empty"}, status=400)
         
@@ -1262,6 +1271,7 @@ async def handle_llm_api_request(task_name, request):
         
         if "error" in result_data:
             error_msg = result_data["error"]
+            logger.warning(f"LLM API error: task={task_name}, error={error_msg}")
             
             # 如果是本地模式且模型未加载，提供有用的提示
             if get_current_mode() == LLM_MODE_LOCAL and "LLM model not found" in error_msg or \
@@ -1278,6 +1288,7 @@ async def handle_llm_api_request(task_name, request):
             
             return web.json_response({"error": error_msg}, status=422)
         
+        logger.info(f"LLM API response: task={task_name}, result='{result_data.get('prompt', result_data.get('enhanced', result_data.get('translated', '')))[:100]}...'")
         return web.json_response(result_data)
         
     except Exception as e:

@@ -127,6 +127,7 @@ def _scan_prompts_recursive(base_dir: str, prefix: str = "", source: str = "cust
 class NeoPrompts:
     _encode_cache = {}
     _CACHE_MAX_SIZE = 50
+    MIN_SIZE = (400, 300)
     
     @classmethod
     def INPUT_TYPES(cls):
@@ -452,9 +453,55 @@ async def rs_prompts_enhance_prompt(request):
 async def rs_prompts_translate_prompt(request):
     return await handle_llm_api_request("translate_prompt", request)
 
-@server.PromptServer.instance.routes.post("/rs_prompts/generate_prompt")
-async def rs_prompts_generate_prompt(request):
-    return await handle_llm_api_request("generate_prompt", request)
+@server.PromptServer.instance.routes.post("/rs_prompts/smart_prompt")
+async def rs_prompts_smart_prompt(request):
+    """智能提示词 - LLM 直接判断用户意图并生成/改写"""
+    from aiohttp import web
+    try:
+        data = await request.json()
+        original_text = data.get("text", "")  # 原始提示词（可选）
+        user_description = data.get("description", "")  # 用户描述
+        
+        logger.info(f"Smart prompt request: original='{original_text[:100]}...', description='{user_description[:100]}...'")
+        
+        if not user_description or not user_description.strip():
+            return web.json_response({"error": "description is required"}, status=400)
+        
+        # 组合输入文本
+        if original_text and original_text.strip():
+            combined_text = f"{original_text}\n\n---\n\n{user_description}"
+        else:
+            combined_text = user_description
+        
+        from .llm import run_llm_task, get_current_mode, LLM_MODE_REMOTE
+        result_data = run_llm_task("smart_prompt", combined_text)
+        
+        if "error" in result_data:
+            error_msg = result_data["error"]
+            logger.warning(f"Smart prompt error: {error_msg}")
+            
+            # 如果是本地模式且模型未加载，提供有用的提示
+            if get_current_mode() == LLM_MODE_LOCAL and ("LLM model not found" in error_msg or "Model not loaded" in error_msg):
+                return web.json_response({
+                    "error": f"Local model is not available. Please download the model first, or switch to remote API mode."
+                }, status=422)
+            
+            # 如果是远程模式且配置不正确，提供有用的提示
+            if get_current_mode() == LLM_MODE_REMOTE:
+                return web.json_response({
+                    "error": f"Remote API error: {error_msg}. Please check your remote_llm_config.json configuration."
+                }, status=422)
+            
+            return web.json_response({"error": error_msg}, status=422)
+        
+        logger.info(f"Smart prompt response: result='{result_data.get('prompt', '')[:100]}...'")
+        return web.json_response(result_data)
+        
+    except Exception as e:
+        logger.error(f"Error handling smart prompt: {e}")
+        logger.exception(e)
+        return web.json_response({"error": str(e)}, status=500)
+
 
 @server.PromptServer.instance.routes.post("/rs_prompts/random_prompt")
 async def rs_prompts_random_prompt(request):
@@ -551,6 +598,7 @@ class NeoPromptGenerator:
     """
     
     _CACHE_MAX_SIZE = 50
+    MIN_SIZE = (400, 300)
 
     @classmethod
     def INPUT_TYPES(cls):

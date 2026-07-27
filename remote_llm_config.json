@@ -1,5 +1,5 @@
 {
-  "enabled": false,
+  "enabled": true,
   "provider": "lmstudio",
   "api_key": "",
   "base_url": "http://localhost:1234",

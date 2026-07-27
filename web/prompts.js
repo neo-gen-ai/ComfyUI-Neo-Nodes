@@ -7,7 +7,7 @@ import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 import { mkEl, createPromptManagerUI, createSettingsModal, loadRemoteLLMConfig } from "./prompt-manager.js";
 import { 
-    enhancePrompt, translatePrompt, generatePromptFromText, randomPrompt as randomPromptAPI, 
+    enhancePrompt, translatePrompt, randomPrompt as randomPromptAPI, 
     checkModelAndPrompt, downloadModel, showDownloadModal, monitorDownloadProgress,
     getAvailableModels, checkAllModels, checkModel, setCurrentModel
 } from "./prompt-service.js";
@@ -180,9 +180,9 @@ app.registerExtension({
                 if (textWidget.element) textWidget.element.style.display = 'none';
                 if (textWidget.inputEl) textWidget.inputEl.style.display = 'none';
             }
-            node.setSize([370, 350]);
-            node.min_height = 350;
-            node.min_width = 370;
+            node.setSize([370, 280]);
+            node.minWidth = 370;
+            node.minHeight = 260;
 
             // Initialize prompt manager - get UI elements and settings button
             // Pass textWidget so save handler can read current prompt text for AI extraction
@@ -395,9 +395,9 @@ app.registerExtension({
             const promptUI = createPromptManagerUI();
             const root = promptUI.root;
             node.addDOMWidget("prompt_ui", "custom", root);
-            node.setSize([370, 350]);
-            node.min_height = 350;
-            node.min_width = 370;
+            node.setSize([370, 280]);
+            node.minWidth = 370;
+            node.minHeight = 260;
 
             // 初始化提示词管理器
             const { 

@@ -518,15 +518,16 @@ async function extractClassify(text) {
 }
 
 /**
- * 从简洁文字生成文生图提示词
- * @param {string} text - 简洁的文字描述
+ * 智能提示词 - LLM 直接判断用户意图并生成/改写
+ * @param {string} text - 原始提示词（可选，为空则从头生成）
+ * @param {string} description - 用户描述
  * @returns {Promise<{status: string, prompt: string, error?: string}>}
  */
-async function generatePromptFromText(text) {
-    const res = await fetch("/rs_prompts/generate_prompt", {
+async function smartPrompt(text, description) {
+    const res = await fetch("/rs_prompts/smart_prompt", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text })
+        body: JSON.stringify({ text: text || "", description })
     });
     return await res.json();
 }
@@ -631,12 +632,12 @@ function createPromptService() {
         },
         
         /**
-         * 从描述生成提示词
+         * 智能提示词 - LLM 直接判断用户意图并生成/改写
          */
-        async generate(text) {
-            return await generatePromptFromText(text);
+        async smart(text, description) {
+            return await smartPrompt(text, description);
         },
-        
+
         /**
          * 随机生成提示词
          */
@@ -669,7 +670,6 @@ export {
     deletePrompt,
     extractTitle,
     extractClassify,
-    generatePromptFromText,
     randomPrompt,
     getAvailableModels,
     setCurrentModel,
