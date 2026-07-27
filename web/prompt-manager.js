@@ -55,13 +55,16 @@ function createOverlayWithSearch(title) {
     overlay.appendChild(searchInput);
     overlay.appendChild(body);
 
-    const closeBtn = mkEl("button", "rs-close-btn top-right");
+    // 关闭按钮放在 header 右侧
+    const closeBtn = mkEl("button", "rs-close-btn");
     closeBtn.textContent = "✕";
     closeBtn.setAttribute("aria-label", "Close");
 
     closeBtn.addEventListener("click", () => {
         overlay.style.display = "none";
     });
+
+    header.appendChild(closeBtn);
 
     return { overlay, header, searchInput, body, closeBtn };
 }
@@ -894,6 +897,7 @@ function createPromptManagerUI() {
                 list.forEach(item => {
                     const name = typeof item === 'string' ? item : item.name;
                     const tags = typeof item === 'string' ? [] : (item.tags || []);
+                    const source = typeof item === 'object' ? item.source : "custom";
 
                     const row = document.createElement("div");
                     row.className = "rs-preset-item";
@@ -914,6 +918,12 @@ function createPromptManagerUI() {
                     } else {
                         contentSpan.textContent = name;
                     }
+
+                    // 添加来源标识
+                    const sourceBadge = mkEl("span", "rs-source-badge");
+                    sourceBadge.textContent = source === "presets" ? "SYS" : "USR";
+                    sourceBadge.title = source === "presets" ? "System preset (cannot delete)" : "User preset";
+                    contentSpan.appendChild(sourceBadge);
 
                     contentSpan.dataset.original = displayText;
                     row.dataset.original = displayText;
@@ -941,16 +951,19 @@ function createPromptManagerUI() {
                         if (graph) graph.setDirtyCanvas(true, true);
                     };
 
-                    const deleteBtn = mkEl("span", "rs-delete-icon");
-                    deleteBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>';
-                    deleteBtn.setAttribute("aria-label", "Delete preset");
-                    deleteBtn.onclick = async (e) => {
-                        e.stopPropagation();
-                        pendingDeleteName = name;
-                        deleteText.textContent = `Delete "${name}"?`;
-                        deleteConfirmOverlay.style.display = "block";
-                    };
-                    row.appendChild(deleteBtn);
+                    // 只有用户自定义的提示词才能删除
+                    if (source === "custom") {
+                        const deleteBtn = mkEl("span", "rs-delete-icon");
+                        deleteBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>';
+                        deleteBtn.setAttribute("aria-label", "Delete preset");
+                        deleteBtn.onclick = async (e) => {
+                            e.stopPropagation();
+                            pendingDeleteName = name;
+                            deleteText.textContent = `Delete "${name}"?`;
+                            deleteConfirmOverlay.style.display = "block";
+                        };
+                        row.appendChild(deleteBtn);
+                    }
 
                     presetListBody.appendChild(row);
                 });

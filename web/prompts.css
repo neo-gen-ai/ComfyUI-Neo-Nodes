@@ -112,6 +112,54 @@
     color: #fff;
 }
 
+/* Source badges - muted */
+.rs-source-badge {
+    display: inline-block;
+    font-size: 7px;
+    font-weight: normal;
+    padding: 0 3px;
+    border-radius: 2px;
+    margin-left: 4px;
+    vertical-align: middle;
+    text-transform: none;
+    letter-spacing: 0;
+    opacity: 0.5;
+}
+
+.rs-source-badge[title="System preset (cannot delete)"] {
+    color: #fbbf24;
+    background: transparent;
+    border: none;
+}
+
+.rs-source-badge[title="User preset"] {
+    color: #60a5fa;
+    background: transparent;
+    border: none;
+}
+
+/* Delete icon (SVG-based) */
+.rs-delete-icon {
+    background: transparent;
+    color: #f87171;
+    font-size: 14px;
+    padding: 2px 6px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    opacity: 0;
+    transition: opacity 0.2s, background 0.2s;
+}
+
+.rs-preset-item:hover .rs-delete-icon {
+    opacity: 1;
+}
+
+.rs-delete-icon:hover {
+    background: rgba(248, 113, 113, 0.15);
+    border-radius: 4px;
+}
+
 .rs-close-btn.top-right {
     position: absolute;
     top: 8px; right: 8px;

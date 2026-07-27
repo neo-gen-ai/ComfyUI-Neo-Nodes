@@ -15,9 +15,17 @@ logger = logging.getLogger(__name__)
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROMPTS_DIR = os.path.join(CURRENT_DIR, "prompts")
 TAGS_FILE = os.path.join(PROMPTS_DIR, "_tags_index.json")
+PRESETS_DIR = os.path.join(PROMPTS_DIR, "presets")
+CUSTOM_DIR = os.path.join(PROMPTS_DIR, "custom")
+PRESETS_TAGS_FILE = os.path.join(PRESETS_DIR, "_tags_index.json")
+CUSTOM_TAGS_FILE = os.path.join(CUSTOM_DIR, "_tags_index.json")
 
 if not os.path.exists(PROMPTS_DIR):
     os.makedirs(PROMPTS_DIR)
+if not os.path.exists(PRESETS_DIR):
+    os.makedirs(PRESETS_DIR)
+if not os.path.exists(CUSTOM_DIR):
+    os.makedirs(CUSTOM_DIR)
 
 PENDING_PROMPTS = {}
 
@@ -39,42 +47,77 @@ from .llm import (
 )
 
 
-def _load_tags_index() -> dict:
+def _load_tags_index(tags_file: str = TAGS_FILE) -> dict:
     """Load tags index from the dedicated tags file."""
-    if not os.path.exists(TAGS_FILE):
+    if not os.path.exists(tags_file):
         return {}
     try:
-        with open(TAGS_FILE, 'r', encoding='utf-8') as f:
+        with open(tags_file, 'r', encoding='utf-8') as f:
             return json.load(f)
     except (json.JSONDecodeError, Exception) as e:
-        logger.warning(f"Error loading tags index: {e}")
+        logger.warning(f"Error loading tags index from {tags_file}: {e}")
         return {}
 
 
-def _save_tags_index(index: dict) -> None:
+def _save_tags_index(index: dict, tags_file: str = TAGS_FILE) -> None:
     """Save tags index to the dedicated tags file."""
     try:
-        with open(TAGS_FILE, 'w', encoding='utf-8') as f:
+        with open(tags_file, 'w', encoding='utf-8') as f:
             json.dump(index, f, indent=2, ensure_ascii=False)
     except Exception as e:
-        logger.error(f"Error saving tags index: {e}")
+        logger.error(f"Error saving tags index to {tags_file}: {e}")
 
 
-def _update_tags_index(prompt_name: str, tags: list[str] | None = None) -> None:
-    """Update the tags index for a specific prompt. Pass tags=None to delete."""
+def _get_tags_file_path(source: str) -> str:
+    """根据来源返回对应的标签索引文件路径"""
+    if source == "presets":
+        return PRESETS_TAGS_FILE
+    return CUSTOM_TAGS_FILE
+
+
+def _update_tags_index(prompt_name: str, tags: list[str] | None = None, source: str = "custom") -> None:
+    """更新指定来源的标签索引"""
+    tags_file = _get_tags_file_path(source)
     with _tags_lock:
-        index = _load_tags_index()
+        index = _load_tags_index(tags_file)
         if tags is None:
             index.pop(prompt_name, None)
         else:
             index[prompt_name] = tags
-        _save_tags_index(index)
+        _save_tags_index(index, tags_file)
 
 
-def _get_tags_for_prompt(prompt_name: str) -> list:
-    """Get tags for a prompt from the tags index."""
-    index = _load_tags_index()
+def _get_tags_for_prompt(prompt_name: str, source: str = "custom") -> list:
+    """获取指定来源的标签"""
+    tags_file = _get_tags_file_path(source)
+    index = _load_tags_index(tags_file)
     return index.get(prompt_name, [])
+
+
+def _scan_prompts_recursive(base_dir: str, prefix: str = "", source: str = "custom") -> list:
+    """递归扫描目录，返回 prompt 列表，支持多级子目录"""
+    prompts = []
+    if not os.path.exists(base_dir):
+        return prompts
+
+    for entry in sorted(os.listdir(base_dir)):
+        full_path = os.path.join(base_dir, entry)
+        if os.path.isdir(full_path):
+            # 递归处理子目录
+            sub_prefix = f"{prefix}{entry}/" if prefix else f"{entry}/"
+            prompts.extend(_scan_prompts_recursive(full_path, sub_prefix, source))
+        elif entry.endswith('.json') and not entry.startswith('_'):
+            name = entry[:-5]  # 去掉 .json 后缀
+            display_name = f"{prefix}{name}" if prefix else name
+            mtime = os.path.getmtime(full_path)
+            tags = _get_tags_for_prompt(display_name, source)
+            prompts.append({
+                "name": display_name,
+                "tags": tags,
+                "source": source,
+                "_mtime": mtime
+            })
+    return prompts
 
 
 # ==========================================
@@ -168,11 +211,22 @@ async def rs_prompts_save_prompt(request):
         if not name: 
             return web.Response(status=400, text="Invalid name")
         
-        filepath = os.path.join(PROMPTS_DIR, f"{name}.json")
+        # 默认保存到 custom 目录
+        base_dir = CUSTOM_DIR
+        # 如果名称中包含 "presets/" 前缀，则保存到 presets
+        if name.startswith("presets/"):
+            base_dir = PRESETS_DIR
+            name = name[len("presets/"):]
+        
+        # 构建文件路径（支持子目录）
+        filepath = os.path.join(base_dir, f"{name}.json")
         counter = 1
         while os.path.exists(filepath):
-            filepath = os.path.join(PROMPTS_DIR, f"{name}-{counter}.json")
+            filepath = os.path.join(base_dir, f"{name}-{counter}.json")
             counter += 1
+        
+        # 确保目录存在
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
         
         prompt_data = {
             "text": data.get("text", "")
@@ -180,7 +234,9 @@ async def rs_prompts_save_prompt(request):
         with open(filepath, 'w', encoding='utf-8') as f:
             json.dump(prompt_data, f, indent=2, ensure_ascii=False)
         
-        _update_tags_index(name, data.get("tags", []))
+        # 确定来源
+        source = "presets" if base_dir == PRESETS_DIR else "custom"
+        _update_tags_index(name, data.get("tags", []), source=source)
         
         return web.Response(status=200, text="OK")
     except Exception as e:
@@ -190,28 +246,20 @@ async def rs_prompts_save_prompt(request):
 @server.PromptServer.instance.routes.post("/rs_prompts/list_prompts")
 async def rs_prompts_list_prompts(request):
     try:
-        tags_index = _load_tags_index()
+        # 递归扫描 presets 和 custom 目录
+        presets_prompts = _scan_prompts_recursive(PRESETS_DIR, source="presets")
+        custom_prompts = _scan_prompts_recursive(CUSTOM_DIR, source="custom")
         
-        prompts = []
-        files_data = []
-        if os.path.exists(PROMPTS_DIR):
-            for f in os.listdir(PROMPTS_DIR):
-                if f.endswith('.json') and not f.startswith('_'):
-                    filepath = os.path.join(PROMPTS_DIR, f)
-                    mtime = os.path.getmtime(filepath)
-                    name = f[:-5]
-                    
-                    tags = tags_index.get(name, [])
-                    
-                    files_data.append({
-                        "name": name,
-                        "tags": tags,
-                        "_mtime": mtime
-                    })
-            
-            files_data.sort(key=lambda x: x["_mtime"], reverse=True)
-            
-            prompts = [{"name": p["name"], "tags": p["tags"]} for p in files_data]
+        # 按 mtime 倒序排序（每组内最新的在前）
+        def sort_key(x):
+            return -x.get("_mtime", 0)
+        
+        custom_prompts.sort(key=sort_key)
+        presets_prompts.sort(key=sort_key)
+        
+        # custom 在前，presets 在后
+        prompts = custom_prompts + presets_prompts
+        
         return web.json_response(prompts)
     except Exception as e:
         logger.error(f"Error listing prompts: {e}")
@@ -222,11 +270,31 @@ async def rs_prompts_load_prompt(request):
     try:
         data = await request.json()
         name = data.get("name")
-        filepath = os.path.join(PROMPTS_DIR, f"{name}.json")
+        if not name:
+            return web.Response(status=400, text="Name required")
+        
+        # 根据名称中的路径判断来源目录
+        if name.startswith("presets/"):
+            base_dir = PRESETS_DIR
+            name = name[len("presets/"):]
+        else:
+            base_dir = CUSTOM_DIR
+        
+        # 构建文件路径（支持子目录）
+        filepath = os.path.join(base_dir, f"{name}.json")
         if os.path.exists(filepath):
             with open(filepath, 'r', encoding='utf-8') as f:
                 result = json.load(f)
                 return web.json_response(result)
+        
+        # 尝试在两个目录中查找
+        for search_dir in [CUSTOM_DIR, PRESETS_DIR]:
+            filepath = os.path.join(search_dir, f"{name}.json")
+            if os.path.exists(filepath):
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    result = json.load(f)
+                    return web.json_response(result)
+        
         return web.Response(status=404, text="Prompt not found")
     except Exception as e:
         logger.error(f"Error loading prompt: {e}")
@@ -239,11 +307,32 @@ async def rs_prompts_delete_prompt(request):
         name = data.get("name")
         if not name: 
             return web.Response(status=400, text="Name required")
-        filepath = os.path.join(PROMPTS_DIR, f"{name}.json")
+        
+        # 确定来源和基础目录
+        if name.startswith("presets/"):
+            base_dir = PRESETS_DIR
+            name = name[len("presets/"):]
+            source = "presets"
+        else:
+            base_dir = CUSTOM_DIR
+            source = "custom"
+        
+        # 构建文件路径
+        filepath = os.path.join(base_dir, f"{name}.json")
         if os.path.exists(filepath):
             os.remove(filepath)
-            _update_tags_index(name, tags=None)
+            _update_tags_index(name, tags=None, source=source)
             return web.Response(status=200, text="OK")
+        
+        # 尝试在两个目录中查找
+        for search_dir in [CUSTOM_DIR, PRESETS_DIR]:
+            filepath = os.path.join(search_dir, f"{name}.json")
+            if os.path.exists(filepath):
+                os.remove(filepath)
+                s = "custom" if search_dir == CUSTOM_DIR else "presets"
+                _update_tags_index(name, tags=None, source=s)
+                return web.Response(status=200, text="OK")
+        
         return web.Response(status=404, text="Prompt not found")
     except Exception as e:
         logger.error(f"Error deleting prompt: {e}")
