@@ -2,3 +2,4 @@ __pycache__/
 *.py[cod]
 .DS_Store
 remote_llm_config.json
+prompts/custom/

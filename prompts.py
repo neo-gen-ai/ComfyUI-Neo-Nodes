@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: Apache-2.0
+﻿# SPDX-License-Identifier: Apache-2.0
 # ComfyUI-Neo-Nodes - Prompts
 
 import os
@@ -106,8 +106,8 @@ def _scan_prompts_recursive(base_dir: str, prefix: str = "", source: str = "cust
             # 递归处理子目录
             sub_prefix = f"{prefix}{entry}/" if prefix else f"{entry}/"
             prompts.extend(_scan_prompts_recursive(full_path, sub_prefix, source))
-        elif entry.endswith('.json') and not entry.startswith('_'):
-            name = entry[:-5]  # 去掉 .json 后缀
+        elif entry.endswith('.txt') and not entry.startswith('_'):
+            name = entry[:-4]  # 去掉 .txt 后缀
             display_name = f"{prefix}{name}" if prefix else name
             mtime = os.path.getmtime(full_path)
             tags = _get_tags_for_prompt(display_name, source)
@@ -220,20 +220,17 @@ async def rs_prompts_save_prompt(request):
             name = name[len("presets/"):]
         
         # 构建文件路径（支持子目录）
-        filepath = os.path.join(base_dir, f"{name}.json")
+        filepath = os.path.join(base_dir, f"{name}.txt")
         counter = 1
         while os.path.exists(filepath):
-            filepath = os.path.join(base_dir, f"{name}-{counter}.json")
+            filepath = os.path.join(base_dir, f"{name}-{counter}.txt")
             counter += 1
         
         # 确保目录存在
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
         
-        prompt_data = {
-            "text": data.get("text", "")
-        }
         with open(filepath, 'w', encoding='utf-8') as f:
-            json.dump(prompt_data, f, indent=2, ensure_ascii=False)
+            f.write(data.get("text", ""))
         
         # 确定来源
         source = "presets" if base_dir == PRESETS_DIR else "custom"
@@ -282,19 +279,19 @@ async def rs_prompts_load_prompt(request):
             base_dir = CUSTOM_DIR
         
         # 构建文件路径（支持子目录）
-        filepath = os.path.join(base_dir, f"{name}.json")
+        filepath = os.path.join(base_dir, f"{name}.txt")
         if os.path.exists(filepath):
             with open(filepath, 'r', encoding='utf-8') as f:
-                result = json.load(f)
-                return web.json_response(result)
+                text_content = f.read()
+                return web.json_response({"text": text_content})
         
         # 尝试在两个目录中查找
         for search_dir in [CUSTOM_DIR, PRESETS_DIR]:
-            filepath = os.path.join(search_dir, f"{name}.json")
+            filepath = os.path.join(search_dir, f"{name}.txt")
             if os.path.exists(filepath):
                 with open(filepath, 'r', encoding='utf-8') as f:
-                    result = json.load(f)
-                    return web.json_response(result)
+                    text_content = f.read()
+                    return web.json_response({"text": text_content})
         
         return web.Response(status=404, text="Prompt not found")
     except Exception as e:
@@ -319,7 +316,7 @@ async def rs_prompts_delete_prompt(request):
             source = "custom"
         
         # 构建文件路径
-        filepath = os.path.join(base_dir, f"{name}.json")
+        filepath = os.path.join(base_dir, f"{name}.txt")
         if os.path.exists(filepath):
             os.remove(filepath)
             _update_tags_index(name, tags=None, source=source)
@@ -327,7 +324,7 @@ async def rs_prompts_delete_prompt(request):
         
         # 尝试在两个目录中查找
         for search_dir in [CUSTOM_DIR, PRESETS_DIR]:
-            filepath = os.path.join(search_dir, f"{name}.json")
+            filepath = os.path.join(search_dir, f"{name}.txt")
             if os.path.exists(filepath):
                 os.remove(filepath)
                 s = "custom" if search_dir == CUSTOM_DIR else "presets"
@@ -527,11 +524,11 @@ async def rs_prompts_random_prompt(request):
         else:
             base_dir = CUSTOM_DIR
         
-        filepath = os.path.join(base_dir, f"{name}.json")
+        filepath = os.path.join(base_dir, f"{name}.txt")
         if os.path.exists(filepath):
             with open(filepath, 'r', encoding='utf-8') as f:
-                result = json.load(f)
-            return web.json_response({"status": "success", "prompt": result.get("text", "")})
+                text_content = f.read()
+            return web.json_response({"status": "success", "prompt": text_content})
         
         return web.json_response({"status": "error", "prompt": "", "error": "Prompt not found"})
     except Exception as e:
