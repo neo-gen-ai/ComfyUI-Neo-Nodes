@@ -1,6 +1,7 @@
 # ComfyUI-Neo-Nodes
-# Merged plugin: ComfyUI-Prompts-Simple + ComfyUI-UNetLoader + Image Loaders
 
+# Import gallery module to register routes (must be imported for route registration)
+from . import gallery
 
 # Import from prompts module
 from .prompts import (
