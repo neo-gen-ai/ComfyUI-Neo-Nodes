@@ -283,10 +283,68 @@ app.registerExtension({
 
             window.addEventListener("beforeunload", NodeBehaviors.createBeforeUnloadHandler(node, textWidget));
 
+            // Expose node reference for external apps (like gallery)
+            node._rsPromptUIElements = { customTextarea, textWidget };
+
             return result;
         };
     }
 });
+
+// ==========================================
+// Listen for gallery prompt send events
+// ==========================================
+let _sentPromptCount = 0;
+
+// Use document.addEventListener to receive events from gallery
+document.addEventListener("gallery.send.prompt", (event) => {
+    const { prompt, nodeIds } = event.detail;
+    if (!prompt) return;
+
+    console.log('[gallery.send.prompt] Received event:', { prompt, nodeIds });
+
+    // If nodeIds specified, send to those nodes only
+    if (nodeIds && nodeIds.length > 0) {
+        for (const nodeId of nodeIds) {
+            const node = app.graph.getNodeById(nodeId);
+            console.log('[gallery.send.prompt] Looking for node:', nodeId, 'found:', node);
+            if (node && node._rsPromptUIElements) {
+                const { customTextarea, textWidget } = node._rsPromptUIElements;
+                if (customTextarea) {
+                    customTextarea.value = prompt;
+                    if (textWidget) textWidget.value = prompt;
+                    // Trigger input event to update storage
+                    customTextarea.dispatchEvent(new Event("input", { bubbles: true }));
+                    console.log('[gallery.send.prompt] Sent to node', nodeId);
+                }
+            }
+        }
+        return;
+    }
+
+    // Otherwise, find the first available NeoPromptEncoder or NeoPromptGenerator node
+    let sent = false;
+    app.graph._nodes.forEach(node => {
+        if (sent) return;
+        if (node._rsPromptUIElements) {
+            const { customTextarea, textWidget } = node._rsPromptUIElements;
+            if (customTextarea) {
+                customTextarea.value = prompt;
+                if (textWidget) textWidget.value = prompt;
+                customTextarea.dispatchEvent(new Event("input", { bubbles: true }));
+                sent = true;
+                console.log('[gallery.send.prompt] Sent to node', node.id);
+            }
+        }
+    });
+
+    if (!sent) {
+        // Fallback: copy to clipboard
+        navigator.clipboard.writeText(prompt);
+    }
+});
+
+window.addEventListener("beforeunload", NodeBehaviors.createBeforeUnloadHandler);
 
 // ==========================================
 // Reference external CSS file
@@ -612,6 +670,9 @@ app.registerExtension({
             ));
 
             window.addEventListener("beforeunload", NodeBehaviors.createBeforeUnloadHandler(node, textWidget));
+
+            // Expose node reference for external apps (like gallery)
+            node._rsPromptUIElements = { customTextarea, textWidget };
 
             return result;
         };

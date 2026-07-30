@@ -23,9 +23,8 @@ class NeoGallery {
         this.filteredCustom = [];
         this.sortAscending = true;
         this.searchInput = this.createSearchInput();
-        this.sortToggle = this.createSortToggle();
         this.targetNodeDropdown = this.createTargetNodeDropdown();
-        this.useSelectedNodeCheckbox = this.createUseSelectedNodeCheckbox();
+        this.thumbnailSizeSlider = this.createThumbnailSizeSlider();
         this.accordion = $el("div.neo-gallery-accordion");
         this.placeholderImageUrl = `${window.location.protocol}//${window.location.host}/neo_gallery/image?filename=SKIP.jpeg`;
         this.sectionStates = {};
@@ -33,21 +32,33 @@ class NeoGallery {
 
         this.element = $el("div", {
             style: {
-                padding: "10px",
+                padding: "10px 10px 20px 10px",
                 backgroundColor: "#1a1a1a",
                 minHeight: "400px"
             }
         }, [
             $el("h3", { textContent: "Neo Gallery", style: { marginBottom: "10px", color: "#eee" }}),
-            $el("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" } }, [
-                this.searchInput,
-                this.sortToggle
+            $el("div", { style: { display: "flex", gap: "8px", marginBottom: "10px", alignItems: "stretch" } }, [
+                $el("div", { style: { flex: 1 } }, [this.searchInput]),
+                $el("div", { style: { width: "180px", flexShrink: 0 } }, [this.targetNodeDropdown])
             ]),
-            $el("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px", flexWrap: "nowrap" } }, [
-                $el("div", { style: { flexGrow: 1, flexBasis: "80%", marginRight: "10px" } }, [this.targetNodeDropdown]),
-                this.useSelectedNodeCheckbox
-            ]),
-            this.accordion
+            this.accordion,
+            // Thumbnail Size - at bottom of panel
+            $el("div", {
+                style: {
+                    display: "flex",
+                    justifyContent: "flex-end",
+                    alignItems: "center",
+                    gap: "8px",
+                    marginTop: "10px",
+                    padding: "6px 10px",
+                    backgroundColor: "rgba(42, 42, 42, 0.9)",
+                    borderRadius: "4px"
+                }
+            }, [
+                $el("span", { textContent: "Size:", style: { fontSize: "11px", color: "#999" } }),
+                this.thumbnailSizeSlider
+            ])
         ]);
     }
 
@@ -89,55 +100,131 @@ class NeoGallery {
 
     // ====== UI Builders ======
 
-    createUseSelectedNodeCheckbox() {
-        const container = $el("div", {
-            style: { display: "flex", alignItems: "center", marginLeft: "10px", whiteSpace: "nowrap" },
-            title: "Ignore dropdown setting and use the currently selected node as the target for prompt insertion."
-        });
-        const checkbox = $el("input", { type: "checkbox", id: "use-selected-node", style: { marginRight: "5px" } });
-        const label = $el("div", {
-            style: { fontSize: "12px", lineHeight: "1", textAlign: "center" },
-            innerHTML: "Active<br>Selection"
-        });
-        container.appendChild(checkbox);
-        container.appendChild(label);
-        return container;
-    }
+    // Removed createUseSelectedNodeCheckbox - now integrated into dropdown
 
     createTargetNodeDropdown() {
         const dropdown = $el("select", {
             id: "target-node-dropdown",
             style: {
                 width: "100%",
-                padding: "8px",
-                marginBottom: "10px",
+                padding: "6px 10px",
                 borderRadius: "4px",
-                border: "1px solid #ccc",
+                border: "1px solid #444",
                 backgroundColor: "#2a2a2a",
                 color: "white",
-                textOverflow: "ellipsis"
+                fontSize: "12px",
+                textOverflow: "ellipsis",
+                outline: "none",
+                boxSizing: "content-box",
+                height: "30px"
             },
-            title: "Select where the prompt will be inserted."
+            title: "Target for prompt insertion: where the gallery prompt will be sent"
         });
-        dropdown.appendChild($el("option", { value: "clipboard", textContent: "None (Use Clipboard)" }));
+
+        // Placeholder option
+        dropdown.appendChild($el("option", {
+            value: "",
+            textContent: "Select prompt target...",
+            style: { color: "#999" }
+        }));
+
+        // Active Selected Node option (dynamically updated)
+        dropdown.appendChild($el("option", { value: "selected", textContent: "⭐ Active Selected Node", id: "selected-node-option" }));
+        
+        // Clipboard fallback option
+        dropdown.appendChild($el("option", { value: "clipboard", textContent: "📋 None (Copy to Clipboard)" }));
         dropdown.appendChild($el("option", { disabled: true }));
 
+        // Section header for prompts.js nodes (NeoPromptEncoder / NeoPromptGenerator)
+        const addPromptsHeader = () => {
+            const promptsNodes = app.graph._nodes.filter(n => n._rsPromptUIElements);
+            if (promptsNodes.length > 0) {
+                let existingHeader = dropdown.querySelector('.rs-prompts-section-header');
+                if (!existingHeader) {
+                    const headerOption = $el("option", {
+                        className: 'rs-prompts-section-header',
+                        disabled: true,
+                        textContent: "── Prompt Encoder / Generator ──"
+                    });
+                    if (dropdown.children.length >= 3) {
+                        dropdown.insertBefore(headerOption, dropdown.children[3]);
+                    } else {
+                        dropdown.appendChild(headerOption);
+                    }
+                    promptsNodes.forEach(node => {
+                        const nodeType = node.type === 'NeoPromptEncoder' ? 'Encoder' : 'Generator';
+                        dropdown.appendChild($el("option", {
+                            value: `prompt:${node.id}`,
+                            textContent: `${node.title || 'Node'} (${nodeType})`,
+                            className: 'rs-prompt-node-option'
+                        }));
+                    });
+                }
+            }
+        };
+
         const updateDropdownOptions = () => {
-            while (dropdown.children.length > 2) {
+            // Keep first 4 options: placeholder, active selection, clipboard, separator
+            while (dropdown.children.length > 4) {
                 dropdown.removeChild(dropdown.lastChild);
             }
+
+            // Update active selected node option text (always visible)
+            const selectedKeys = Object.keys(app.canvas.selected_nodes);
+            const activeOption = dropdown.querySelector('#selected-node-option');
+            if (activeOption) {
+                activeOption.textContent = '⭐ Active Selected Node';
+                activeOption.style.display = '';
+            }
+
+            // Add section header for regular text input nodes
+            const hasRegularTextNodes = app.graph._nodes.some(node => {
+                const nodeType = node.type || '';
+                const nodeName = (node.title || '').toLowerCase();
+                if (nodeType.includes('negative') || nodeName.includes('negative')) return false;
+                return node.widgets?.some(w => w.inputEl && ['string', 'text', 'customtext'].includes(w.type));
+            });
+
+            if (hasRegularTextNodes) {
+                let regularHeader = dropdown.querySelector('.rs-regular-section-header');
+                if (!regularHeader) {
+                    regularHeader = $el("option", {
+                        className: 'rs-regular-section-header',
+                        disabled: true,
+                        textContent: "── Text Input Nodes ──"
+                    });
+                    dropdown.appendChild(regularHeader);
+                }
+            }
+
+            // Only add nodes that have text-type widgets with actual input elements
             app.graph._nodes.forEach(node => {
+                // Skip negative prompt encoder nodes (output is negative prompt)
+                const nodeType = node.type || '';
+                const nodeName = (node.title || '').toLowerCase();
+                if (nodeType.includes('negative') || nodeName.includes('negative')) {
+                    return;
+                }
+
+                const textWidgets = [];
                 if (node.widgets) {
                     node.widgets.forEach((widget, index) => {
-                        if (['string', 'text', 'customtext'].includes(widget.type)) {
-                            dropdown.appendChild($el("option", {
-                                value: `${node.id}:widget:${index}`,
-                                textContent: `${node.title || 'Node'} - ${widget.name}`
-                            }));
+                        if (widget.inputEl && ['string', 'text', 'customtext'].includes(widget.type)) {
+                            textWidgets.push({ widget, index });
                         }
                     });
                 }
+                if (textWidgets.length > 0) {
+                    textWidgets.forEach(({ widget, index }) => {
+                        dropdown.appendChild($el("option", {
+                            value: `${node.id}:widget:${index}`,
+                            textContent: `▸ ${node.title || 'Node'} → ${widget.name}`
+                        }));
+                    });
+                }
             });
+
+            addPromptsHeader();
         };
 
         updateDropdownOptions();
@@ -150,22 +237,45 @@ class NeoGallery {
         const input = $el("input", {
             type: "text",
             placeholder: "Search prompt images...",
-            style: { width: "70%", padding: "8px", borderRadius: "4px", border: "1px solid #ccc" }
+            style: {
+                width: "100%",
+                padding: "6px 10px",
+                borderRadius: "4px",
+                border: "1px solid #444",
+                backgroundColor: "#2a2a2a",
+                color: "white",
+                fontSize: "12px",
+                outline: "none",
+                boxSizing: "content-box",
+                height: "30px"
+            }
         });
         input.addEventListener("input", this.debounce(() => this.handleSearch(input.value), 300));
         return input;
     }
 
-    createSortToggle() {
-        const button = $el("button", {
-            textContent: "Sort: A-Z",
-            onclick: () => this.toggleSort(),
-            style: {
-                padding: "8px 12px", borderRadius: "4px", border: "none",
-                background: "#2a2a2a", color: "white", cursor: "pointer", fontSize: "14px"
+    createThumbnailSizeSlider() {
+        const valueLabel = $el("span.thumbnail-size-value", {
+            textContent: `${this.maxThumbnailSize}px`,
+            style: { fontSize: "11px", color: "#999", minWidth: "40px", textAlign: "right" }
+        });
+
+        const slider = $el("input", {
+            type: "range",
+            min: 50,
+            max: 250,
+            step: 25,
+            value: this.maxThumbnailSize,
+            style: { width: "100px", cursor: "pointer", height: "16px" },
+            onchange: () => {
+                const val = parseInt(slider.value);
+                this.updateThumbnailSize(val);
+                valueLabel.textContent = `${val}px`;
+                this.savePluginData({ maxThumbnailSize: val });
             }
         });
-        return button;
+
+        return $el("div", { style: { display: "flex", alignItems: "center", gap: "6px" } }, [slider, valueLabel]);
     }
 
     createAddCustomImageButton() {
@@ -269,13 +379,6 @@ class NeoGallery {
         }
     }
 
-    toggleSort() {
-        this.sortAscending = !this.sortAscending;
-        this.sortToggle.textContent = this.sortAscending ? "Sort: A-Z" : "Sort: Z-A";
-        this.savePluginData();
-        this.sortAndDisplayImages();
-    }
-
     handleSearch(searchTerm) {
         searchTerm = searchTerm.toLowerCase();
         this.isSearchActive = searchTerm.length > 0;
@@ -292,6 +395,13 @@ class NeoGallery {
 
     updateThumbnailSize(newSize) {
         this.maxThumbnailSize = newSize;
+        // Update slider if exists
+        if (this.thumbnailSizeSlider) {
+            const slider = this.thumbnailSizeSlider.querySelector("input[type='range']");
+            const label = this.thumbnailSizeSlider.querySelector(".thumbnail-size-value");
+            if (slider) slider.value = newSize;
+            if (label) label.textContent = `${newSize}px`;
+        }
         this.sortAndDisplayImages();
     }
 
@@ -333,7 +443,11 @@ class NeoGallery {
         const presetsToDisplay = this.isSearchActive ? this.filteredPresets : this.allPresets;
         const customToDisplay = this.isSearchActive ? this.filteredCustom : this.allCustom;
 
-        if (presetsToDisplay.length === 0 && customToDisplay.length === 0 && !this.isSearchActive) {
+        // Always sort alphabetically (ascending)
+        const sortedPresets = [...presetsToDisplay].sort((a, b) => a.name.localeCompare(b.name));
+        const sortedCustom = [...customToDisplay].sort((a, b) => a.name.localeCompare(b.name));
+
+        if (sortedPresets.length === 0 && sortedCustom.length === 0 && !this.isSearchActive) {
             this.displayNoFilesMessage();
             return;
         }
@@ -349,18 +463,12 @@ class NeoGallery {
         }
 
         // Render Presets section
-        if (presetsToDisplay.length > 0 || (!this.isSearchActive)) {
-            const sortedPresets = [...presetsToDisplay].sort((a, b) =>
-                this.sortAscending ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name)
-            );
+        if (sortedPresets.length > 0 || (!this.isSearchActive)) {
             this.accordion.appendChild(this.createAccordionSection("Presets", sortedPresets, "presets"));
         }
 
         // Render Custom section
-        if (customToDisplay.length > 0 || !this.isSearchActive) {
-            const sortedCustom = [...customToDisplay].sort((a, b) =>
-                this.sortAscending ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name)
-            );
+        if (sortedCustom.length > 0 || !this.isSearchActive) {
             this.accordion.appendChild(this.createCustomSection(sortedCustom));
         }
     }
@@ -592,25 +700,63 @@ class NeoGallery {
         let textToCopy = String(txtContent || "").trim();
         textToCopy = this.cleanText(textToCopy);
 
-        const useSelectedNode = document.getElementById("use-selected-node")?.checked;
         const selectedValue = document.getElementById("target-node-dropdown")?.value;
 
+        // Check if target is a prompts.js node (NeoPromptEncoder or NeoPromptGenerator)
+        let targetNodeIds = [];
+        let isPromptNode = false;
         let targetNode = null;
         let targetWidget = null;
 
-        if (useSelectedNode) {
+        // Handle Active Selection (value: "selected")
+        if (selectedValue === "selected") {
             const selectedKeys = Object.keys(app.canvas.selected_nodes);
             if (selectedKeys.length > 0) {
                 targetNode = app.canvas.selected_nodes[selectedKeys[0]];
-                targetWidget = targetNode?.widgets?.find(w => ['string', 'text', 'customtext'].includes(w.type));
+                // Check if it's a prompts.js node
+                if (targetNode && targetNode._rsPromptUIElements) {
+                    isPromptNode = true;
+                    targetNodeIds.push(parseInt(selectedKeys[0]));
+                }
+                // Find first text widget if not a prompts.js node
+                if (!isPromptNode && targetNode) {
+                    targetWidget = targetNode.widgets?.find(w => ['string', 'text', 'customtext'].includes(w.type));
+                }
             }
         } else if (selectedValue && selectedValue !== "clipboard") {
-            const [nodeId, , index] = selectedValue.split(':');
-            targetNode = app.graph.getNodeById(parseInt(nodeId));
-            targetWidget = targetNode?.widgets?.[parseInt(index)];
+            // Check if it's a prompts.js node (format: "prompt:nodeId")
+            if (selectedValue.startsWith('prompt:')) {
+                const nodeId = parseInt(selectedValue.split(':')[1]);
+                targetNode = app.graph.getNodeById(nodeId);
+                if (targetNode && targetNode._rsPromptUIElements) {
+                    isPromptNode = true;
+                    targetNodeIds.push(nodeId);
+                }
+            } else {
+                const [nodeId, , index] = selectedValue.split(':');
+                targetNode = app.graph.getNodeById(parseInt(nodeId));
+                targetWidget = targetNode?.widgets?.[parseInt(index)];
+                // Check if it's a prompts.js node
+                if (targetNode && targetNode._rsPromptUIElements) {
+                    isPromptNode = true;
+                    targetNodeIds.push(parseInt(nodeId));
+                }
+            }
         }
 
-        if (targetNode && targetWidget) {
+        // Handle prompts.js nodes (NeoPromptEncoder / NeoPromptGenerator)
+        if (targetNode && isPromptNode && targetNode._rsPromptUIElements) {
+            const { customTextarea, textWidget } = targetNode._rsPromptUIElements;
+            if (customTextarea) {
+                customTextarea.value = textToCopy;
+                customTextarea.dispatchEvent(new Event("input", { bubbles: true }));
+            }
+            if (textWidget) {
+                textWidget.value = textToCopy;
+            }
+            app.graph.setDirtyCanvas(true, true);
+            this.showToast('success', 'Tags Sent!', `Sent to ${targetNode.title || 'Node'}`);
+        } else if (targetNode && targetWidget) {
             targetWidget.value = textToCopy;
             if (targetNode.onWidgetChanged) targetNode.onWidgetChanged(targetWidget.name, targetWidget.value);
             app.graph.setDirtyCanvas(true, true);
