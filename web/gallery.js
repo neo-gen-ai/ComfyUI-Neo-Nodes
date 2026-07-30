@@ -36,7 +36,9 @@ class NeoGallery {
         this.sectionStates = {};
         this.isSearchActive = false;
 
-        this.element = $el("div", { className: "neo-gallery-panel" }, [
+        // Use a unique ID so we can find and clean up old instances across all containers
+        this.elementId = "neo-gallery-panel-root";
+        this.element = $el("div", { id: this.elementId, className: "neo-gallery-panel" }, [
             $el("h3", { className: "neo-gallery-header", textContent: "Neo Gallery" }),
             $el("div", { className: "neo-gallery-search-row" }, [
                 $el("div", { className: "neo-gallery-search-container" }, [this.searchInput]),
@@ -88,8 +90,6 @@ class NeoGallery {
     }
 
     // ====== UI Builders ======
-
-    // Removed createUseSelectedNodeCheckbox - now integrated into dropdown
 
     createTargetNodeDropdown() {
         const dropdown = $el("select", {
@@ -564,8 +564,6 @@ class NeoGallery {
         items.forEach(item => imageGrid.appendChild(this.createImageElement(item, "custom")));
         content.appendChild(imageGrid);
 
-        // Clear All button is now only in the header, no duplicate button here
-
         section.appendChild(header);
         section.appendChild(content);
         return section;
@@ -618,7 +616,7 @@ class NeoGallery {
                 e.stopPropagation();
                 this.copyToClipboard(image.name, image.txt_content, sendBtn, 'send');
             }
-        }, ["📤"]);
+        }, ["✈️"]);
 
         // Copy button (below send button)
         const copyBtn = $el("div", {
@@ -627,7 +625,7 @@ class NeoGallery {
                 e.stopPropagation();
                 this.copyToClipboard(image.name, image.txt_content, copyBtn, 'copy');
             }
-        }, ["📋"]);
+        }, ["⧉"]);
 
         const imgEl = $el("img", {
             className: "neo-gallery-thumb-img",
@@ -675,32 +673,24 @@ class NeoGallery {
 
     /**
      * Extract the first meaningful segment from text.
-     * Splits by sentence terminators (。.！？；:：) and returns the first non-empty segment.
      */
     getFirstSegment(text) {
         if (!text) return "";
         const segments = text.split(/[。！？；:\n]+/).filter(s => s.trim());
         if (segments.length === 0) return "";
         let first = segments[0].trim();
-        // Remove label prefix (text before first full-width colon)
         const colonIdx = first.indexOf('：');
         if (colonIdx > 0) {
             first = first.substring(colonIdx + 1).trim();
         }
-        // Limit to reasonable length for display
         return first.length > 50 ? first.substring(0, 50) + '...' : first;
     }
 
     /**
      * Parse txt_content into structured sections for display.
-     * Section labels are Chinese words (not numbers) followed by a full-width colon (：).
-     * This avoids false splits on technical parameters like "f/1.4", "16:9", "85mm".
      */
     parsePromptSections(txtContent) {
         if (!txtContent) return [];
-
-        // Split by sentence terminators and newlines
-        // Only split by full-width colon (：) as it indicates a section label in Chinese text
         const rawSegments = txtContent.split(/[。！？；\n]+/).filter(s => s.trim());
         const sections = [];
 
@@ -708,93 +698,21 @@ class NeoGallery {
             const trimmed = rawSeg.trim();
             if (!trimmed) continue;
 
-            // Try to match full-width colon (：) - primary section separator
             const fullColonMatch = trimmed.match(/^(.+?)[：](.*)$/s);
             if (fullColonMatch) {
                 const beforeColon = fullColonMatch[1].trim();
                 const afterColon = fullColonMatch[2].trim();
-
-                // Only treat as section if beforeColon contains Chinese characters
-                // and is reasonably short (not a long sentence)
                 const cjkMatch = beforeColon.match(/[\u4e00-\u9fa5]/g);
                 const cjkCount = cjkMatch ? cjkMatch.length : 0;
 
                 if (cjkCount > 0 && cjkCount <= 10 && beforeColon.length <= 30) {
-                    sections.push({
-                        label: beforeColon,
-                        value: afterColon
-                    });
+                    sections.push({ label: beforeColon, value: afterColon });
                 } else {
                     sections.push({ label: null, value: trimmed });
                 }
                 continue;
             }
 
-            // No colon found - plain content (no label)
-            sections.push({ label: null, value: trimmed });
-        }
-
-        return sections;
-    }
-
-    /**
-     * Extract the first meaningful segment from text.
-     * Splits by sentence terminators (。.！？；:：) and returns the first non-empty segment.
-     */
-    getFirstSegment(text) {
-        if (!text) return "";
-        const segments = text.split(/[。！？；:\n]+/).filter(s => s.trim());
-        if (segments.length === 0) return "";
-        let first = segments[0].trim();
-        // Remove label prefix (text before first full-width colon)
-        const colonIdx = first.indexOf('：');
-        if (colonIdx > 0) {
-            first = first.substring(colonIdx + 1).trim();
-        }
-        // Limit to reasonable length for display
-        return first.length > 50 ? first.substring(0, 50) + '...' : first;
-    }
-
-    /**
-     * Parse txt_content into structured sections for display.
-     * Section labels are Chinese words (not numbers) followed by a full-width colon (：).
-     * This avoids false splits on technical parameters like "f/1.4", "16:9", "85mm".
-     */
-    parsePromptSections(txtContent) {
-        if (!txtContent) return [];
-
-        // Split by sentence terminators and newlines
-        // Only split by full-width colon (：) as it indicates a section label in Chinese text
-        const rawSegments = txtContent.split(/[。！？；\n]+/).filter(s => s.trim());
-        const sections = [];
-
-        for (const rawSeg of rawSegments) {
-            const trimmed = rawSeg.trim();
-            if (!trimmed) continue;
-
-            // Try to match full-width colon (：) - primary section separator
-            const fullColonMatch = trimmed.match(/^(.+?)[：](.*)$/s);
-            if (fullColonMatch) {
-                const beforeColon = fullColonMatch[1].trim();
-                const afterColon = fullColonMatch[2].trim();
-
-                // Only treat as section if beforeColon contains Chinese characters
-                // and is reasonably short (not a long sentence)
-                const cjkMatch = beforeColon.match(/[\u4e00-\u9fa5]/g);
-                const cjkCount = cjkMatch ? cjkMatch.length : 0;
-
-                if (cjkCount > 0 && cjkCount <= 10 && beforeColon.length <= 30) {
-                    sections.push({
-                        label: beforeColon,
-                        value: afterColon
-                    });
-                } else {
-                    sections.push({ label: null, value: trimmed });
-                }
-                continue;
-            }
-
-            // No colon found - plain content (no label)
             sections.push({ label: null, value: trimmed });
         }
 
@@ -827,29 +745,24 @@ class NeoGallery {
 
         const selectedValue = document.getElementById("target-node-dropdown")?.value;
 
-        // Check if target is a prompts.js node (NeoPromptEncoder or NeoPromptGenerator)
         let targetNodeIds = [];
         let isPromptNode = false;
         let targetNode = null;
         let targetWidget = null;
 
-        // Handle Active Selection (value: "selected")
         if (selectedValue === "selected") {
             const selectedKeys = Object.keys(app.canvas.selected_nodes);
             if (selectedKeys.length > 0) {
                 targetNode = app.canvas.selected_nodes[selectedKeys[0]];
-                // Check if it's a prompts.js node
                 if (targetNode && targetNode._rsPromptUIElements) {
                     isPromptNode = true;
                     targetNodeIds.push(parseInt(selectedKeys[0]));
                 }
-                // Find first text widget if not a prompts.js node
                 if (!isPromptNode && targetNode) {
                     targetWidget = targetNode.widgets?.find(w => ['string', 'text', 'customtext'].includes(w.type));
                 }
             }
         } else if (selectedValue && selectedValue !== "clipboard") {
-            // Check if it's a prompts.js node (format: "prompt:nodeId")
             if (selectedValue.startsWith('prompt:')) {
                 const nodeId = parseInt(selectedValue.split(':')[1]);
                 targetNode = app.graph.getNodeById(nodeId);
@@ -861,7 +774,6 @@ class NeoGallery {
                 const [nodeId, , index] = selectedValue.split(':');
                 targetNode = app.graph.getNodeById(parseInt(nodeId));
                 targetWidget = targetNode?.widgets?.[parseInt(index)];
-                // Check if it's a prompts.js node
                 if (targetNode && targetNode._rsPromptUIElements) {
                     isPromptNode = true;
                     targetNodeIds.push(parseInt(nodeId));
@@ -869,7 +781,6 @@ class NeoGallery {
             }
         }
 
-        // Handle prompts.js nodes (NeoPromptEncoder / NeoPromptGenerator)
         if (targetNode && isPromptNode && targetNode._rsPromptUIElements) {
             const { customTextarea, textWidget } = targetNode._rsPromptUIElements;
             if (customTextarea) {
@@ -926,12 +837,7 @@ class NeoGallery {
         app.extensionManager.toast.add({ severity, summary, detail, life: 5000 });
     }
 
-    /**
-     * Show inline feedback message on a button
-     * Feedback is appended to the img-wrapper to avoid affecting thumbnail layout
-     */
     showInlineFeedback(button, message, type) {
-        // Remove any existing feedback for this button
         const existing = button.querySelector('.neo-gallery-feedback');
         if (existing) existing.remove();
 
@@ -941,10 +847,8 @@ class NeoGallery {
             textContent: message
         });
 
-        // Use fixed positioning - append to body so it's fully independent of layout
         document.body.appendChild(feedback);
 
-        // getBoundingClientRect() already returns viewport coordinates for fixed positioned elements
         const buttonRect = button.getBoundingClientRect();
         const top = buttonRect.top;
         const left = buttonRect.left + buttonRect.width / 2;
@@ -953,7 +857,7 @@ class NeoGallery {
         feedback.style.top = (top - 8) + 'px';
         feedback.style.left = left + 'px';
         feedback.style.transform = 'translateX(-50%)';
-        feedback.style.zIndex = '2147483646'; // Near-max safe z-index to appear above everything
+        feedback.style.zIndex = '2147483646';
         feedback.style.pointerEvents = 'none';
 
         setTimeout(() => {
@@ -978,16 +882,11 @@ class NeoGallery {
 
     // ====== Lightbox (Large Image Viewer) ======
 
-    injectAnimations() {
-        // CSS is now loaded via link element in gallery.css
-        // This method is kept for future animation needs
-    }
+    injectAnimations() {}
 
     showLightbox(image, subfolder) {
-        // Inject animations first time
         this.injectAnimations();
 
-        // If lightbox already exists, just update content (for navigation)
         const existingLightbox = document.querySelector('.neo-gallery-lightbox');
         if (existingLightbox && this.currentLightboxImages && this.currentLightboxImages.length > 0) {
             const newIndex = this.currentLightboxImages.findIndex(img => img.filename === image.filename && img.subfolder === subfolder);
@@ -997,44 +896,37 @@ class NeoGallery {
             }
         }
 
-        // Remove existing lightbox if any
         const existing = document.querySelector('.neo-gallery-lightbox');
         if (existing) {
             existing.remove();
         }
 
-        // Create lightbox overlay
         const lightbox = $el("div", {
             id: "neo-gallery-lightbox",
             className: "neo-gallery-lightbox",
             onclick: (e) => {
-                // Close lightbox when clicking on overlay (not on image or buttons)
                 if (e.target === lightbox) {
                     this.closeLightbox();
                 }
             }
         });
 
-        // Create container with horizontal layout for image + prompt (unified panel look)
         const container = $el("div", {
             id: "neo-gallery-lightbox-container",
             className: "neo-gallery-lightbox-container",
         });
 
-        // Image wrapper for buttons (left panel)
         const imgWrapper = $el("div", {
             id: "neo-gallery-lightbox-img-wrapper",
             className: "neo-gallery-lightbox-img-wrapper",
         });
 
-        // Create image with glassmorphic styling
         const imageUrl = image.preview || `${window.location.protocol}//${window.location.host}/neo_gallery/image?filename=${encodeURIComponent(image.filename)}&subfolder=${encodeURIComponent(subfolder)}`;
         const img = $el("img", {
             className: "neo-gallery-lightbox-image",
             src: imageUrl,
         });
 
-        // Close button with hover effect (positioned at container top-right, closer to edge)
         const closeBtn = $el("div", {
             className: "neo-gallery-lightbox-close-btn",
             onclick: (e) => {
@@ -1043,40 +935,34 @@ class NeoGallery {
             }
         }, ["×"]);
 
-        // Navigation buttons container with glassmorphic style
         const navBtns = $el("div", {
             className: "neo-gallery-lightbox-nav-btns"
         });
 
-        // Send button with gradient (will be added to prompt section)
         const sendBtn = $el("div", {
             className: "neo-gallery-lightbox-btn neo-gallery-lightbox-send-btn",
             onclick: (e) => {
                 e.stopPropagation();
                 this.copyToClipboard(image.name, image.txt_content, sendBtn, 'send');
             }
-        }, ["📤 Send"]);
+        }, ["✈️ Send"]);
 
-        // Copy button with subtle style (will be added to prompt section)
         const copyBtn = $el("div", {
             className: "neo-gallery-lightbox-btn neo-gallery-lightbox-copy-btn",
             onclick: (e) => {
                 e.stopPropagation();
                 this.copyToClipboard(image.name, image.txt_content, copyBtn, 'copy');
             }
-        }, ["📋 Copy"]);
+        }, ["⧉ Copy"]);
 
         imgWrapper.appendChild(img);
 
-        // Navigation arrows with enhanced styling
-        // Build allImages in the SAME order as thumbnail display: Presets (sorted) first, then Custom (sorted)
         const allImages = [
             ...this.allPresets.map(p => ({...p, subfolder: "presets"})).sort((a, b) => a.name.localeCompare(b.name)),
             ...this.allCustom.map(c => ({...c, subfolder: "custom"})).sort((a, b) => a.name.localeCompare(b.name))
         ];
         const currentIndex = allImages.findIndex(img => img.filename === image.filename && img.subfolder === subfolder);
 
-        // Previous button - positioned on image
         const prevBtn = $el("div", {
             id: "neo-gallery-lightbox-prev-btn",
             className: "neo-gallery-lightbox-nav-arrow",
@@ -1093,7 +979,6 @@ class NeoGallery {
         }, ["‹"]);
         imgWrapper.appendChild(prevBtn);
 
-        // Next button - positioned on image
         const nextBtn = $el("div", {
             id: "neo-gallery-lightbox-next-btn",
             className: "neo-gallery-lightbox-nav-arrow",
@@ -1110,7 +995,6 @@ class NeoGallery {
         }, ["›"]);
         imgWrapper.appendChild(nextBtn);
 
-        // Prompt section (right panel) with glassmorphic card - unified with image panel
         let promptSection = null;
         if (image.txt_content) {
             promptSection = $el("div", {
@@ -1118,14 +1002,12 @@ class NeoGallery {
                 className: "neo-gallery-lightbox-prompt-section"
             });
 
-            // Parse prompt into sections for better display
             const sections = this.parsePromptSections(image.txt_content);
             const promptContainer = $el("div", {
                 className: "neo-gallery-lightbox-prompt-container"
             });
 
             if (sections.length > 0 && sections.some(s => s.label)) {
-                // Display with section labels (right-aligned label style)
                 for (const section of sections) {
                     if (section.label) {
                         const sectionEl = $el("div", {
@@ -1142,7 +1024,6 @@ class NeoGallery {
                         ]);
                         promptContainer.appendChild(sectionEl);
                     } else if (section.value) {
-                        // General content without label
                         promptContainer.appendChild($el("div", {
                             textContent: section.value,
                             style: { marginBottom: "3px", whiteSpace: "pre-wrap" }
@@ -1150,7 +1031,6 @@ class NeoGallery {
                     }
                 }
             } else {
-                // No sections found, display as plain text
                 promptContainer.appendChild($el("div", {
                     textContent: this.cleanText(image.txt_content),
                     style: { whiteSpace: "pre-wrap" }
@@ -1159,7 +1039,6 @@ class NeoGallery {
 
             promptSection.appendChild(promptContainer);
             
-            // Add Send and Copy buttons at the bottom of prompt section
             const promptBtnsContainer = $el("div", {
                 className: "neo-gallery-lightbox-prompt-btns"
             });
@@ -1168,25 +1047,20 @@ class NeoGallery {
             promptSection.appendChild(promptBtnsContainer);
         }
 
-        // Append image first (left), then prompt section (right)
         container.appendChild(imgWrapper);
         if (promptSection) container.appendChild(promptSection);
-        // Add close button to container (top-right of the big panel)
         container.appendChild(closeBtn);
         lightbox.appendChild(container);
         document.body.appendChild(lightbox);
 
-        // Animate nav buttons slide up
         requestAnimationFrame(() => {
             navBtns.style.animation = "neoGallerySlideUp 0.4s ease-out 0.2s both";
         });
 
-        // Store reference for keyboard navigation
         this.currentLightbox = lightbox;
         this.currentLightboxImages = allImages;
         this.currentLightboxIndex = currentIndex;
 
-        // Add keyboard navigation
         const handleKeyDown = (e) => {
             switch (e.key) {
                 case 'ArrowLeft':
@@ -1209,16 +1083,12 @@ class NeoGallery {
             this.currentLightbox.remove();
             this.currentLightbox = null;
         }
-        // Remove keyboard event listener
         if (this.currentLightboxKeyboardHandler) {
             document.removeEventListener('keydown', this.currentLightboxKeyboardHandler);
             this.currentLightboxKeyboardHandler = null;
         }
     }
 
-    /**
-     * Navigate lightbox images (for keyboard navigation)
-     */
     navigateLightboxImage(direction) {
         if (!this.currentLightbox || !this.currentLightboxImages || this.currentLightboxImages.length === 0) return;
         
@@ -1229,54 +1099,40 @@ class NeoGallery {
         this.updateLightboxContent(this.currentLightbox, nextItem, nextItem.subfolder, this.currentLightboxImages, newIndex);
     }
 
-    /**
-     * Update lightbox content without recreating the DOM
-     * This provides smooth navigation between images
-     */
     updateLightboxContent(lightbox, image, subfolder, allImages, currentIndex) {
-        // Find the container inside the lightbox by ID
         const container = lightbox.querySelector('#neo-gallery-lightbox-container');
         if (!container) {
-            // Fallback: recreate entire lightbox
             this.closeLightbox();
             setTimeout(() => this.showLightbox(image, subfolder), 100);
             return;
         }
 
-        // Get image wrapper by ID
         const imgWrapper = container.querySelector('#neo-gallery-lightbox-img-wrapper');
         if (!imgWrapper) {
-            // Fallback: recreate entire lightbox
             this.closeLightbox();
             setTimeout(() => this.showLightbox(image, subfolder), 100);
             return;
         }
 
-        // Update image source with fade effect
         const img = imgWrapper.querySelector('img');
         const newImageUrl = image.preview || `${window.location.protocol}//${window.location.host}/neo_gallery/image?filename=${encodeURIComponent(image.filename)}&subfolder=${encodeURIComponent(subfolder)}`;
 
         if (img) {
-            // Fade out
             img.style.opacity = '0';
             img.style.transform = 'scale(1)';
             
             setTimeout(() => {
                 img.src = newImageUrl;
                 img.onload = () => {
-                    // Fade in
                     img.style.opacity = '1';
                 };
             }, 150);
         }
 
-        // Update prompt section
         let promptSection = container.querySelector('#neo-gallery-lightbox-prompt-section');
         
         if (image.txt_content) {
-            // Image HAS txt_content - ensure prompt section exists
             if (!promptSection) {
-                // Create new prompt section (was previously removed when viewing an image without text)
                 promptSection = $el("div", {
                     id: "neo-gallery-lightbox-prompt-section",
                     className: "neo-gallery-lightbox-prompt-section"
@@ -1284,7 +1140,6 @@ class NeoGallery {
                 container.appendChild(promptSection);
             }
             
-            // Clear and rebuild prompt content
             promptSection.innerHTML = '';
             
             const sections = this.parsePromptSections(image.txt_content);
@@ -1324,48 +1179,42 @@ class NeoGallery {
 
             promptSection.appendChild(promptContainer);
             
-            // Add Send and Copy buttons at the bottom of prompt section
             let promptBtnsContainer = promptSection.querySelector('.neo-gallery-lightbox-prompt-btns');
             if (!promptBtnsContainer) {
                 promptBtnsContainer = $el("div", {
                     className: "neo-gallery-lightbox-prompt-btns"
                 });
                 
-                // Create Send button
                 const sendBtn = $el("div", {
                     className: "neo-gallery-lightbox-btn neo-gallery-lightbox-send-btn",
                     onclick: (e) => {
                         e.stopPropagation();
                         app.neoGallery.copyToClipboard(image.name, image.txt_content, sendBtn, 'send');
                     }
-                }, ["📤 Send"]);
+                }, ["✈️ Send"]);
                 
-                // Create Copy button
                 const copyBtn = $el("div", {
                     className: "neo-gallery-lightbox-btn neo-gallery-lightbox-copy-btn",
                     onclick: (e) => {
                         e.stopPropagation();
                         app.neoGallery.copyToClipboard(image.name, image.txt_content, copyBtn, 'copy');
                     }
-                }, ["📋 Copy"]);
+                }, ["⧉ Copy"]);
                 
                 promptBtnsContainer.appendChild(sendBtn);
                 promptBtnsContainer.appendChild(copyBtn);
                 promptSection.appendChild(promptBtnsContainer);
             }
         } else if (promptSection && !image.txt_content) {
-            // Remove prompt section if image has no txt_content
             promptSection.remove();
         }
 
-        // Update navigation button states AND onclick handlers
         const prevBtn = imgWrapper.querySelector('#neo-gallery-lightbox-prev-btn');
         const nextBtn = imgWrapper.querySelector('#neo-gallery-lightbox-next-btn');
         
         if (prevBtn) {
             prevBtn.style.opacity = currentIndex > 0 ? "0.8" : "0.3";
             prevBtn.style.cursor = currentIndex > 0 ? "pointer" : "not-allowed";
-            // Update onclick to use current index (not stale closure)
             if (currentIndex > 0) {
                 prevBtn.onclick = (e) => {
                     e.stopPropagation();
@@ -1379,7 +1228,6 @@ class NeoGallery {
         if (nextBtn) {
             nextBtn.style.opacity = currentIndex < allImages.length - 1 ? "0.8" : "0.3";
             nextBtn.style.cursor = currentIndex < allImages.length - 1 ? "pointer" : "not-allowed";
-            // Update onclick to use current index (not stale closure)
             if (currentIndex < allImages.length - 1) {
                 nextBtn.onclick = (e) => {
                     e.stopPropagation();
@@ -1391,7 +1239,6 @@ class NeoGallery {
             }
         }
 
-        // Update stored index
         this.currentLightboxIndex = currentIndex;
     }
 
@@ -1434,7 +1281,15 @@ app.registerExtension({
             tooltip: "Neo Gallery",
             type: "custom",
             render: (el) => {
-                el.appendChild(gallery.element);
+                // Clear the container first to prevent gallery content from being appended below other panel content
+                el.innerHTML = "";
+                
+                if (!gallery.element.parentNode) {
+                    el.appendChild(gallery.element);
+                } else {
+                    // Move gallery element to this container (appendChild moves it from old parent automatically)
+                    el.appendChild(gallery.element);
+                }
             },
         });
     },
