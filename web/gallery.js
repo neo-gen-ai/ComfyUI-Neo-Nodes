@@ -624,7 +624,7 @@ class NeoGallery {
                 overflow: "hidden",
                 position: "relative"
             },
-            onclick: () => this.copyToClipboard(image.name, image.txt_content)
+            onclick: () => this.showLightbox(image, subfolder)
         });
 
         // Delete button (only for custom)
@@ -657,8 +657,10 @@ class NeoGallery {
         container.appendChild(imgEl);
         if (labelEl) container.appendChild(labelEl);
 
-        // Tooltip with style description
-        if (image.style) {
+        // Tooltip with first segment of txt_content as summary
+        if (image.txt_content) {
+            container.title = this.getFirstSegment(image.txt_content);
+        } else if (image.style) {
             container.title = image.style;
         }
 
@@ -674,6 +676,134 @@ class NeoGallery {
         text = text.replace(/\.{2,}/g, '.').replace(/,\s*\./g, '.');
         text = text.replace(/([.,])(?=\S)/g, '$1 ').trim();
         return text;
+    }
+
+    /**
+     * Extract the first meaningful segment from text.
+     * Splits by sentence terminators (。.！？；:：) and returns the first non-empty segment.
+     */
+    getFirstSegment(text) {
+        if (!text) return "";
+        const segments = text.split(/[。！？；:\n]+/).filter(s => s.trim());
+        if (segments.length === 0) return "";
+        let first = segments[0].trim();
+        // Remove label prefix (text before first full-width colon)
+        const colonIdx = first.indexOf('：');
+        if (colonIdx > 0) {
+            first = first.substring(colonIdx + 1).trim();
+        }
+        // Limit to reasonable length for display
+        return first.length > 50 ? first.substring(0, 50) + '...' : first;
+    }
+
+    /**
+     * Parse txt_content into structured sections for display.
+     * Section labels are Chinese words (not numbers) followed by a full-width colon (：).
+     * This avoids false splits on technical parameters like "f/1.4", "16:9", "85mm".
+     */
+    parsePromptSections(txtContent) {
+        if (!txtContent) return [];
+
+        // Split by sentence terminators and newlines
+        // Only split by full-width colon (：) as it indicates a section label in Chinese text
+        const rawSegments = txtContent.split(/[。！？；\n]+/).filter(s => s.trim());
+        const sections = [];
+
+        for (const rawSeg of rawSegments) {
+            const trimmed = rawSeg.trim();
+            if (!trimmed) continue;
+
+            // Try to match full-width colon (：) - primary section separator
+            const fullColonMatch = trimmed.match(/^(.+?)[：](.*)$/s);
+            if (fullColonMatch) {
+                const beforeColon = fullColonMatch[1].trim();
+                const afterColon = fullColonMatch[2].trim();
+
+                // Only treat as section if beforeColon contains Chinese characters
+                // and is reasonably short (not a long sentence)
+                const cjkMatch = beforeColon.match(/[\u4e00-\u9fa5]/g);
+                const cjkCount = cjkMatch ? cjkMatch.length : 0;
+
+                if (cjkCount > 0 && cjkCount <= 10 && beforeColon.length <= 30) {
+                    sections.push({
+                        label: beforeColon,
+                        value: afterColon
+                    });
+                } else {
+                    sections.push({ label: null, value: trimmed });
+                }
+                continue;
+            }
+
+            // No colon found - plain content (no label)
+            sections.push({ label: null, value: trimmed });
+        }
+
+        return sections;
+    }
+
+    /**
+     * Extract the first meaningful segment from text.
+     * Splits by sentence terminators (。.！？；:：) and returns the first non-empty segment.
+     */
+    getFirstSegment(text) {
+        if (!text) return "";
+        const segments = text.split(/[。！？；:\n]+/).filter(s => s.trim());
+        if (segments.length === 0) return "";
+        let first = segments[0].trim();
+        // Remove label prefix (text before first full-width colon)
+        const colonIdx = first.indexOf('：');
+        if (colonIdx > 0) {
+            first = first.substring(colonIdx + 1).trim();
+        }
+        // Limit to reasonable length for display
+        return first.length > 50 ? first.substring(0, 50) + '...' : first;
+    }
+
+    /**
+     * Parse txt_content into structured sections for display.
+     * Section labels are Chinese words (not numbers) followed by a full-width colon (：).
+     * This avoids false splits on technical parameters like "f/1.4", "16:9", "85mm".
+     */
+    parsePromptSections(txtContent) {
+        if (!txtContent) return [];
+
+        // Split by sentence terminators and newlines
+        // Only split by full-width colon (：) as it indicates a section label in Chinese text
+        const rawSegments = txtContent.split(/[。！？；\n]+/).filter(s => s.trim());
+        const sections = [];
+
+        for (const rawSeg of rawSegments) {
+            const trimmed = rawSeg.trim();
+            if (!trimmed) continue;
+
+            // Try to match full-width colon (：) - primary section separator
+            const fullColonMatch = trimmed.match(/^(.+?)[：](.*)$/s);
+            if (fullColonMatch) {
+                const beforeColon = fullColonMatch[1].trim();
+                const afterColon = fullColonMatch[2].trim();
+
+                // Only treat as section if beforeColon contains Chinese characters
+                // and is reasonably short (not a long sentence)
+                const cjkMatch = beforeColon.match(/[\u4e00-\u9fa5]/g);
+                const cjkCount = cjkMatch ? cjkMatch.length : 0;
+
+                if (cjkCount > 0 && cjkCount <= 10 && beforeColon.length <= 30) {
+                    sections.push({
+                        label: beforeColon,
+                        value: afterColon
+                    });
+                } else {
+                    sections.push({ label: null, value: trimmed });
+                }
+                continue;
+            }
+
+            // No colon found - plain content (no label)
+            sections.push({ label: null, value: trimmed });
+        }
+
+        return sections;
     }
 
     combineTexts(existing, newText) {
@@ -784,6 +914,50 @@ class NeoGallery {
         app.extensionManager.toast.add({ severity, summary, detail, life: 5000 });
     }
 
+    /**
+     * Show inline feedback message on a button
+     */
+    showInlineFeedback(button, message, type) {
+        // Remove any existing feedback
+        const existing = button.querySelector('.neo-gallery-feedback');
+        if (existing) existing.remove();
+
+        const feedback = $el("div", {
+            className: "neo-gallery-feedback",
+            textContent: message,
+            style: {
+                position: "absolute",
+                bottom: "100%",
+                left: "50%",
+                transform: "translateX(-50%)",
+                marginBottom: "8px",
+                padding: "6px 12px",
+                backgroundColor: type === 'success' ? "rgba(76, 175, 80, 0.95)" : "rgba(244, 67, 54, 0.95)",
+                color: "white",
+                borderRadius: "6px",
+                fontSize: "12px",
+                fontWeight: "500",
+                whiteSpace: "nowrap",
+                zIndex: 100,
+                pointerEvents: "none",
+                animation: "neoGalleryFadeIn 0.2s ease-out"
+            }
+        });
+
+        button.style.position = "relative";
+        button.appendChild(feedback);
+
+        setTimeout(() => {
+            if (feedback.parentNode) {
+                feedback.style.opacity = "0";
+                feedback.style.transition = "opacity 0.3s ease";
+                setTimeout(() => {
+                    if (feedback.parentNode) feedback.remove();
+                }, 300);
+            }
+        }, 1500);
+    }
+
     displayNoFilesMessage() {
         this.accordion.appendChild($el("div", {
             style: { display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start", minHeight: "200px", padding: "20px", margin: "20px 0" }
@@ -791,6 +965,695 @@ class NeoGallery {
             $el("div", { textContent: "📷", style: { fontSize: "48px", color: "#888", marginBottom: "15px" }}),
             $el("p", { textContent: "No presets found. Add images + .txt files to gallery/presets/.", style: { fontSize: "18px", color: "#888" }})
         ]));
+    }
+
+    // ====== Lightbox (Large Image Viewer) ======
+
+    injectAnimations() {
+        if (document.getElementById('neo-gallery-lightbox-styles')) return;
+        const style = document.createElement('style');
+        style.id = 'neo-gallery-lightbox-styles';
+        style.textContent = `
+            @keyframes neoGalleryFadeIn {
+                from { opacity: 0; }
+                to { opacity: 1; }
+            }
+            @keyframes neoGallerySlideUp {
+                from { opacity: 0; transform: translate(-50%, 20px); }
+                to { opacity: 1; transform: translate(-50%, 0); }
+            }
+            @keyframes neoGalleryGlow {
+                0%, 100% { box-shadow: 0 2px 8px rgba(255,106,0,0.3); }
+                50% { box-shadow: 0 4px 16px rgba(255,106,0,0.5); }
+            }
+            .neo-gallery-lightbox-btn {
+                transition: all 0.2s ease !important;
+            }
+            .neo-gallery-lightbox-btn:hover {
+                transform: scale(1.05);
+                filter: brightness(1.1);
+            }
+            .neo-gallery-lightbox-btn:active {
+                transform: scale(0.98);
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
+    showLightbox(image, subfolder) {
+        // Inject animations first time
+        this.injectAnimations();
+
+        // If lightbox already exists, just update content (for navigation)
+        const existingLightbox = document.querySelector('.neo-gallery-lightbox');
+        if (existingLightbox && this.currentLightboxImages && this.currentLightboxImages.length > 0) {
+            const newIndex = this.currentLightboxImages.findIndex(img => img.filename === image.filename && img.subfolder === subfolder);
+            if (newIndex >= 0) {
+                this.updateLightboxContent(existingLightbox, image, subfolder, this.currentLightboxImages, newIndex);
+                return;
+            }
+        }
+
+        // Remove existing lightbox if any
+        const existing = document.querySelector('.neo-gallery-lightbox');
+        if (existing) {
+            existing.remove();
+        }
+
+        // Create lightbox overlay with gradient background
+        const lightbox = $el("div", {
+            style: {
+                position: "fixed",
+                top: 0,
+                left: 0,
+                width: "100vw",
+                height: "100vh",
+                backgroundColor: "rgba(10, 10, 15, 0.95)",
+                backdropFilter: "blur(10px)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                zIndex: 10000,
+                cursor: "pointer",
+                padding: "20px",
+                boxSizing: "border-box",
+                animation: "fadeIn 0.3s ease-out",
+                overflow: "hidden"
+            },
+            onclick: (e) => {
+                // Close lightbox when clicking on overlay (not on image or buttons)
+                if (e.target === lightbox) {
+                    this.closeLightbox();
+                }
+            }
+        });
+
+        // Create container with horizontal layout for image + prompt (unified panel look)
+        const container = $el("div", {
+            id: "neo-gallery-lightbox-container",
+            style: {
+                position: "relative",
+                maxWidth: "95vw",
+                maxHeight: "90vh",
+                display: "flex",
+                flexDirection: "row",
+                alignItems: "stretch",
+                gap: "0",
+                overflow: "hidden",
+                padding: "0",
+                backgroundColor: "rgba(30, 30, 35, 0.95)",
+                borderRadius: "12px",
+                border: "1px solid rgba(255,255,255,0.1)",
+                boxShadow: "0 8px 32px rgba(0,0,0,0.4)"
+            }
+        });
+
+        // Image wrapper for buttons (left panel)
+        const imgWrapper = $el("div", {
+            id: "neo-gallery-lightbox-img-wrapper",
+            style: {
+                position: "relative",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flex: "1 1 auto",
+                minWidth: 0,
+                padding: "16px",
+                borderRight: "1px solid rgba(255,255,255,0.08)"
+            }
+        });
+
+        // Create image with glassmorphic styling
+        const imageUrl = image.preview || `${window.location.protocol}//${window.location.host}/neo_gallery/image?filename=${encodeURIComponent(image.filename)}&subfolder=${encodeURIComponent(subfolder)}`;
+        const img = $el("img", {
+            id: "neo-gallery-lightbox-image",
+            src: imageUrl,
+            style: {
+                maxWidth: "100%",
+                maxHeight: "calc(90vh - 80px)",
+                objectFit: "contain",
+                borderRadius: "8px",
+                boxShadow: "0 4px 20px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.1)",
+                flexShrink: 0,
+                transition: "opacity 0.3s ease"
+            }
+        });
+
+        // Close button with hover effect (positioned at container top-right, closer to edge)
+        const closeBtn = $el("div", {
+            className: "neo-gallery-lightbox-btn",
+            style: {
+                position: "absolute",
+                top: "6px",
+                right: "6px",
+                width: "32px",
+                height: "32px",
+                backgroundColor: "rgba(0,0,0,0.6)",
+                backdropFilter: "blur(10px)",
+                color: "white",
+                border: "1px solid rgba(255,255,255,0.2)",
+                borderRadius: "50%",
+                fontSize: "18px",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                zIndex: 100,
+                lineHeight: "1"
+            },
+            onclick: (e) => {
+                e.stopPropagation();
+                this.closeLightbox();
+            }
+        }, ["×"]);
+
+        // Navigation buttons container with glassmorphic style
+        const navBtns = $el("div", {
+            style: {
+                position: "absolute",
+                bottom: "12px",
+                left: "50%",
+                transform: "translateX(-50%)",
+                display: "flex",
+                gap: "8px",
+                zIndex: 10,
+                padding: "6px 10px",
+                backgroundColor: "rgba(0,0,0,0.4)",
+                backdropFilter: "blur(10px)",
+                borderRadius: "16px",
+                border: "1px solid rgba(255,255,255,0.1)"
+            }
+        });
+
+        // Send button with gradient (will be added to prompt section)
+        const sendBtn = $el("div", {
+            className: "neo-gallery-lightbox-btn",
+            style: {
+                padding: "6px 12px",
+                background: "linear-gradient(135deg, #FF6A00 0%, #FF8C00 100%)",
+                color: "white",
+                border: "none",
+                borderRadius: "12px",
+                fontSize: "12px",
+                fontWeight: "500",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: "4px",
+                whiteSpace: "nowrap",
+                boxShadow: "0 2px 6px rgba(255,106,0,0.3)",
+                position: "relative",
+                alignSelf: "flex-start"
+            },
+            onclick: (e) => {
+                e.stopPropagation();
+                this.copyToClipboard(image.name, image.txt_content, sendBtn);
+            }
+        }, ["📤 Send"]);
+
+        // Copy button with subtle style (will be added to prompt section)
+        const copyBtn = $el("div", {
+            className: "neo-gallery-lightbox-btn",
+            style: {
+                padding: "6px 12px",
+                backgroundColor: "rgba(255,255,255,0.1)",
+                color: "white",
+                border: "1px solid rgba(255,255,255,0.2)",
+                borderRadius: "12px",
+                fontSize: "12px",
+                fontWeight: "500",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: "4px",
+                whiteSpace: "nowrap",
+                backdropFilter: "blur(10px)",
+                position: "relative",
+                alignSelf: "flex-start"
+            },
+            onclick: (e) => {
+                e.stopPropagation();
+                navigator.clipboard.writeText(this.cleanText(image.txt_content || "")).then(() => {
+                    this.showInlineFeedback(copyBtn, '✅ Copied!', 'success');
+                }).catch(() => {
+                    this.showInlineFeedback(copyBtn, '❌ Failed', 'error');
+                });
+            }
+        }, ["📋 Copy"]);
+
+        imgWrapper.appendChild(img);
+
+        // Navigation arrows with enhanced styling
+        // Build allImages in the SAME order as thumbnail display: Presets (sorted) first, then Custom (sorted)
+        const allImages = [
+            ...this.allPresets.map(p => ({...p, subfolder: "presets"})).sort((a, b) => a.name.localeCompare(b.name)),
+            ...this.allCustom.map(c => ({...c, subfolder: "custom"})).sort((a, b) => a.name.localeCompare(b.name))
+        ];
+        const currentIndex = allImages.findIndex(img => img.filename === image.filename && img.subfolder === subfolder);
+
+        // Previous button - positioned on image
+        const prevBtn = $el("div", {
+            id: "neo-gallery-lightbox-prev-btn",
+            className: "neo-gallery-lightbox-btn",
+            style: {
+                position: "absolute",
+                left: "8px",
+                top: "50%",
+                transform: "translateY(-50%)",
+                width: "36px",
+                height: "36px",
+                backgroundColor: "rgba(0,0,0,0.5)",
+                backdropFilter: "blur(10px)",
+                color: "white",
+                border: "1px solid rgba(255,255,255,0.2)",
+                borderRadius: "50%",
+                fontSize: "16px",
+                cursor: currentIndex > 0 ? "pointer" : "not-allowed",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                zIndex: 10,
+                opacity: currentIndex > 0 ? "0.8" : "0.3",
+                transition: "opacity 0.2s, background-color 0.2s"
+            },
+            onclick: (e) => {
+                if (currentIndex <= 0) return;
+                e.stopPropagation();
+                const prevItem = allImages[currentIndex - 1];
+                this.updateLightboxContent(lightbox, prevItem, prevItem.subfolder, allImages, currentIndex - 1);
+            }
+        }, ["‹"]);
+        imgWrapper.appendChild(prevBtn);
+
+        // Next button - positioned on image
+        const nextBtn = $el("div", {
+            id: "neo-gallery-lightbox-next-btn",
+            className: "neo-gallery-lightbox-btn",
+            style: {
+                position: "absolute",
+                right: "8px",
+                top: "50%",
+                transform: "translateY(-50%)",
+                width: "36px",
+                height: "36px",
+                backgroundColor: "rgba(0,0,0,0.5)",
+                backdropFilter: "blur(10px)",
+                color: "white",
+                border: "1px solid rgba(255,255,255,0.2)",
+                borderRadius: "50%",
+                fontSize: "16px",
+                cursor: currentIndex < allImages.length - 1 ? "pointer" : "not-allowed",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                zIndex: 10,
+                opacity: currentIndex < allImages.length - 1 ? "0.8" : "0.3",
+                transition: "opacity 0.2s, background-color 0.2s"
+            },
+            onclick: (e) => {
+                if (currentIndex >= allImages.length - 1) return;
+                e.stopPropagation();
+                const nextItem = allImages[currentIndex + 1];
+                this.updateLightboxContent(lightbox, nextItem, nextItem.subfolder, allImages, currentIndex + 1);
+            }
+        }, ["›"]);
+        imgWrapper.appendChild(nextBtn);
+
+        // Prompt section (right panel) with glassmorphic card - unified with image panel
+        let promptSection = null;
+        if (image.txt_content) {
+            promptSection = $el("div", {
+                id: "neo-gallery-lightbox-prompt-section",
+                style: {
+                    width: "400px",
+                    minWidth: "400px",
+                    maxWidth: "400px",
+                    maxHeight: "90vh",
+                    overflow: "auto",
+                    overflowX: "hidden",
+                    display: "flex",
+                    flexDirection: "column",
+                    padding: "16px"
+                }
+            });
+
+            // Parse prompt into sections for better display
+            const sections = this.parsePromptSections(image.txt_content);
+            const promptContainer = $el("div", {
+                style: {
+                    fontSize: "12px",
+                    lineHeight: "1.6",
+                    color: "#e0e0e0",
+                    padding: "12px 16px",
+                    backgroundColor: "rgba(255,255,255,0.05)",
+                    backdropFilter: "blur(10px)",
+                    borderRadius: "8px",
+                    border: "1px solid rgba(255,255,255,0.1)",
+                    boxShadow: "0 2px 12px rgba(0,0,0,0.2)",
+                    flex: 1,
+                    overflow: "auto"
+                }
+            });
+
+            if (sections.length > 0 && sections.some(s => s.label)) {
+                // Display with section labels (right-aligned label style)
+                for (const section of sections) {
+                    if (section.label) {
+                        const sectionEl = $el("div", {
+                            style: { marginBottom: "6px", display: "flex", alignItems: "flex-start" }
+                        }, [
+                            $el("span", {
+                                textContent: section.label + "：",
+                                style: { fontWeight: "600", color: "#FF9944", whiteSpace: "nowrap", fontSize: "12px", lineHeight: "1.6" }
+                            }),
+                            $el("span", {
+                                textContent: section.value,
+                                style: { color: "#ddd", flex: 1 }
+                            })
+                        ]);
+                        promptContainer.appendChild(sectionEl);
+                    } else if (section.value) {
+                        // General content without label
+                        promptContainer.appendChild($el("div", {
+                            textContent: section.value,
+                            style: { color: "#ddd", marginBottom: "3px", whiteSpace: "pre-wrap" }
+                        }));
+                    }
+                }
+            } else {
+                // No sections found, display as plain text
+                promptContainer.appendChild($el("div", {
+                    textContent: this.cleanText(image.txt_content),
+                    style: { color: "#ddd", whiteSpace: "pre-wrap" }
+                }));
+            }
+
+            promptSection.appendChild(promptContainer);
+            
+            // Add Send and Copy buttons at the bottom of prompt section
+            const promptBtnsContainer = $el("div", {
+                style: {
+                    display: "flex",
+                    gap: "8px",
+                    marginTop: "12px",
+                    paddingTop: "12px",
+                    borderTop: "1px solid rgba(255,255,255,0.1)"
+                }
+            });
+            promptBtnsContainer.appendChild(sendBtn);
+            promptBtnsContainer.appendChild(copyBtn);
+            promptSection.appendChild(promptBtnsContainer);
+        }
+
+        // Append image first (left), then prompt section (right)
+        container.appendChild(imgWrapper);
+        if (promptSection) container.appendChild(promptSection);
+        // Add close button to container (top-right of the big panel)
+        container.appendChild(closeBtn);
+        lightbox.appendChild(container);
+        document.body.appendChild(lightbox);
+
+        // Animate nav buttons slide up
+        requestAnimationFrame(() => {
+            navBtns.style.animation = "neoGallerySlideUp 0.4s ease-out 0.2s both";
+        });
+
+        // Store reference for keyboard navigation
+        this.currentLightbox = lightbox;
+        this.currentLightboxImages = allImages;
+        this.currentLightboxIndex = currentIndex;
+
+        // Add keyboard navigation
+        const handleKeyDown = (e) => {
+            switch (e.key) {
+                case 'ArrowLeft':
+                    this.navigateLightboxImage(-1);
+                    break;
+                case 'ArrowRight':
+                    this.navigateLightboxImage(1);
+                    break;
+                case 'Escape':
+                    this.closeLightbox();
+                    break;
+            }
+        };
+        document.addEventListener('keydown', handleKeyDown);
+        this.currentLightboxKeyboardHandler = handleKeyDown;
+    }
+
+    closeLightbox() {
+        if (this.currentLightbox) {
+            this.currentLightbox.remove();
+            this.currentLightbox = null;
+        }
+        // Remove keyboard event listener
+        if (this.currentLightboxKeyboardHandler) {
+            document.removeEventListener('keydown', this.currentLightboxKeyboardHandler);
+            this.currentLightboxKeyboardHandler = null;
+        }
+    }
+
+    /**
+     * Navigate lightbox images (for keyboard navigation)
+     */
+    navigateLightboxImage(direction) {
+        if (!this.currentLightbox || !this.currentLightboxImages || this.currentLightboxImages.length === 0) return;
+        
+        const newIndex = this.currentLightboxIndex + direction;
+        if (newIndex < 0 || newIndex >= this.currentLightboxImages.length) return;
+        
+        const nextItem = this.currentLightboxImages[newIndex];
+        this.updateLightboxContent(this.currentLightbox, nextItem, nextItem.subfolder, this.currentLightboxImages, newIndex);
+    }
+
+    /**
+     * Update lightbox content without recreating the DOM
+     * This provides smooth navigation between images
+     */
+    updateLightboxContent(lightbox, image, subfolder, allImages, currentIndex) {
+        // Find the container inside the lightbox by ID
+        const container = lightbox.querySelector('#neo-gallery-lightbox-container');
+        if (!container) {
+            // Fallback: recreate entire lightbox
+            this.closeLightbox();
+            setTimeout(() => this.showLightbox(image, subfolder), 100);
+            return;
+        }
+
+        // Get image wrapper by ID
+        const imgWrapper = container.querySelector('#neo-gallery-lightbox-img-wrapper');
+        if (!imgWrapper) {
+            // Fallback: recreate entire lightbox
+            this.closeLightbox();
+            setTimeout(() => this.showLightbox(image, subfolder), 100);
+            return;
+        }
+
+        // Update image source with fade effect
+        const img = imgWrapper.querySelector('img');
+        const newImageUrl = image.preview || `${window.location.protocol}//${window.location.host}/neo_gallery/image?filename=${encodeURIComponent(image.filename)}&subfolder=${encodeURIComponent(subfolder)}`;
+
+        if (img) {
+            // Fade out
+            img.style.opacity = '0';
+            img.style.transform = 'scale(1)';
+            
+            setTimeout(() => {
+                img.src = newImageUrl;
+                img.onload = () => {
+                    // Fade in
+                    img.style.opacity = '1';
+                };
+            }, 150);
+        }
+
+        // Update prompt section
+        let promptSection = container.querySelector('#neo-gallery-lightbox-prompt-section');
+        
+        if (image.txt_content) {
+            // Image HAS txt_content - ensure prompt section exists
+            if (!promptSection) {
+                // Create new prompt section (was previously removed when viewing an image without text)
+                promptSection = $el("div", {
+                    id: "neo-gallery-lightbox-prompt-section",
+                    style: {
+                        width: "400px",
+                        minWidth: "400px",
+                        maxWidth: "400px",
+                        maxHeight: "90vh",
+                        overflow: "auto",
+                        overflowX: "hidden",
+                        display: "flex",
+                        flexDirection: "column",
+                        padding: "16px"
+                    }
+                });
+                container.appendChild(promptSection);
+            }
+            
+            // Clear and rebuild prompt content
+            promptSection.innerHTML = '';
+            
+            const sections = this.parsePromptSections(image.txt_content);
+            const promptContainer = $el("div", {
+                style: {
+                    fontSize: "12px",
+                    lineHeight: "1.6",
+                    color: "#e0e0e0",
+                    padding: "12px 16px",
+                    backgroundColor: "rgba(255,255,255,0.05)",
+                    backdropFilter: "blur(10px)",
+                    borderRadius: "8px",
+                    border: "1px solid rgba(255,255,255,0.1)",
+                    boxShadow: "0 2px 12px rgba(0,0,0,0.2)"
+                }
+            });
+
+            if (sections.length > 0 && sections.some(s => s.label)) {
+                for (const section of sections) {
+                    if (section.label) {
+                        const sectionEl = $el("div", {
+                            style: { marginBottom: "6px", display: "flex", alignItems: "flex-start" }
+                        }, [
+                            $el("span", {
+                                textContent: section.label + "：",
+                                style: { fontWeight: "600", color: "#FF9944", whiteSpace: "nowrap", fontSize: "12px", lineHeight: "1.6" }
+                            }),
+                            $el("span", {
+                                textContent: section.value,
+                                style: { color: "#ddd", flex: 1 }
+                            })
+                        ]);
+                        promptContainer.appendChild(sectionEl);
+                    } else if (section.value) {
+                        promptContainer.appendChild($el("div", {
+                            textContent: section.value,
+                            style: { color: "#ddd", marginBottom: "3px", whiteSpace: "pre-wrap" }
+                        }));
+                    }
+                }
+            } else {
+                promptContainer.appendChild($el("div", {
+                    textContent: this.cleanText(image.txt_content),
+                    style: { color: "#ddd", whiteSpace: "pre-wrap" }
+                }));
+            }
+
+            promptSection.appendChild(promptContainer);
+            
+            // Add Send and Copy buttons at the bottom of prompt section
+            let promptBtnsContainer = promptSection.querySelector('.neo-gallery-lightbox-prompt-btns');
+            if (!promptBtnsContainer) {
+                promptBtnsContainer = $el("div", {
+                    className: "neo-gallery-lightbox-prompt-btns",
+                    style: {
+                        display: "flex",
+                        gap: "8px",
+                        marginTop: "12px",
+                        paddingTop: "12px",
+                        borderTop: "1px solid rgba(255,255,255,0.1)"
+                    }
+                });
+                
+                // Create Send button
+                const sendBtn = $el("div", {
+                    className: "neo-gallery-lightbox-btn",
+                    style: {
+                        padding: "6px 12px",
+                        background: "linear-gradient(135deg, #FF6A00 0%, #FF8C00 100%)",
+                        color: "white",
+                        border: "none",
+                        borderRadius: "12px",
+                        fontSize: "12px",
+                        fontWeight: "500",
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "4px",
+                        whiteSpace: "nowrap",
+                        boxShadow: "0 2px 6px rgba(255,106,0,0.3)",
+                        alignSelf: "flex-start"
+                    },
+                    onclick: (e) => {
+                        e.stopPropagation();
+                        app.neoGallery.showInlineFeedback(sendBtn, '📤 Sent!', 'success');
+                        app.neoGallery.copyToClipboard(image.name, image.txt_content, sendBtn);
+                    }
+                }, ["📤 Send"]);
+                
+                // Create Copy button
+                const copyBtn = $el("div", {
+                    className: "neo-gallery-lightbox-btn",
+                    style: {
+                        padding: "6px 12px",
+                        backgroundColor: "rgba(255,255,255,0.1)",
+                        color: "white",
+                        border: "1px solid rgba(255,255,255,0.2)",
+                        borderRadius: "12px",
+                        fontSize: "12px",
+                        fontWeight: "500",
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "4px",
+                        whiteSpace: "nowrap",
+                        backdropFilter: "blur(10px)",
+                        alignSelf: "flex-start"
+                    },
+                    onclick: (e) => {
+                        e.stopPropagation();
+                        navigator.clipboard.writeText(app.neoGallery.cleanText(image.txt_content || "")).then(() => {
+                            app.neoGallery.showInlineFeedback(copyBtn, '✅ Copied!', 'success');
+                        }).catch(() => {
+                            app.neoGallery.showInlineFeedback(copyBtn, '❌ Failed', 'error');
+                        });
+                    }
+                }, ["📋 Copy"]);
+                
+                promptBtnsContainer.appendChild(sendBtn);
+                promptBtnsContainer.appendChild(copyBtn);
+                promptSection.appendChild(promptBtnsContainer);
+            }
+        } else if (promptSection && !image.txt_content) {
+            // Remove prompt section if image has no txt_content
+            promptSection.remove();
+        }
+
+        // Update navigation button states AND onclick handlers
+        const prevBtn = imgWrapper.querySelector('#neo-gallery-lightbox-prev-btn');
+        const nextBtn = imgWrapper.querySelector('#neo-gallery-lightbox-next-btn');
+        
+        if (prevBtn) {
+            prevBtn.style.opacity = currentIndex > 0 ? "0.8" : "0.3";
+            prevBtn.style.cursor = currentIndex > 0 ? "pointer" : "not-allowed";
+            // Update onclick to use current index (not stale closure)
+            if (currentIndex > 0) {
+                prevBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    const prevItem = allImages[currentIndex - 1];
+                    this.updateLightboxContent(lightbox, prevItem, prevItem.subfolder, allImages, currentIndex - 1);
+                };
+            } else {
+                prevBtn.onclick = null;
+            }
+        }
+        if (nextBtn) {
+            nextBtn.style.opacity = currentIndex < allImages.length - 1 ? "0.8" : "0.3";
+            nextBtn.style.cursor = currentIndex < allImages.length - 1 ? "pointer" : "not-allowed";
+            // Update onclick to use current index (not stale closure)
+            if (currentIndex < allImages.length - 1) {
+                nextBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    const nextItem = allImages[currentIndex + 1];
+                    this.updateLightboxContent(lightbox, nextItem, nextItem.subfolder, allImages, currentIndex + 1);
+                };
+            } else {
+                nextBtn.onclick = null;
+            }
+        }
+
+        // Update stored index
+        this.currentLightboxIndex = currentIndex;
     }
 
     // ====== Main init ======
