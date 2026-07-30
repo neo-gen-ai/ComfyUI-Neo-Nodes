@@ -21,7 +21,7 @@ document.head.appendChild(galleryCssLink);
 class NeoGallery {
     constructor(app) {
         this.app = app;
-        this.maxThumbnailSize = 100;
+        this.maxThumbnailSize = 300;
         this.displayLabels = true;
         this.allPresets = [];
         this.allCustom = [];
@@ -39,17 +39,16 @@ class NeoGallery {
         // Use a unique ID so we can find and clean up old instances across all containers
         this.elementId = "neo-gallery-panel-root";
         this.element = $el("div", { id: this.elementId, className: "neo-gallery-panel" }, [
-            $el("h3", { className: "neo-gallery-header", textContent: "Neo Gallery" }),
+            // Header row with title and thumbnail size control on the right
+            $el("div", { className: "neo-gallery-header-row" }, [
+                $el("h3", { className: "neo-gallery-header-title", textContent: "Neo Gallery" }),
+                this.thumbnailSizeSlider
+            ]),
             $el("div", { className: "neo-gallery-search-row" }, [
                 $el("div", { className: "neo-gallery-search-container" }, [this.searchInput]),
                 $el("div", { className: "neo-gallery-dropdown-container" }, [this.targetNodeDropdown])
             ]),
-            this.accordion,
-            // Thumbnail Size - at bottom of panel
-            $el("div", { className: "neo-gallery-size-control" }, [
-                $el("span", { className: "neo-gallery-size-label", textContent: "Size:" }),
-                this.thumbnailSizeSlider
-            ])
+            this.accordion
         ]);
     }
 
@@ -81,7 +80,7 @@ class NeoGallery {
                 const data = await response.json();
                 this.sectionStates = data.sectionStates || {};
                 this.sortAscending = data.sortAscending !== undefined ? data.sortAscending : true;
-                this.maxThumbnailSize = data.maxThumbnailSize || 100;
+                this.maxThumbnailSize = data.maxThumbnailSize || 300;
                 this.displayLabels = data.displayLabels !== undefined ? data.displayLabels : true;
             }
         } catch (error) {
@@ -106,93 +105,38 @@ class NeoGallery {
         }));
 
         // Active Selected Node option (dynamically updated)
-        dropdown.appendChild($el("option", { value: "selected", textContent: "⭐ Active Selected Node", id: "selected-node-option" }));
-        
-        // Clipboard fallback option
-        dropdown.appendChild($el("option", { value: "clipboard", textContent: "📋 None (Copy to Clipboard)" }));
-        dropdown.appendChild($el("option", { disabled: true }));
-
-        // Section header for prompts.js nodes (NeoPromptEncoder / NeoPromptGenerator)
-        const addPromptsHeader = () => {
-            const promptsNodes = app.graph._nodes.filter(n => n._rsPromptUIElements);
-            if (promptsNodes.length > 0) {
-                let existingHeader = dropdown.querySelector('.rs-prompts-section-header');
-                if (!existingHeader) {
-                    const headerOption = $el("option", {
-                        className: 'rs-prompts-section-header',
-                        disabled: true,
-                        textContent: "── Prompt Encoder / Generator ──"
-                    });
-                    if (dropdown.children.length >= 3) {
-                        dropdown.insertBefore(headerOption, dropdown.children[3]);
-                    } else {
-                        dropdown.appendChild(headerOption);
-                    }
-                    promptsNodes.forEach(node => {
-                        const nodeType = node.type === 'NeoPromptEncoder' ? 'Encoder' : 'Generator';
-                        dropdown.appendChild($el("option", {
-                            value: `prompt:${node.id}`,
-                            textContent: `${node.title || 'Node'} (${nodeType})`,
-                            className: 'rs-prompt-node-option'
-                        }));
-                    });
-                }
-            }
-        };
+        dropdown.appendChild($el("option", { value: "selected", textContent: "⭐ Active Selected Text Node", id: "selected-node-option" }));
 
         const updateDropdownOptions = () => {
-            // Keep first 4 options: placeholder, active selection, clipboard, separator
-            while (dropdown.children.length > 4) {
+            // Keep first 2 options: placeholder, active selection
+            while (dropdown.children.length > 2) {
                 dropdown.removeChild(dropdown.lastChild);
             }
 
             // Update active selected node option text (always visible)
-            const selectedKeys = Object.keys(app.canvas.selected_nodes);
             const activeOption = dropdown.querySelector('#selected-node-option');
             if (activeOption) {
-                activeOption.textContent = '⭐ Active Selected Node';
+                activeOption.textContent = '⭐ Active Selected Text Node';
                 activeOption.style.display = '';
-            }
-
-            // Add section header for regular text input nodes
-            const hasRegularTextNodes = app.graph._nodes.some(node => {
-                const nodeType = node.type || '';
-                const nodeName = (node.title || '').toLowerCase();
-                if (nodeType.includes('negative') || nodeName.includes('negative')) return false;
-                return node.widgets?.some(w => w.inputEl && ['string', 'text', 'customtext'].includes(w.type));
-            });
-
-            if (hasRegularTextNodes) {
-                let regularHeader = dropdown.querySelector('.rs-regular-section-header');
-                if (!regularHeader) {
-                    regularHeader = $el("option", {
-                        className: 'rs-regular-section-header',
-                        disabled: true,
-                        textContent: "── Text Input Nodes ──"
-                    });
-                    dropdown.appendChild(regularHeader);
-                }
             }
 
             // Only add nodes that have text-type widgets with actual input elements
             app.graph._nodes.forEach(node => {
-                // Skip negative prompt encoder nodes (output is negative prompt)
-                const nodeType = node.type || '';
-                const nodeName = (node.title || '').toLowerCase();
-                if (nodeType.includes('negative') || nodeName.includes('negative')) {
-                    return;
-                }
+                const validTextWidgets = [];
 
-                const textWidgets = [];
                 if (node.widgets) {
                     node.widgets.forEach((widget, index) => {
-                        if (widget.inputEl && ['string', 'text', 'customtext'].includes(widget.type)) {
-                            textWidgets.push({ widget, index });
+                        const widgetName = (widget.name || '').toLowerCase();
+                        // Skip negative conditioning outputs
+                        if (/negative/.test(widgetName)) return;
+                        // Match any widget with an input element
+                        if (widget.inputEl && /string|text|custom/.test(widget.type || '')) {
+                            validTextWidgets.push({ widget, index });
                         }
                     });
                 }
-                if (textWidgets.length > 0) {
-                    textWidgets.forEach(({ widget, index }) => {
+                if (validTextWidgets.length > 0) {
+                    validTextWidgets.forEach(({ widget, index }) => {
                         dropdown.appendChild($el("option", {
                             value: `${node.id}:widget:${index}`,
                             textContent: `▸ ${node.title || 'Node'} → ${widget.name}`
@@ -200,8 +144,6 @@ class NeoGallery {
                     });
                 }
             });
-
-            addPromptsHeader();
         };
 
         updateDropdownOptions();
@@ -229,7 +171,7 @@ class NeoGallery {
         const slider = $el("input", {
             type: "range",
             min: 150,
-            max: 300,
+            max: 500,
             step: 25,
             value: this.maxThumbnailSize,
             className: "neo-gallery-thumbnail-slider",
@@ -241,7 +183,7 @@ class NeoGallery {
             }
         });
 
-        return $el("div", { className: "neo-gallery-slider-row" }, [slider, valueLabel]);
+        return $el("div", { className: "neo-gallery-slider-row" }, [$el("span", { className: "neo-gallery-size-label", textContent: "Size:" }), slider, valueLabel]);
     }
 
     createAddCustomImageButton() {
@@ -432,9 +374,27 @@ class NeoGallery {
             return;
         }
 
-        // Render Presets section
-        if (sortedPresets.length > 0 || (!this.isSearchActive)) {
-            this.accordion.appendChild(this.createAccordionSection("Presets", sortedPresets, "presets"));
+        // Group presets by category (subdirectory)
+        const presetGroups = new Map();
+        sortedPresets.forEach(item => {
+            const cat = item.category || "";  // '' means root level
+            if (!presetGroups.has(cat)) presetGroups.set(cat, []);
+            presetGroups.get(cat).push(item);
+        });
+
+        // Render Preset groups (each category as a separate accordion section)
+        const allCategories = [...presetGroups.keys()].sort((a, b) => {
+            // Empty string (root) first, then alphabetically
+            if (!a) return -1;
+            if (!b) return 1;
+            return a.localeCompare(b);
+        });
+
+        for (const cat of allCategories) {
+            const groupItems = presetGroups.get(cat);
+            const sectionTitle = cat ? `Presets/${cat}` : "Presets";
+            // subfolder is always "presets" since backend groups by category within presets dir
+            this.accordion.appendChild(this.createAccordionSection(sectionTitle, groupItems, "presets", cat));
         }
 
         // Render Custom section
@@ -443,9 +403,12 @@ class NeoGallery {
         }
     }
 
-    createAccordionSection(title, items, subfolder) {
+    createAccordionSection(title, items, subfolder, category) {
+        // subfolder can be "presets" or a specific category name
+        const effectiveSubfolder = (category && category !== "presets") ? category : subfolder;
+
         const section = $el("div", {
-            className: `accordion-section neo-gallery-accordion-section ${title.toLowerCase()}`
+            className: `accordion-section neo-gallery-accordion-section ${title.toLowerCase().replace(/\//g, '-')}`
         });
 
         const header = $el("div", {
@@ -571,10 +534,15 @@ class NeoGallery {
 
     createImageElement(image, subfolder) {
         // Use preview data URI directly if available
-        const src = image.preview || `${window.location.protocol}//${window.location.host}/neo_gallery/image?filename=${encodeURIComponent(image.filename)}&subfolder=${encodeURIComponent(subfolder)}`;
+        const categoryParam = image.category ? `&category=${encodeURIComponent(image.category)}` : '';
+        const src = image.preview || `${window.location.protocol}//${window.location.host}/neo_gallery/image?filename=${encodeURIComponent(image.filename)}&subfolder=${encodeURIComponent(subfolder)}${categoryParam}`;
 
         // Determine if this is an image file (has aspect ratio) or non-image
         const isImageFile = /\.(png|jpg|jpeg|gif|webp|bmp|tiff)$/i.test(image.filename);
+
+        // Reserve space for btn bar (~32px) and label (~20px if shown) = ~52px total
+        const reservedSpace = this.displayLabels ? 52 : 36;
+        const imageHeight = Math.max(this.maxThumbnailSize - reservedSpace, 40);
 
         // Create container - height is fixed, width will be set based on image aspect ratio
         const container = $el("div", {
@@ -597,7 +565,11 @@ class NeoGallery {
             img.src = src;
         }
 
-        // Delete button (only for custom)
+        // Set the image wrapper to match the reserved height so buttons appear at bottom inside container
+        const imgWrapperHeight = this.displayLabels ? imageHeight : (this.maxThumbnailSize - 36);
+        container.style.height = `${this.maxThumbnailSize}px`;
+
+        // Delete button (only for custom) - top-right corner
         let deleteBtn = null;
         if (subfolder === "custom") {
             deleteBtn = $el("div", {
@@ -609,7 +581,7 @@ class NeoGallery {
             }, ["×"]);
         }
 
-        // Send button (top-right)
+        // Send button
         const sendBtn = $el("div", {
             className: "neo-gallery-thumb-send-btn",
             onclick: (e) => {
@@ -618,7 +590,7 @@ class NeoGallery {
             }
         }, ["✈️"]);
 
-        // Copy button (below send button)
+        // Copy button
         const copyBtn = $el("div", {
             className: "neo-gallery-thumb-copy-btn",
             onclick: (e) => {
@@ -636,10 +608,15 @@ class NeoGallery {
             }
         });
 
-        // Wrap image and buttons in a relative-positioned wrapper
+        // Buttons overlay at bottom of the image (floating above image edge)
+        const btnBar = $el("div", {
+            className: "neo-gallery-thumb-btn-bar"
+        }, [sendBtn, copyBtn]);
+
+        // Wrap image and floating buttons together
         const imgWrapper = $el("div", {
             className: "neo-gallery-thumb-img-wrapper"
-        }, [imgEl, sendBtn, copyBtn]);
+        }, [imgEl, btnBar]);
 
         const labelEl = this.displayLabels ? $el("span", {
             className: "neo-gallery-image-label",
@@ -650,12 +627,8 @@ class NeoGallery {
         container.appendChild(imgWrapper);
         if (labelEl) container.appendChild(labelEl);
 
-        // Tooltip with first segment of txt_content as summary
-        if (image.txt_content) {
-            container.title = this.getFirstSegment(image.txt_content);
-        } else if (image.style) {
-            container.title = image.style;
-        }
+        // Tooltip shows filename title on hover
+        container.title = image.name.replace(/\.\w+$/, '');
 
         return container;
     }
@@ -762,22 +735,13 @@ class NeoGallery {
                     targetWidget = targetNode.widgets?.find(w => ['string', 'text', 'customtext'].includes(w.type));
                 }
             }
-        } else if (selectedValue && selectedValue !== "clipboard") {
-            if (selectedValue.startsWith('prompt:')) {
-                const nodeId = parseInt(selectedValue.split(':')[1]);
-                targetNode = app.graph.getNodeById(nodeId);
-                if (targetNode && targetNode._rsPromptUIElements) {
-                    isPromptNode = true;
-                    targetNodeIds.push(nodeId);
-                }
-            } else {
-                const [nodeId, , index] = selectedValue.split(':');
-                targetNode = app.graph.getNodeById(parseInt(nodeId));
-                targetWidget = targetNode?.widgets?.[parseInt(index)];
-                if (targetNode && targetNode._rsPromptUIElements) {
-                    isPromptNode = true;
-                    targetNodeIds.push(parseInt(nodeId));
-                }
+        } else if (selectedValue) {
+            const [nodeId, , index] = selectedValue.split(':');
+            targetNode = app.graph.getNodeById(parseInt(nodeId));
+            targetWidget = targetNode?.widgets?.[parseInt(index)];
+            if (targetNode && targetNode._rsPromptUIElements) {
+                isPromptNode = true;
+                targetNodeIds.push(parseInt(nodeId));
             }
         }
 
@@ -854,7 +818,8 @@ class NeoGallery {
         const left = buttonRect.left + buttonRect.width / 2;
 
         feedback.style.position = 'fixed';
-        feedback.style.top = (top - 8) + 'px';
+        // Position feedback above the button with at least 24px gap to avoid overlap
+        feedback.style.top = (top - 32) + 'px';
         feedback.style.left = left + 'px';
         feedback.style.transform = 'translateX(-50%)';
         feedback.style.zIndex = '2147483646';
@@ -921,7 +886,8 @@ class NeoGallery {
             className: "neo-gallery-lightbox-img-wrapper",
         });
 
-        const imageUrl = image.preview || `${window.location.protocol}//${window.location.host}/neo_gallery/image?filename=${encodeURIComponent(image.filename)}&subfolder=${encodeURIComponent(subfolder)}`;
+        const categoryParam = image.category ? `&category=${encodeURIComponent(image.category)}` : '';
+        const imageUrl = image.preview || `${window.location.protocol}//${window.location.host}/neo_gallery/image?filename=${encodeURIComponent(image.filename)}&subfolder=${encodeURIComponent(subfolder)}${categoryParam}`;
         const img = $el("img", {
             className: "neo-gallery-lightbox-image",
             src: imageUrl,
@@ -1115,7 +1081,8 @@ class NeoGallery {
         }
 
         const img = imgWrapper.querySelector('img');
-        const newImageUrl = image.preview || `${window.location.protocol}//${window.location.host}/neo_gallery/image?filename=${encodeURIComponent(image.filename)}&subfolder=${encodeURIComponent(subfolder)}`;
+        const categoryParam = image.category ? `&category=${encodeURIComponent(image.category)}` : '';
+        const newImageUrl = image.preview || `${window.location.protocol}//${window.location.host}/neo_gallery/image?filename=${encodeURIComponent(image.filename)}&subfolder=${encodeURIComponent(subfolder)}${categoryParam}`;
 
         if (img) {
             img.style.opacity = '0';
@@ -1263,7 +1230,7 @@ app.registerExtension({
         app.ui.settings.addSetting({
             id: "Neo Gallery._General.maxThumbnailSize",
             name: "Neo Gallery Max Thumbnail Size",
-            type: "slider", attrs: { min: 150, max: 300, step: 25 }, defaultValue: 150,
+            type: "slider", attrs: { min: 150, max: 500, step: 25 }, defaultValue: 300,
             onChange: (val) => { if (app.neoGallery) app.neoGallery.updateThumbnailSize(val); }
         });
 
@@ -1277,7 +1244,7 @@ app.registerExtension({
         app.extensionManager.registerSidebarTab({
             id: "neo.gallery",
             icon: "pi pi-id-card",
-            title: "Neo Gallery",
+            title: "画廊",
             tooltip: "Neo Gallery",
             type: "custom",
             render: (el) => {

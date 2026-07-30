@@ -95,24 +95,34 @@ def _make_entry(image_path: Path, txt_path: Path, raw_txt: str) -> dict | None:
 
 
 def _scan_gallery_entries(directory: Path) -> list[dict]:
-    """Walk directory and return gallery entries.
+    """Walk directory recursively and return gallery entries.
 
-    Strategy: group files by stem. An image + sibling .txt = valid preset.
+    Strategy: group files by stem (relative to directory). An image + sibling .txt = valid preset.
+    Subdirectories become the 'category' field in each entry.
+    Files directly in the root get category='' (empty string).
     """
     entries: list[dict] = []
     if not directory.exists():
         return entries
 
-    stems: dict[str, list[Path]] = {}
-    for p in directory.iterdir():
+    stems: dict[tuple[str, str], list[Path]] = {}  # key: (category, stem) -> [Path]
+    for p in directory.rglob("*"):
         if not p.is_file():
             continue
         lower = p.suffix.lower()
         if lower not in IMG_EXTENSIONS and lower != ".txt":
             continue
-        stems.setdefault(p.stem, []).append(p)
 
-    for stem, files in sorted(stems.items()):
+        rel = p.relative_to(directory)
+        parts = rel.parts
+        category = ""
+        if len(parts) > 1:
+            # Subdirectory name(s) — use the first part as category
+            category = parts[0]
+
+        stems.setdefault((category, p.stem), []).append(p)
+
+    for (category, stem), files in sorted(stems.items()):
         image_file = None
         txt_file = None
         for f in files:
@@ -134,6 +144,7 @@ def _scan_gallery_entries(directory: Path) -> list[dict]:
 
         entry = _make_entry(image_file, txt_path, raw_txt)
         if entry:
+            entry["category"] = category
             entries.append(entry)
 
     return entries
@@ -177,6 +188,7 @@ async def view_image(request):
 
     filename = request.rel_url.query["filename"]
     subfolder = request.rel_url.query.get("subfolder", "presets")
+    category = request.rel_url.query.get("category", "")
 
     if ".." in filename or ".." in subfolder:
         return web.Response(status=400)
@@ -185,19 +197,33 @@ async def view_image(request):
     if subfolder not in ("presets", "custom"):
         return web.Response(status=400)
 
-    for ext in ["", ".jpeg", ".jpg", ".png", ".webp"]:
-        fullpath = base / f"{filename}{ext}"
-        if fullpath.exists():
-            with open(fullpath, "rb") as f:
-                content = f.read()
-            content_type, _ = mimetypes.guess_type(str(fullpath))
-            if not content_type:
-                content_type = "application/octet-stream"
-            return web.Response(
-                body=content,
-                content_type=content_type,
-                headers={"Content-Disposition": f'inline; filename="{filename}{ext}"'},
-            )
+    # Check category subdirectory first, then fall back to root
+    fullpath = None
+    extensions = ["", ".jpeg", ".jpg", ".png", ".webp"]
+    for ext in extensions:
+        if category:
+            candidate = base / category / f"{filename}{ext}"
+            if candidate.exists():
+                fullpath = candidate
+                break
+        # Also check root level (fallback)
+        if fullpath is None:
+            candidate = base / f"{filename}{ext}"
+            if candidate.exists():
+                fullpath = candidate
+                break
+
+    if fullpath and fullpath.exists():
+        with open(fullpath, "rb") as f:
+            content = f.read()
+        content_type, _ = mimetypes.guess_type(str(fullpath))
+        if not content_type:
+            content_type = "application/octet-stream"
+        return web.Response(
+            body=content,
+            content_type=content_type,
+            headers={"Content-Disposition": f'inline; filename="{fullpath.name}"'},
+        )
     return web.Response(status=404)
 
 
