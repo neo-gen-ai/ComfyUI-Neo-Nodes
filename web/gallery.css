@@ -389,12 +389,13 @@
     border-radius: 4px;
 }
 
-/* Image grid */
+/* Image grid - uses Flexbox for dynamic-width items */
 .neo-gallery-image-grid {
     display: flex;
     flex-wrap: wrap;
     gap: 10px;
     width: 100%;
+    align-items: flex-start;
 }
 
 /* ============================================
@@ -550,17 +551,20 @@
     cursor: pointer;
     overflow: hidden;
     position: relative;
-    flex-shrink: 0;
-    min-width: 0;
+    /* Height is fixed, width is dynamic based on image aspect ratio */
+    flex: 0 0 auto;
+    /* Ensure proper flex-basis for wrapping */
+    min-width: 40px;
 }
 
 /* Thumbnail image */
 .neo-gallery-thumb-img {
-    object-fit: cover;
+    object-fit: contain;
     border-radius: 5px;
     width: 100%;
-    aspect-ratio: 1/1;
+    height: 100%;
     display: block;
+    background-color: #1a1a1a;
 }
 
 /* Thumbnail image wrapper (for button positioning) */
@@ -568,8 +572,20 @@
     position: relative;
     width: 100%;
     flex-shrink: 0;
-    aspect-ratio: 1/1;
+    /* Preserve original image aspect ratio */
     /* No overflow: hidden - allows feedback to show outside button bounds */
+}
+
+/* Thumbnail image with fixed aspect ratio (square for non-image items) */
+.neo-gallery-thumb-img.neo-gallery-square-ratio {
+    aspect-ratio: 1/1;
+    object-fit: cover;
+}
+
+/* Thumbnail image preserving original aspect ratio */
+.neo-gallery-thumb-img.neo-gallery-original-ratio {
+    height: auto;
+    aspect-ratio: unset;
 }
 
 /* Thumbnail action buttons (Send, Copy) */
@@ -618,16 +634,15 @@
     right: 6px;
 }
 
-/* Feedback positioning - below the button */
+/* Feedback positioning - fixed to viewport, will be set dynamically by JS */
 .neo-gallery-thumb-send-btn .neo-gallery-feedback,
 .neo-gallery-thumb-copy-btn .neo-gallery-feedback {
-    position: absolute;
-    bottom: auto;
-    top: 100%;
-    left: 50%;
-    transform: translateX(-50%);
-    margin-top: 4px;
+    position: fixed;
+    transform: translate(-50%, -100%);
+    margin: 8px;
     white-space: nowrap;
+    pointer-events: none;
+    z-index: 1000;
 }
 
 /* No files message container */

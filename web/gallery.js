@@ -228,8 +228,8 @@ class NeoGallery {
 
         const slider = $el("input", {
             type: "range",
-            min: 50,
-            max: 250,
+            min: 150,
+            max: 300,
             step: 25,
             value: this.maxThumbnailSize,
             className: "neo-gallery-thumbnail-slider",
@@ -493,7 +493,14 @@ class NeoGallery {
         });
 
         const imageGrid = $el("div", { className: "neo-gallery-image-grid" });
-        items.forEach(item => imageGrid.appendChild(this.createImageElement(item, subfolder)));
+        items.forEach(item => {
+            const el = this.createImageElement(item, subfolder);
+            // Store the default width for non-image items
+            if (subfolder === "custom" || !/\.(png|jpg|jpeg|gif|webp|bmp|tiff)$/i.test(item.filename)) {
+                el.style.width = `${this.maxThumbnailSize}px`;
+            }
+            imageGrid.appendChild(el);
+        });
         content.appendChild(imageGrid);
 
         section.appendChild(header);
@@ -568,14 +575,29 @@ class NeoGallery {
         // Use preview data URI directly if available
         const src = image.preview || `${window.location.protocol}//${window.location.host}/neo_gallery/image?filename=${encodeURIComponent(image.filename)}&subfolder=${encodeURIComponent(subfolder)}`;
 
+        // Determine if this is an image file (has aspect ratio) or non-image
+        const isImageFile = /\.(png|jpg|jpeg|gif|webp|bmp|tiff)$/i.test(image.filename);
+
+        // Create container - height is fixed, width will be set based on image aspect ratio
         const container = $el("div", {
             className: "neo-gallery-thumb-container",
             style: {
-                width: `${this.maxThumbnailSize}px`,
-                height: this.displayLabels ? `${this.maxThumbnailSize + 40}px` : `${this.maxThumbnailSize}px`
+                height: `${this.maxThumbnailSize}px`,
+                width: `${this.maxThumbnailSize}px`
             },
             onclick: () => this.showLightbox(image, subfolder)
         });
+
+        // If it's an image, load it to get aspect ratio for proper width calculation
+        if (isImageFile) {
+            const img = new Image();
+            img.onload = () => {
+                const aspectRatio = img.height / img.width;
+                // width = height / aspectRatio = height * (width / height)
+                container.style.width = `${Math.max(this.maxThumbnailSize * (1 / aspectRatio), 40)}px`;
+            };
+            img.src = src;
+        }
 
         // Delete button (only for custom)
         let deleteBtn = null;
@@ -594,7 +616,7 @@ class NeoGallery {
             className: "neo-gallery-thumb-send-btn",
             onclick: (e) => {
                 e.stopPropagation();
-                this.copyToClipboard(image.name, image.txt_content, sendBtn);
+                this.copyToClipboard(image.name, image.txt_content, sendBtn, 'send');
             }
         }, ["📤"]);
 
@@ -603,11 +625,7 @@ class NeoGallery {
             className: "neo-gallery-thumb-copy-btn",
             onclick: (e) => {
                 e.stopPropagation();
-                navigator.clipboard.writeText(this.cleanText(image.txt_content || "")).then(() => {
-                    this.showInlineFeedback(copyBtn, '✅ Copied!', 'success');
-                }).catch(() => {
-                    this.showInlineFeedback(copyBtn, '❌ Failed', 'error');
-                });
+                this.copyToClipboard(image.name, image.txt_content, copyBtn, 'copy');
             }
         }, ["📋"]);
 
@@ -803,7 +821,7 @@ class NeoGallery {
         }
     }
 
-    copyToClipboard(imageName, txtContent, feedbackBtn = null) {
+    copyToClipboard(imageName, txtContent, feedbackBtn = null, actionType = 'send') {
         let textToCopy = String(txtContent || "").trim();
         textToCopy = this.cleanText(textToCopy);
 
@@ -879,15 +897,16 @@ class NeoGallery {
         } else {
             navigator.clipboard.writeText(textToCopy).then(() => {
                 if (feedbackBtn) {
-                    this.showInlineFeedback(feedbackBtn, '✅ Copied!', 'success');
+                    const msg = actionType === 'send' ? '✅ Sent!' : '✅ Copied!';
+                    this.showInlineFeedback(feedbackBtn, msg, 'success');
                 } else {
-                    this.showToast('success', 'Tags Copied!', `Tags for "${imageName}" copied to clipboard`);
+                    this.showToast('success', actionType === 'send' ? 'Tags Sent!' : 'Tags Copied!', `Tags for "${imageName}" ${actionType === 'send' ? 'sent to' : 'copied to'} clipboard`);
                 }
             }).catch(() => {
                 if (feedbackBtn) {
                     this.showInlineFeedback(feedbackBtn, '❌ Failed', 'error');
                 } else {
-                    this.showToast('error', 'Copy Failed', `Failed to copy tags`);
+                    this.showToast('error', actionType === 'send' ? 'Send Failed' : 'Copy Failed', `Failed to ${actionType === 'send' ? 'send' : 'copy'} tags`);
                 }
             });
         }
@@ -909,9 +928,10 @@ class NeoGallery {
 
     /**
      * Show inline feedback message on a button
+     * Feedback is appended to the img-wrapper to avoid affecting thumbnail layout
      */
     showInlineFeedback(button, message, type) {
-        // Remove any existing feedback
+        // Remove any existing feedback for this button
         const existing = button.querySelector('.neo-gallery-feedback');
         if (existing) existing.remove();
 
@@ -921,8 +941,20 @@ class NeoGallery {
             textContent: message
         });
 
-        button.style.position = "relative";
-        button.appendChild(feedback);
+        // Use fixed positioning - append to body so it's fully independent of layout
+        document.body.appendChild(feedback);
+
+        // getBoundingClientRect() already returns viewport coordinates for fixed positioned elements
+        const buttonRect = button.getBoundingClientRect();
+        const top = buttonRect.top;
+        const left = buttonRect.left + buttonRect.width / 2;
+
+        feedback.style.position = 'fixed';
+        feedback.style.top = (top - 8) + 'px';
+        feedback.style.left = left + 'px';
+        feedback.style.transform = 'translateX(-50%)';
+        feedback.style.zIndex = '2147483646'; // Near-max safe z-index to appear above everything
+        feedback.style.pointerEvents = 'none';
 
         setTimeout(() => {
             if (feedback.parentNode) {
@@ -1021,7 +1053,7 @@ class NeoGallery {
             className: "neo-gallery-lightbox-btn neo-gallery-lightbox-send-btn",
             onclick: (e) => {
                 e.stopPropagation();
-                this.copyToClipboard(image.name, image.txt_content, sendBtn);
+                this.copyToClipboard(image.name, image.txt_content, sendBtn, 'send');
             }
         }, ["📤 Send"]);
 
@@ -1030,11 +1062,7 @@ class NeoGallery {
             className: "neo-gallery-lightbox-btn neo-gallery-lightbox-copy-btn",
             onclick: (e) => {
                 e.stopPropagation();
-                navigator.clipboard.writeText(this.cleanText(image.txt_content || "")).then(() => {
-                    this.showInlineFeedback(copyBtn, '✅ Copied!', 'success');
-                }).catch(() => {
-                    this.showInlineFeedback(copyBtn, '❌ Failed', 'error');
-                });
+                this.copyToClipboard(image.name, image.txt_content, copyBtn, 'copy');
             }
         }, ["📋 Copy"]);
 
@@ -1308,8 +1336,7 @@ class NeoGallery {
                     className: "neo-gallery-lightbox-btn neo-gallery-lightbox-send-btn",
                     onclick: (e) => {
                         e.stopPropagation();
-                        app.neoGallery.showInlineFeedback(sendBtn, '📤 Sent!', 'success');
-                        app.neoGallery.copyToClipboard(image.name, image.txt_content, sendBtn);
+                        app.neoGallery.copyToClipboard(image.name, image.txt_content, sendBtn, 'send');
                     }
                 }, ["📤 Send"]);
                 
@@ -1318,11 +1345,7 @@ class NeoGallery {
                     className: "neo-gallery-lightbox-btn neo-gallery-lightbox-copy-btn",
                     onclick: (e) => {
                         e.stopPropagation();
-                        navigator.clipboard.writeText(app.neoGallery.cleanText(image.txt_content || "")).then(() => {
-                            app.neoGallery.showInlineFeedback(copyBtn, '✅ Copied!', 'success');
-                        }).catch(() => {
-                            app.neoGallery.showInlineFeedback(copyBtn, '❌ Failed', 'error');
-                        });
+                        app.neoGallery.copyToClipboard(image.name, image.txt_content, copyBtn, 'copy');
                     }
                 }, ["📋 Copy"]);
                 
@@ -1393,7 +1416,7 @@ app.registerExtension({
         app.ui.settings.addSetting({
             id: "Neo Gallery._General.maxThumbnailSize",
             name: "Neo Gallery Max Thumbnail Size",
-            type: "slider", attrs: { min: 50, max: 250, step: 25 }, defaultValue: 100,
+            type: "slider", attrs: { min: 150, max: 300, step: 25 }, defaultValue: 150,
             onChange: (val) => { if (app.neoGallery) app.neoGallery.updateThumbnailSize(val); }
         });
 
