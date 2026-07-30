@@ -3,6 +3,7 @@
 
 import os
 import re
+import json
 import base64
 from pathlib import Path
 from aiohttp import web
@@ -18,6 +19,30 @@ PRESETS_DIR = GALLERY_DIR / "presets"
 CUSTOM_DIR = GALLERY_DIR / "custom"
 
 IMG_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
+
+
+def _get_user_custom_dir():
+    """Get user-configured custom directory path from settings.
+    
+    Expects an absolute filesystem path (e.g., "C:/Users/Name/Images").
+    The path must exist on the server's filesystem.
+    """
+    try:
+        settings_path = CURRENT_DIR / "gallery_settings.json"
+        if settings_path.exists():
+            with open(settings_path, "r") as f:
+                settings = json.load(f)
+                user_dir = settings.get("custom_directory", "")
+                if user_dir and Path(user_dir).exists():
+                    return Path(user_dir)
+    except Exception:
+        pass
+    return None
+
+
+def _get_presets_dir():
+    """Get presets directory path (always the default PRESETS_DIR)."""
+    return PRESETS_DIR
 
 
 def _ensure_dirs() -> None:
@@ -156,13 +181,21 @@ def _scan_gallery_entries(directory: Path) -> list[dict]:
 
 @PromptServer.instance.routes.get("/neo_gallery/list")
 async def get_gallery_list(request):
-    """Return gallery listing (presets + custom)."""
+    """Return gallery listing (user_dir + presets)."""
+    user_custom_dir = _get_user_custom_dir()
     presets = _scan_gallery_entries(PRESETS_DIR)
-    custom = _scan_gallery_entries(CUSTOM_DIR)
+
+    # Scan user-configured directory if set
+    user_entries = []
+    if user_custom_dir:
+        user_entries = _scan_gallery_entries(user_custom_dir)
+        for entry in user_entries:
+            entry["custom_source"] = "user_dir"  # tag to identify source
+
     return web.json_response({
+        "user_dir": user_entries,
         "presets": presets,
-        "custom": custom,
-        "total": len(presets) + len(custom)
+        "total": len(user_entries) + len(presets)
     })
 
 
@@ -193,9 +226,19 @@ async def view_image(request):
     if ".." in filename or ".." in subfolder:
         return web.Response(status=400)
 
-    base = PRESETS_DIR if subfolder == "presets" else CUSTOM_DIR
-    if subfolder not in ("presets", "custom"):
+    # Determine base directory based on subfolder
+    if subfolder == "user_dir":
+        user_custom_dir = _get_user_custom_dir()
+        base = user_custom_dir if user_custom_dir else None
+    elif subfolder == "presets":
+        base = PRESETS_DIR
+    elif subfolder == "custom":
+        base = CUSTOM_DIR
+    else:
         return web.Response(status=400)
+
+    if not base or not base.exists():
+        return web.Response(status=404)
 
     # Check category subdirectory first, then fall back to root
     fullpath = None
@@ -249,6 +292,72 @@ async def upload_image(request):
         return web.json_response({"name": filename, "success": True})
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
+
+
+# ---------------------------------------------------------------------------
+# Settings Routes (custom presets directory)
+# ---------------------------------------------------------------------------
+
+SETTINGS_FILE = CURRENT_DIR / "gallery_settings.json"
+
+
+def _save_settings(settings: dict):
+    """Save settings to gallery_settings.json."""
+    try:
+        with open(SETTINGS_FILE, "w") as f:
+            json.dump(settings, f, indent=2)
+    except Exception as e:
+        print(f"[Neo Gallery] Failed to save settings: {e}")
+
+
+def _load_settings() -> dict:
+    """Load settings from gallery_settings.json."""
+    try:
+        if SETTINGS_FILE.exists():
+            with open(SETTINGS_FILE, "r") as f:
+                return json.load(f)
+    except Exception as e:
+        print(f"[Neo Gallery] Failed to load settings: {e}")
+    return {}
+
+
+@PromptServer.instance.routes.post("/neo_gallery/save_settings")
+async def save_gallery_settings(request):
+    """Save gallery settings (custom presets directory).
+    
+    Expects an absolute filesystem path for custom_directory.
+    The path will be validated to ensure it exists on the server's filesystem.
+    """
+    try:
+        data = await request.json()
+        current_settings = _load_settings()
+        
+        # Handle old key name for backward compatibility
+        custom_dir = None
+        if "presets_directory" in data:
+            custom_dir = data["presets_directory"].strip()
+        elif "custom_directory" in data:
+            custom_dir = data["custom_directory"]
+        
+        if custom_dir is not None:
+            # Validate absolute path exists on server filesystem
+            if custom_dir and not Path(custom_dir).exists():
+                return web.json_response(
+                    {"success": False, "error": f"Directory not found: {custom_dir}"}, 
+                    status=400
+                )
+            current_settings["custom_directory"] = custom_dir
+        
+        _save_settings(current_settings)
+        return web.json_response({"success": True})
+    except Exception as e:
+        return web.json_response({"success": False, "error": str(e)}, status=500)
+
+
+@PromptServer.instance.routes.get("/neo_gallery/get_settings")
+async def get_gallery_settings(request):
+    """Get gallery settings."""
+    return web.json_response(_load_settings())
 
 
 @PromptServer.instance.routes.post("/neo_gallery/upload_txt")

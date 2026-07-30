@@ -22,18 +22,45 @@
     min-height: 400px;
 }
 
-/* Panel header row — title left, size control right */
+/* Panel header row — custom dir button left, title + slider centered */
 .neo-gallery-header-row {
-    display: flex;
-    justify-content: space-between;
+    display: grid;
+    grid-template-columns: auto 1fr;
     align-items: center;
     margin-bottom: 10px;
+    gap: 12px;
 }
 
 .neo-gallery-header-title {
     color: #eee;
     font-size: 14px;
     margin: 0;
+    text-align: center;
+}
+
+/* Custom directory setting button in header */
+.neo-gallery-custom-dir-btn {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    background-color: transparent;
+    border: 1px solid #555;
+    border-radius: 4px;
+    color: #ccc;
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+}
+
+.neo-gallery-custom-dir-btn:hover {
+    background-color: rgba(255, 106, 0, 0.2);
+    border-color: #FF6A00;
+    color: #FF9944;
 }
 
 /* Search and dropdown row */
