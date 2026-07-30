@@ -1,0 +1,715 @@
+/* Neo Gallery Styles */
+
+/* Animations */
+@keyframes neoGalleryFadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes neoGallerySlideUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* ============================================
+   Panel / Layout Styles
+   ============================================ */
+
+/* Main panel wrapper */
+.neo-gallery-panel {
+    padding: 10px;
+    background-color: #1a1a1a;
+    min-height: 400px;
+}
+
+/* Panel header */
+.neo-gallery-header {
+    margin-bottom: 10px;
+    color: #eee;
+}
+
+/* Search and dropdown row */
+.neo-gallery-search-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 10px;
+    align-items: stretch;
+}
+
+.neo-gallery-search-container {
+    flex: 1;
+}
+
+.neo-gallery-dropdown-container {
+    width: 180px;
+    flex-shrink: 0;
+}
+
+/* Thumbnail size control row */
+.neo-gallery-size-control {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+    padding: 6px 10px;
+    background-color: rgba(42, 42, 42, 0.9);
+    border-radius: 4px;
+}
+
+.neo-gallery-size-label {
+    font-size: 11px;
+    color: #999;
+}
+
+/* ============================================
+   Target Node Dropdown
+   ============================================ */
+
+.neo-gallery-target-dropdown {
+    width: 100%;
+    padding: 6px 10px;
+    border-radius: 4px;
+    border: 1px solid #444;
+    background-color: #2a2a2a;
+    color: white;
+    font-size: 12px;
+    text-overflow: ellipsis;
+    outline: none;
+    box-sizing: content-box;
+    height: 30px;
+}
+
+/* ============================================
+   Lightbox Overlay
+   ============================================ */
+
+.neo-gallery-lightbox {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(10, 10, 15, 0.95);
+    backdrop-filter: blur(10px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+    cursor: pointer;
+    padding: 20px;
+    box-sizing: border-box;
+    animation: neoGalleryFadeIn 0.3s ease-out;
+    overflow: hidden;
+}
+
+/* Lightbox Container */
+.neo-gallery-lightbox-container {
+    position: relative;
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
+    gap: 0;
+    max-width: 95vw;
+    max-height: 90vh;
+    height: auto;
+    margin: auto;
+    overflow: hidden;
+    padding: 0;
+    background: rgba(30, 30, 35, 0.95);
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    animation: neoGallerySlideUp 0.3s ease-out;
+}
+
+/* Lightbox Image Wrapper (Left panel) */
+.neo-gallery-lightbox-img-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 100%;
+    padding: 16px;
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Lightbox Image */
+.neo-gallery-lightbox-image {
+    display: block;
+    margin: 0 auto;
+    max-width: 100%;
+    max-height: calc(90vh - 80px);
+    object-fit: contain;
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.1);
+    flex-shrink: 0;
+    transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+/* Lightbox Close Button */
+.neo-gallery-lightbox-close-btn {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 32px;
+    height: 32px;
+    background-color: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(10px);
+    color: white;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 50%;
+    font-size: 18px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    line-height: 1;
+    transition: all 0.2s ease;
+}
+
+.neo-gallery-lightbox-close-btn:hover {
+    background-color: rgba(0, 0, 0, 0.8);
+    transform: scale(1.05);
+}
+
+/* ============================================
+   Lightbox Prompt Section (Right panel)
+   ============================================ */
+
+.neo-gallery-lightbox-prompt-section {
+    width: 400px;
+    min-width: 400px;
+    max-width: 400px;
+    max-height: 90vh;
+    overflow: auto;
+    overflow-x: hidden;
+    display: flex;
+    flex-direction: column;
+    padding: 16px;
+}
+
+/* Prompt Container */
+.neo-gallery-lightbox-prompt-container {
+    font-size: 12px;
+    line-height: 1.6;
+    color: #e0e0e0;
+    padding: 12px 16px;
+    background-color: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(10px);
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.2);
+    flex: 1;
+    overflow: auto;
+}
+
+/* Prompt Buttons Container */
+.neo-gallery-lightbox-prompt-btns {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Section label styling */
+.neo-gallery-prompt-section,
+.neo-gallery-prompt-section-item {
+    margin-bottom: 6px;
+    display: flex;
+    align-items: flex-start;
+}
+
+.neo-gallery-prompt-label,
+.neo-gallery-prompt-section-label {
+    font-weight: 600;
+    color: #FF9944;
+    white-space: nowrap;
+    font-size: 12px;
+    line-height: 1.6;
+}
+
+.neo-gallery-prompt-value,
+.neo-gallery-prompt-section-value {
+    color: #ddd;
+    flex: 1;
+}
+
+/* Lightbox Prompt Section specific classes */
+.neo-gallery-lightbox-prompt-section-item {
+    margin-bottom: 6px;
+    display: flex;
+    align-items: flex-start;
+}
+
+.neo-gallery-lightbox-prompt-label {
+    font-weight: 600;
+    color: #FF9944;
+    white-space: nowrap;
+    font-size: 12px;
+    line-height: 1.6;
+}
+
+.neo-gallery-lightbox-prompt-value {
+    color: #ddd;
+    flex: 1;
+}
+
+/* ============================================
+   Lightbox Navigation Arrows (Prev/Next)
+   ============================================ */
+
+.neo-gallery-lightbox-nav-arrow {
+    position: absolute;
+    left: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 36px;
+    height: 36px;
+    background-color: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(10px);
+    color: white;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 50%;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    transition: opacity 0.2s, background-color 0.2s;
+}
+
+/* Next button positioned on right side */
+#neo-gallery-lightbox-next-btn.neo-gallery-lightbox-nav-arrow {
+    left: auto;
+    right: 8px;
+}
+
+/* Lightbox Buttons (Send, Copy) */
+.neo-gallery-lightbox-btn {
+    padding: 6px 12px;
+    color: white;
+    border: none;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+    position: relative;
+    align-self: flex-start;
+    transition: all 0.2s ease;
+}
+
+/* Send button with gradient */
+.neo-gallery-lightbox-btn.neo-gallery-lightbox-send-btn {
+    background: linear-gradient(135deg, #FF6A00 0%, #FF8C00 100%);
+    box-shadow: 0 2px 6px rgba(255, 106, 0, 0.3);
+}
+
+/* Copy button with subtle style */
+.neo-gallery-lightbox-btn.neo-gallery-lightbox-copy-btn {
+    background-color: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    backdrop-filter: blur(10px);
+}
+
+.neo-gallery-lightbox-btn:hover {
+    transform: scale(1.05);
+    filter: brightness(1.1);
+}
+
+.neo-gallery-lightbox-btn:active {
+    transform: scale(0.98);
+}
+
+/* ============================================
+   Lightbox Navigation Buttons Container
+   ============================================ */
+
+.neo-gallery-lightbox-nav-btns {
+    position: absolute;
+    bottom: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 8px;
+    z-index: 10;
+    padding: 6px 10px;
+    background-color: rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(10px);
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* ============================================
+   Accordion Section Styles
+   ============================================ */
+
+/* Accordion section wrapper */
+.neo-gallery-accordion-section {
+    margin-bottom: 10px;
+}
+
+/* Accordion header */
+.neo-gallery-accordion-header {
+    cursor: pointer;
+    padding: 10px;
+    background-color: #2a2a2a;
+    border-radius: 4px;
+    margin-bottom: 5px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.neo-gallery-accordion-header:hover {
+    background-color: #333;
+}
+
+/* Accordion indicator (+/-) */
+.neo-gallery-accordion-indicator {
+    font-size: 18px;
+    font-weight: bold;
+}
+
+/* Accordion content area */
+.neo-gallery-accordion-content.presets,
+.neo-gallery-accordion-content.custom {
+    flex-direction: column;
+    gap: 10px;
+    padding: 10px;
+    background-color: #1a1a1a;
+    border-radius: 4px;
+}
+
+/* Image grid */
+.neo-gallery-image-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    width: 100%;
+}
+
+/* ============================================
+   Search Input
+   ============================================ */
+
+.neo-gallery-search-input {
+    width: 100%;
+    padding: 6px 10px;
+    border-radius: 4px;
+    border: 1px solid #444;
+    background-color: #2a2a2a;
+    color: white;
+    font-size: 12px;
+    outline: none;
+    box-sizing: content-box;
+    height: 30px;
+}
+
+.neo-gallery-search-input::placeholder {
+    color: #888;
+}
+
+/* ============================================
+   Dropdown
+   ============================================ */
+
+.neo-gallery-dropdown-placeholder {
+    color: #999;
+}
+
+/* ============================================
+   Thumbnail Size Slider
+   ============================================ */
+
+.thumbnail-size-value {
+    font-size: 11px;
+    color: #999;
+    min-width: 40px;
+    text-align: right;
+}
+
+.neo-gallery-thumbnail-slider {
+    width: 100px;
+    cursor: pointer;
+    height: 16px;
+}
+
+.neo-gallery-slider-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+/* ============================================
+   Add Custom Image Button
+   ============================================ */
+
+.neo-gallery-add-button {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+    border: 2px dashed #ccc;
+    border-radius: 5px;
+    background-color: #2a2a2a;
+}
+
+.neo-gallery-add-button:hover {
+    border-style: solid;
+    background-color: #333;
+}
+
+.neo-gallery-add-icon {
+    color: #ccc;
+}
+
+.neo-gallery-add-label {
+    margin-top: 5px;
+    color: #ccc;
+}
+
+/* ============================================
+   Accordion Section Buttons (Random, Clear)
+   ============================================ */
+
+.neo-gallery-random-btn,
+.neo-gallery-clear-btn {
+    padding: 4px 8px;
+    background-color: transparent;
+    border: 1px solid;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    margin-left: 10px;
+}
+
+.neo-gallery-random-btn {
+    color: #FF6A00;
+    border-color: #FF6A00;
+}
+
+.neo-gallery-clear-btn {
+    color: #f44336;
+    border-color: #f44336;
+}
+
+.neo-gallery-random-btn:hover {
+    background-color: rgba(255, 106, 0, 0.1);
+}
+
+.neo-gallery-clear-btn:hover {
+    background-color: rgba(244, 67, 54, 0.1);
+}
+
+/* ============================================
+   No Files Message (Search)
+   ============================================ */
+
+.neo-gallery-no-files {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    height: 200px;
+    justify-content: center;
+    background-color: #1a1a1a;
+    border-radius: 8px;
+    border: 1px solid #333;
+}
+
+.neo-gallery-no-files-icon {
+    font-size: 64px;
+    color: #666;
+    margin-bottom: 20px;
+}
+
+.neo-gallery-no-files-text {
+    font-size: 18px;
+    color: #aaa;
+}
+
+/* ============================================
+   Image Element Styles
+   ============================================ */
+
+/* Thumbnail container */
+.neo-gallery-thumb-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    cursor: pointer;
+    overflow: hidden;
+    position: relative;
+    flex-shrink: 0;
+    min-width: 0;
+}
+
+/* Thumbnail image */
+.neo-gallery-thumb-img {
+    object-fit: cover;
+    border-radius: 5px;
+    width: 100%;
+    aspect-ratio: 1/1;
+    display: block;
+}
+
+/* Thumbnail image wrapper (for button positioning) */
+.neo-gallery-thumb-img-wrapper {
+    position: relative;
+    width: 100%;
+    flex-shrink: 0;
+    aspect-ratio: 1/1;
+    /* No overflow: hidden - allows feedback to show outside button bounds */
+}
+
+/* Thumbnail action buttons (Send, Copy) */
+.neo-gallery-thumb-send-btn,
+.neo-gallery-thumb-copy-btn {
+    position: absolute;
+    width: 28px;
+    height: 28px;
+    background-color: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(5px);
+    color: white;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 50%;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.2s ease, background-color 0.2s ease;
+    z-index: 5;
+    line-height: 1;
+}
+
+.neo-gallery-thumb-container:hover .neo-gallery-thumb-send-btn,
+.neo-gallery-thumb-container:hover .neo-gallery-thumb-copy-btn {
+    opacity: 0.8;
+}
+
+.neo-gallery-thumb-send-btn:hover,
+.neo-gallery-thumb-copy-btn:hover {
+    opacity: 1 !important;
+    background-color: rgba(0, 0, 0, 0.8);
+    transform: scale(1.1);
+}
+
+/* Send button - top right of image */
+.neo-gallery-thumb-send-btn {
+    top: 6px;
+    right: 6px;
+}
+
+/* Copy button - below send button */
+.neo-gallery-thumb-copy-btn {
+    top: 40px;
+    right: 6px;
+}
+
+/* Feedback positioning - below the button */
+.neo-gallery-thumb-send-btn .neo-gallery-feedback,
+.neo-gallery-thumb-copy-btn .neo-gallery-feedback {
+    position: absolute;
+    bottom: auto;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    margin-top: 4px;
+    white-space: nowrap;
+}
+
+/* No files message container */
+.neo-gallery-no-files-message {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    min-height: 200px;
+    padding: 20px;
+    margin: 20px 0;
+}
+
+/* No files message icon */
+.neo-gallery-no-files-message-icon {
+    font-size: 48px;
+    color: #888;
+    margin-bottom: 15px;
+}
+
+/* No files message text */
+.neo-gallery-no-files-message-text {
+    font-size: 18px;
+    color: #888;
+}
+
+/* Delete button on thumbnails */
+.neo-gallery-delete-btn {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    background: rgba(244, 67, 54, 0.9);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 24px;
+    height: 24px;
+    font-size: 14px;
+    line-height: 24px;
+    text-align: center;
+    cursor: pointer;
+    z-index: 10;
+}
+
+/* Image label */
+.neo-gallery-image-label {
+    margin-top: 5px;
+    font-size: 12px;
+    text-align: center;
+    width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ============================================
+   Inline Feedback (toast on buttons)
+   ============================================ */
+
+.neo-gallery-feedback {
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    margin-bottom: 8px;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    white-space: nowrap;
+    z-index: 100;
+    pointer-events: none;
+    animation: neoGalleryFadeIn 0.2s ease-out;
+}
+
+.neo-gallery-feedback-success {
+    background-color: rgba(76, 175, 80, 0.95);
+}
+
+.neo-gallery-feedback-error {
+    background-color: rgba(244, 67, 54, 0.95);
+}
+
+.neo-gallery-feedback-text {
+    color: white;
+}

@@ -24,7 +24,7 @@ def _ensure_dirs() -> None:
     for d in (GALLERY_DIR, PRESETS_DIR, CUSTOM_DIR):
         d.mkdir(parents=True, exist_ok=True)
 
-
+ 
 def _parse_txt(raw_txt: str) -> dict:
     """Parse an 8-line structured txt (with optional line-number prefix like '1 | ').
 
@@ -153,6 +153,20 @@ async def get_gallery_list(request):
         "custom": custom,
         "total": len(presets) + len(custom)
     })
+
+
+CURRENT_WEB_DIR = CURRENT_DIR / "web"
+
+
+@PromptServer.instance.routes.get("/neo_gallery/css")
+async def serve_css(request):
+    """Serve gallery CSS file."""
+    css_path = CURRENT_WEB_DIR / "gallery.css"
+    if css_path.exists():
+        with open(css_path, "r", encoding="utf-8") as f:
+            css_content = f.read()
+        return web.Response(text=css_content, content_type="text/css")
+    return web.Response(status=404)
 
 
 @PromptServer.instance.routes.get("/neo_gallery/image")
