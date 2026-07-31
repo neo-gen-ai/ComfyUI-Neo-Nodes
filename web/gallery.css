@@ -8,7 +8,37 @@
 
 @keyframes neoGallerySlideUp {
     from { opacity: 0; transform: translateY(20px); }
-    to { opacity: 1; transform: translateY(0); }
+    to { opacity: 0; transform: translateY(0); }
+}
+
+@keyframes neoGallerySpin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+/* Loading overlay */
+.neo-gallery-loading-overlay {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 40px 20px;
+    min-height: 200px;
+}
+
+.neo-gallery-loading-spinner {
+    width: 32px;
+    height: 32px;
+    border: 3px solid rgba(255, 106, 0, 0.2);
+    border-top-color: #FF6A00;
+    border-radius: 50%;
+    animation: neoGallerySpin 0.8s linear infinite;
+}
+
+.neo-gallery-loading-text {
+    color: #999;
+    font-size: 13px;
 }
 
 /* ============================================
@@ -22,10 +52,10 @@
     min-height: 400px;
 }
 
-/* Panel header row — custom dir button left, title + slider centered */
+/* Panel header row — title left (col1), spacer (col2), buttons right (col3) */
 .neo-gallery-header-row {
     display: grid;
-    grid-template-columns: auto 1fr;
+    grid-template-columns: auto 1fr auto;
     align-items: center;
     margin-bottom: 10px;
     gap: 12px;
@@ -113,6 +143,153 @@
     outline: none;
     box-sizing: content-box;
     height: 26px;
+}
+
+/* ============================================
+   Category Card Grid Layout
+   ============================================ */
+
+.neo-gallery-category-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 12px;
+    padding: 4px 0;
+}
+
+/* Category Card — clickable card for a directory/category */
+.neo-gallery-category-card {
+    position: relative;
+    border-radius: 8px;
+    overflow: hidden;
+    cursor: pointer;
+    background-color: #1a1a1a;
+    border: 1px solid #333;
+    transition: all 0.2s ease;
+}
+
+.neo-gallery-category-card:hover {
+    border-color: #FF6A00;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(255, 106, 0, 0.2);
+}
+
+/* Card cover image area */
+.neo-gallery-card-cover-wrapper {
+    width: 100%;
+    overflow: hidden;
+    background-color: #111;
+    min-height: 80px;
+}
+
+.neo-gallery-card-cover {
+    width: 100%;
+    display: block;
+    object-fit: contain;
+}
+
+/* Placeholder when no cover image */
+.neo-gallery-card-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 48px;
+    color: #555;
+    background-color: #222;
+}
+
+/* Card info area (name + count) */
+.neo-gallery-card-info {
+    padding: 8px;
+}
+
+.neo-gallery-card-name {
+    display: block;
+    font-size: 13px;
+    color: #eee;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 2px;
+}
+
+.neo-gallery-card-count {
+    display: block;
+    font-size: 11px;
+    color: #888;
+}
+
+/* Card delete button (hover to show) */
+.neo-gallery-card-delete-btn {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 24px;
+    height: 24px;
+    background-color: rgba(244, 67, 54, 0.9);
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    cursor: pointer;
+    z-index: 5;
+}
+
+.neo-gallery-category-card:hover .neo-gallery-card-delete-btn {
+    opacity: 1;
+}
+
+/* ============================================
+   Breadcrumb Navigation
+   ============================================ */
+
+.neo-gallery-breadcrumb {
+    display: none;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 10px;
+    margin-bottom: 8px;
+    background-color: #2a2a2a;
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+.neo-gallery-breadcrumb-item {
+    color: #aaa;
+    cursor: pointer;
+    transition: color 0.2s ease;
+    user-select: none;
+}
+
+.neo-gallery-breadcrumb-item:hover {
+    color: #FF9944;
+}
+
+.neo-gallery-breadcrumb-home:hover {
+    color: #FF6A00;
+}
+
+.neo-gallery-breadcrumb-current {
+    color: #eee;
+    cursor: default;
+    font-weight: 500;
+}
+
+.neo-gallery-breadcrumb-sep {
+    color: #666;
+    user-select: none;
+    margin: 0 2px;
+}
+
+/* ============================================
+   Expanded Images View
+   ============================================ */
+
+.neo-gallery-expanded-images {
+    padding-top: 8px;
 }
 
 /* ============================================
@@ -524,7 +701,6 @@
     cursor: pointer;
     font-size: 14px;
     line-height: 1;
-    margin-left: 10px;
 }
 
 .neo-gallery-random-btn {

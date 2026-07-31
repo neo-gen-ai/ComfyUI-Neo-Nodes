@@ -16,16 +16,22 @@ class NeoGallery {
         this.app = app;
         this.maxThumbnailSize = 300;
         this.displayLabels = true;
-        this.allUserDir = [];
+        // New data structure: custom_dirs grouped by dir name
+        this.allCustomDirs = [];   // [{name, path, items: [...]}, ...]
         this.allPresets = [];
-        this.filteredUserDir = [];
+        this.filteredCustomDirs = [];
         this.filteredPresets = [];
         this.sortAscending = true;
         this.searchInput = this.createSearchInput();
         this.targetNodeDropdown = this.createTargetNodeDropdown();
         this.thumbnailSizeSlider = this.createThumbnailSizeSlider();
-        this.customDirSettingBtn = null; // will be set in createHeaderRow
-        this.accordion = $el("div.neo-gallery-accordion");
+        this.customDirSettingBtn = null;
+        // Card-based layout state
+        this.currentView = {
+            mode: 'categories',  // 'categories' | 'images'
+            source: null,        // dir name or 'presets'
+            categoryPath: [],    // breadcrumb path segments
+        };
         this.placeholderImageUrl = `${window.location.protocol}//${window.location.host}/neo_gallery/image?filename=SKIP.jpeg`;
         this.sectionStates = {};
         this.isSearchActive = false;
@@ -43,9 +49,13 @@ class NeoGallery {
         });
 
         const customDirBtn = this.createCustomDirSettingBtn();
+        const randomPromptBtn = this.createRandomPromptBtn();
+
+        // Main content area for gallery cards/images
+        this.accordion = $el("div", { className: "neo-gallery-accordion" });
 
         this.element = $el("div", { id: this.elementId, className: "neo-gallery-panel" }, [
-            // Header row — title left (col1), spacer (col2), custom-dir button right (col3)
+            // Header row — title left (col1), spacer (col2), buttons right (col3)
             $el("div", { 
                 className: "neo-gallery-header-row",
                 style: { display: 'grid', gridTemplateColumns: 'auto 1fr auto', alignItems: 'center' }
@@ -54,18 +64,39 @@ class NeoGallery {
                 $el("div", { 
                     style: { display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 10, gridColumn: '2' }
                 }, [this.thumbnailSizeSlider]),
-                customDirBtn
+                $el("div", { style: { display: 'flex', gap: 6, alignItems: 'center' } }, [customDirBtn, randomPromptBtn])
             ]),
+            // Search and target row
             $el("div", { className: "neo-gallery-search-row" }, [
                 $el("div", { className: "neo-gallery-search-container" }, [this.searchInput]),
                 $el("div", { className: "neo-gallery-dropdown-container" }, [this.targetNodeDropdown])
             ]),
+            // Breadcrumb navigation (shown when viewing category images)
+            $el("div", { 
+                id: "neo-gallery-breadcrumb",
+                className: "neo-gallery-breadcrumb",
+                style: { display: 'none' }
+            }, [this.createBreadcrumbHome()]),
+            // Main content area (cards or expanded images)
             this.accordion,
             this.customDirInput
         ]);
 
         // Load custom directory settings from backend (sets the button text)
         this.loadGallerySettings();
+    }
+
+    createRandomPromptBtn() {
+        const btn = $el("button", {
+            className: "neo-gallery-random-btn",
+            title: "Random Prompt",
+            onclick: (e) => {
+                e.stopPropagation();
+                this.generateRandomPrompt();
+            },
+            textContent: "\uD83C\uDFB2"
+        });
+        return btn;
     }
 
     createCustomDirSettingBtn() {
@@ -78,6 +109,83 @@ class NeoGallery {
         this.customDirSettingBtn = btn;
         return btn;
     }
+
+    // ====== Breadcrumb Navigation ======
+
+    createBreadcrumbHome() {
+        const homeBtn = $el("span", {
+            className: "neo-gallery-breadcrumb-item neo-gallery-breadcrumb-home",
+            textContent: "\uD83C\uDFE0",
+            onclick: (e) => {
+                e.stopPropagation();
+                this.showCategoryCards();
+            }
+        });
+        return homeBtn;
+    }
+
+    updateBreadcrumb(pathSegments, sourceName) {
+        const breadcrumb = document.getElementById("neo-gallery-breadcrumb");
+        if (!breadcrumb) return;
+
+        if (pathSegments.length === 0 && !sourceName) {
+            // Show only home button
+            breadcrumb.style.display = 'flex';
+            breadcrumb.innerHTML = '';
+            breadcrumb.appendChild(this.createBreadcrumbHome());
+            return;
+        }
+
+        breadcrumb.style.display = 'flex';
+        breadcrumb.innerHTML = '';
+        
+        // Home button
+        const homeBtn = $el("span", {
+            className: "neo-gallery-breadcrumb-item neo-gallery-breadcrumb-home",
+            textContent: "\uD83C\uDFE0",
+            onclick: (e) => {
+                e.stopPropagation();
+                this.showCategoryCards();
+            }
+        });
+        breadcrumb.appendChild(homeBtn);
+
+        // Separator and path segments
+        for (let i = 0; i < pathSegments.length; i++) {
+            const sep = $el("span", { className: "neo-gallery-breadcrumb-sep", textContent: ">" });
+            breadcrumb.appendChild(sep);
+            
+            if (i === pathSegments.length - 1) {
+                // Last segment is the current location (not clickable)
+                breadcrumb.appendChild($el("span", {
+                    className: "neo-gallery-breadcrumb-item neo-gallery-breadcrumb-current",
+                    textContent: pathSegments[i]
+                }));
+            } else {
+                const seg = pathSegments.slice(0, i + 1).join("/");
+                breadcrumb.appendChild($el("span", {
+                    className: "neo-gallery-breadcrumb-item",
+                    textContent: pathSegments[i],
+                    onclick: (e) => {
+                        e.stopPropagation();
+                        this.showCategoryImages(this.currentView.source, pathSegments.slice(0, i + 1));
+                    }
+                }));
+            }
+        }
+
+        // Source name if not in path
+        if (sourceName && !pathSegments.includes(sourceName)) {
+            const sep = $el("span", { className: "neo-gallery-breadcrumb-sep", textContent: ">" });
+            breadcrumb.appendChild(sep);
+            breadcrumb.appendChild($el("span", {
+                className: "neo-gallery-breadcrumb-item neo-gallery-breadcrumb-current",
+                textContent: sourceName
+            }));
+        }
+    }
+
+    // ====== Directory Management ======
 
     async loadGallerySettings() {
         try {
@@ -94,7 +202,7 @@ class NeoGallery {
                     if (customDir) {
                         const displayName = customDir.split(/[\\/]/).pop();
                         this.customDirSettingBtn.title = customDir + '\n(Click to change)\nCurrent: ' + displayName;
-                        this.customDirSettingBtn.textContent = "📁";
+                        this.customDirSettingBtn.textContent = "\uD83D\uDCC1";
                     } else {
                         this.customDirSettingBtn.title = "Set custom directory\n(Currently not configured)";
                         this.customDirSettingBtn.textContent = "+";
@@ -111,52 +219,63 @@ class NeoGallery {
     }
 
     async promptAndSetCustomDir() {
-        const current = this.customDirInput.value;
-        let defaultVal = current;
-        // Strip placeholder text for the default value
-        if (!current || current.startsWith('(')) {
-            defaultVal = '';
+        const currentDirs = [];
+        try {
+            const resp = await api.fetchApi('/neo_gallery/get_settings');
+            if (resp.ok) {
+                const settings = await resp.json();
+                const dirs = settings.custom_directories || [];
+                if (Array.isArray(dirs)) {
+                    currentDirs.push(...dirs);
+                } else if (settings.custom_directory) {
+                    currentDirs.push(settings.custom_directory);
+                }
+            }
+        } catch(e) {}
+
+        // Build prompt message showing existing directories
+        let defaultVal = '';
+        if (currentDirs.length > 0) {
+            defaultVal = currentDirs.join('\n');
         }
 
-        const newDir = prompt("Enter absolute path to your custom directory:", defaultVal);
+        const newDir = prompt("Enter absolute path to your custom directory:\n(One per line for multiple directories)", defaultVal);
 
         if (newDir === null) return; // User cancelled
 
-        const trimmedPath = newDir.trim();
+        const lines = newDir.split('\n').map(l => l.trim()).filter(l => l.length > 0);
         
-        if (!trimmedPath) {
-            // Empty means clear the setting
-            await this.saveGallerySetting('custom_directory', '');
-            this.customDirInput.value = "(not configured, enter path below or click 📁 to set)";
+        if (lines.length === 0) {
+            // Empty means clear all
+            await api.fetchApi('/neo_gallery/save_settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: "add", path: "" })
+            });
+            this.customDirInput.value = "(not configured)";
+            await this.loadGallery();
+            this.sortAndDisplayImages();
             return;
         }
 
-        console.log('[Neo Gallery] Saving custom directory:', trimmedPath);
-
-        // Save the absolute path directly and wait for confirmation
-        const saveResp = await api.fetchApi('/neo_gallery/save_settings', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ custom_directory: trimmedPath })
-        });
-
-        let result;
-        try {
-            result = await saveResp.json();
-        } catch (e) {
-            console.error('[Neo Gallery] Failed to parse save response:', e);
-            return;
+        // Add each directory
+        let successCount = 0;
+        for (const dirPath of lines) {
+            const saveResp = await api.fetchApi('/neo_gallery/save_settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: "add", path: dirPath })
+            });
+            const result = await saveResp.json();
+            if (saveResp.ok && result.success) {
+                successCount++;
+            } else {
+                console.error('[Neo Gallery] Failed to add directory:', dirPath, result);
+            }
         }
 
-        if (!saveResp.ok || !result.success) {
-            const errMsg = result?.error || `HTTP ${saveResp.status}`;
-            alert('Failed to save directory: ' + errMsg);
-            console.error('[Neo Gallery] Save failed:', result);
-            return;
-        }
-
-        // Update input with saved path and reload gallery
-        this.customDirInput.value = trimmedPath;
+        // Update input with saved paths and reload gallery
+        this.customDirInput.value = lines.join('\n');
         
         try {
             await this.loadGallery();
@@ -166,21 +285,21 @@ class NeoGallery {
         }
     }
 
-    async saveGallerySetting(key, value) {
-        try {
-            const resp = await api.fetchApi('/neo_gallery/save_settings', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ [key]: value })
-            });
-            if (resp.ok) {
-                console.log('[Neo Gallery] Settings saved successfully');
-            } else {
-                const error = await resp.json();
-                console.error('[Neo Gallery] Failed to save settings:', error);
-            }
-        } catch (error) {
-            console.error('[Neo Gallery] Error saving gallery settings:', error);
+    async removeCustomDir(dirPath) {
+        if (!confirm(`Remove directory "${dirPath}" from gallery?`)) return;
+        
+        const saveResp = await api.fetchApi('/neo_gallery/save_settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: "remove", path: dirPath })
+        });
+        const result = await saveResp.json();
+        
+        if (saveResp.ok && result.success) {
+            await this.loadGallery();
+            this.sortAndDisplayImages();
+        } else {
+            alert('Failed to remove directory: ' + (result.error || ''));
         }
     }
 
@@ -315,22 +434,28 @@ class NeoGallery {
 
     // ====== Actions ======
 
-    async deleteItem(name) {
+    async deleteItem(name, subfolder) {
         try {
             const response = await api.fetchApi('/neo_gallery/delete', {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ filename: name })
+                body: JSON.stringify({ filename: name, subfolder })
             });
             const result = await response.json();
             if (result.deleted) {
+                // Remove from allCustomDirs
+                for (const dir of this.allCustomDirs) {
+                    dir.items = dir.items.filter(item => item.name !== name);
+                }
+                // Remove from presets
                 this.allPresets = this.allPresets.filter(item => item.name !== name);
-                this.filteredPresets = this.allPresets;
-                this.allUserDir = this.allUserDir.filter(item => item.name !== name);
-                this.filteredUserDir = this.allUserDir;
-                this.sortAndDisplayImages();
+                
+                if (this.isSearchActive) {
+                    this.handleSearch(this.searchInput.value);
+                } else {
+                    this.sortAndDisplayImages();
+                }
                 this.showToast('success', 'Deleted', `Removed: ${name}`);
-                this.loadGallery();
             } else {
                 this.showToast('warning', 'Delete Failed', 'Item not found or already deleted.');
             }
@@ -343,16 +468,28 @@ class NeoGallery {
     handleSearch(searchTerm) {
         searchTerm = searchTerm.toLowerCase();
         this.isSearchActive = searchTerm.length > 0;
-        this.filteredUserDir = this.allUserDir.filter(img =>
-            (img && img.name && img.name.toLowerCase().includes(searchTerm)) ||
-            (img && img.style && img.style.toLowerCase().includes(searchTerm)) ||
-            (img && img.content && img.content.toLowerCase().includes(searchTerm))
-        );
+        
+        // Filter custom dirs by matching items
+        this.filteredCustomDirs = this.allCustomDirs.map(dir => ({
+            ...dir,
+            items: dir.items.filter(img =>
+                (img.name && img.name.toLowerCase().includes(searchTerm)) ||
+                (img.style && img.style.toLowerCase().includes(searchTerm)) ||
+                (img.content && img.content.toLowerCase().includes(searchTerm))
+            )
+        })).filter(dir => dir.items.length > 0);
+
         this.filteredPresets = this.allPresets.filter(img =>
-            (img && img.name && img.name.toLowerCase().includes(searchTerm)) ||
-            (img && img.style && img.style.toLowerCase().includes(searchTerm)) ||
-            (img && img.content && img.content.toLowerCase().includes(searchTerm))
+            (img.name && img.name.toLowerCase().includes(searchTerm)) ||
+            (img.style && img.style.toLowerCase().includes(searchTerm)) ||
+            (img.content && img.content.toLowerCase().includes(searchTerm))
         );
+        
+        // Reset view to categories when searching
+        this.currentView.mode = 'categories';
+        this.currentView.source = null;
+        this.currentView.categoryPath = [];
+        
         this.sortAndDisplayImages();
     }
 
@@ -380,38 +517,49 @@ class NeoGallery {
             if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
             const data = await resp.json();
             console.log('Gallery API response:', data);
-            this.allUserDir = data.user_dir || [];
+            // New format: custom_dirs grouped by directory name
+            this.allCustomDirs = (data.custom_dirs || []).map(dir => ({
+                name: dir.name,
+                path: dir.path,
+                items: dir.items || []
+            }));
             this.allPresets = data.presets || [];
-            console.log('Loaded user_dir:', this.allUserDir.length, 'presets:', this.allPresets.length);
-            this.filteredUserDir = this.allUserDir;
+            console.log('Loaded custom_dirs:', this.allCustomDirs.length, 'presets:', this.allPresets.length);
+            this.filteredCustomDirs = this.allCustomDirs;
             this.filteredPresets = this.allPresets;
         } catch (error) {
             console.error('Error loading gallery:', error);
-            this.allUserDir = [];
+            this.allCustomDirs = [];
             this.allPresets = [];
-            this.filteredUserDir = [];
+            this.filteredCustomDirs = [];
             this.filteredPresets = [];
         }
     }
 
-    // ====== Rendering ======
+    // ====== Rendering - Card-based Layout ======
 
     sortAndDisplayImages() {
         this.accordion.innerHTML = "";
 
-        const userDirToDisplay = this.isSearchActive ? this.filteredUserDir : this.allUserDir;
+        const customDirsToDisplay = this.isSearchActive ? this.filteredCustomDirs : this.allCustomDirs;
         const presetsToDisplay = this.isSearchActive ? this.filteredPresets : this.allPresets;
 
-        // Sort alphabetically (ascending)
-        const sortedUserDir = [...userDirToDisplay].sort((a, b) => a.name.localeCompare(b.name));
-        const sortedPresets = [...presetsToDisplay].sort((a, b) => a.name.localeCompare(b.name));
+        // Check if we're in image view mode (showing expanded category)
+        if (this.currentView.mode === 'images') {
+            this.renderExpandedImages();
+            return;
+        }
 
-        if (sortedUserDir.length === 0 && sortedPresets.length === 0 && !this.isSearchActive) {
+        // Categories view - show card grid
+        const totalDirs = customDirsToDisplay.filter(d => d.items.length > 0).length;
+        const totalPresets = presetsToDisplay.length;
+
+        if (totalDirs === 0 && totalPresets === 0 && !this.isSearchActive) {
             this.displayNoFilesMessage();
             return;
         }
 
-        if (userDirToDisplay.length === 0 && presetsToDisplay.length === 0 && this.isSearchActive) {
+        if (totalDirs === 0 && totalPresets === 0 && this.isSearchActive) {
             this.accordion.appendChild($el("div", {
                 className: "neo-gallery-no-files"
             }, [
@@ -421,20 +569,32 @@ class NeoGallery {
             return;
         }
 
-        // Render user_dir section if not empty
-        if (sortedUserDir.length > 0) {
-            this.accordion.appendChild(this.createUserDirSection(sortedUserDir));
+        // Render category cards (custom dirs + presets)
+        const cardContainer = this.createCategoryCardGrid(customDirsToDisplay, presetsToDisplay);
+        if (cardContainer) {
+            this.accordion.appendChild(cardContainer);
         }
+    }
 
-        // Group presets by category (subdirectory)
+    createCategoryCardGrid(dirGroups, presetItems) {
+        // Group presets by category
         const presetGroups = new Map();
-        sortedPresets.forEach(item => {
+        presetItems.forEach(item => {
             const cat = item.category || "";
             if (!presetGroups.has(cat)) presetGroups.set(cat, []);
             presetGroups.get(cat).push(item);
         });
 
-        // Render Preset groups (each category as a separate accordion section)
+        const container = $el("div", { className: "neo-gallery-category-grid" });
+
+        // Add custom dir cards
+        for (const dir of dirGroups) {
+            if (dir.items.length === 0) continue;
+            const card = this.createDirCard(dir.name, dir.path, dir.items);
+            container.appendChild(card);
+        }
+
+        // Add preset category cards
         const allCategories = [...presetGroups.keys()].sort((a, b) => {
             if (!a) return -1;
             if (!b) return 1;
@@ -443,118 +603,251 @@ class NeoGallery {
 
         for (const cat of allCategories) {
             const groupItems = presetGroups.get(cat);
-            const sectionTitle = cat ? `Presets/${cat}` : "Presets";
-            this.accordion.appendChild(this.createAccordionSection(sectionTitle, groupItems, "presets", cat));
+            const title = cat ? `Presets/${cat}` : "Presets";
+            const card = this.createPresetCategoryCard(title, groupItems);
+            container.appendChild(card);
         }
+
+        return container;
     }
 
-    createUserDirSection(items) {
-        const section = $el("div", { className: "accordion-section neo-gallery-accordion-section user-dir-section" });
-
-        const header = $el("div", {
-            className: "accordion-header neo-gallery-accordion-header"
+    createDirCard(name, path, items) {
+        // Get first image as cover
+        const coverImage = items.find(i => /\.(png|jpg|jpeg|gif|webp)$/i.test(i.filename));
+        
+        const card = $el("div", {
+            className: "neo-gallery-category-card",
+            onclick: () => this.showCategoryImages(name, [], name)
         });
 
-        const headerText = $el("span", { textContent: `Custom Dir (${items.length})` });
-        const indicator = $el("span", {
-            className: "neo-gallery-accordion-indicator",
-            textContent: this.sectionStates["UserDir"] ? "-" : "+"
-        });
-
-        header.appendChild(headerText);
-        header.appendChild(indicator);
-
-        const content = $el("div", {
-            className: "accordion-content neo-gallery-accordion-content user-dir",
-            style: {
-                display: this.sectionStates["UserDir"] ? "flex" : "none"
-            }
-        });
-
-        header.addEventListener("click", (e) => {
-            if (e.target.type !== "checkbox") {
-                const isHidden = content.style.display === "none";
-                content.style.display = isHidden ? "flex" : "none";
-                indicator.textContent = isHidden ? "-" : "+";
-                this.sectionStates["UserDir"] = isHidden;
-                this.savePluginData();
-            }
-        });
-
-        const imageGrid = $el("div", { className: "neo-gallery-image-grid" });
-        items.forEach(item => imageGrid.appendChild(this.createImageElement(item, "user_dir")));
-        content.appendChild(imageGrid);
-
-        section.appendChild(header);
-        section.appendChild(content);
-        return section;
-    }
-
-    createAccordionSection(title, items, subfolder, category) {
-        const effectiveSubfolder = (category && category !== "presets") ? category : subfolder;
-
-        const section = $el("div", {
-            className: `accordion-section neo-gallery-accordion-section ${title.toLowerCase().replace(/\//g, '-')}`
-        });
-
-        const header = $el("div", {
-            className: "accordion-header neo-gallery-accordion-header"
-        });
-
-        const headerText = $el("span", { textContent: `${title} (${items.length})` });
-        const indicator = $el("span", {
-            className: "neo-gallery-accordion-indicator",
-            textContent: this.sectionStates[title] ? "-" : "+"
-        });
-
-        // Add small Random Prompt button for Presets section
-        if (title === "Presets" && items.length > 0) {
-            const randomBtn = $el("button", {
-                className: "neo-gallery-random-btn",
-                textContent: "\uD83C\uDFB2",
-                onclick: (e) => {
-                    e.stopPropagation();
-                    this.generateRandomPrompt();
-                },
-                title: "Random Prompt"
+        // Cover image area
+        const coverWrapper = $el("div", { className: "neo-gallery-card-cover-wrapper" });
+        if (coverImage) {
+            const categoryParam = coverImage.category ? `&category=${encodeURIComponent(coverImage.category)}` : '';
+            const src = coverImage.preview || `${window.location.protocol}//${window.location.host}/neo_gallery/image?filename=${encodeURIComponent(coverImage.filename)}&subfolder=${encodeURIComponent(name)}${categoryParam}`;
+            
+            const img = $el("img", {
+                className: "neo-gallery-card-cover",
+                src: src,
+                alt: name,
+                loading: "lazy"
             });
-            header.appendChild(randomBtn);
+            
+            // Set a default height while image loads; will adjust after load
+            coverWrapper.style.height = '120px';
+            
+            img.onload = () => {
+                const aspectRatio = img.naturalHeight / img.naturalWidth;
+                const cardWidth = coverWrapper.clientWidth || 160;
+                const imgHeight = Math.max(cardWidth * aspectRatio, 80);
+                coverWrapper.style.height = `${imgHeight}px`;
+            };
+            
+            coverWrapper.appendChild(img);
+        } else {
+            coverWrapper.appendChild($el("div", {
+                className: "neo-gallery-card-cover neo-gallery-card-placeholder",
+                textContent: "\uD83D\uDCC1"
+            }));
         }
 
-        header.appendChild(headerText);
-        header.appendChild(indicator);
+        // Card info (name + count)
+        const info = $el("div", { className: "neo-gallery-card-info" }, [
+            $el("span", { className: "neo-gallery-card-name", textContent: name }),
+            $el("span", { className: "neo-gallery-card-count", textContent: `${items.length} items` })
+        ]);
 
-        const content = $el("div", {
-            className: `accordion-content neo-gallery-accordion-content ${title.toLowerCase()}`,
-            style: {
-                display: this.sectionStates[title] ? "flex" : "none"
+        // Delete button (top-right on hover)
+        const deleteBtn = $el("div", {
+            className: "neo-gallery-card-delete-btn",
+            title: `Remove directory "${name}"`,
+            onclick: (e) => {
+                e.stopPropagation();
+                this.removeCustomDir(path);
             }
+        }, ["\u00D7"]);
+
+        card.appendChild(coverWrapper);
+        card.appendChild(info);
+        card.appendChild(deleteBtn);
+
+        return card;
+    }
+
+    createPresetCategoryCard(title, items) {
+        // Get first image as cover
+        const coverImage = items.find(i => /\.(png|jpg|jpeg|gif|webp)$/i.test(i.filename));
+        
+        // Extract the raw category from display title: "Presets/Anime" -> "Anime", "Presets" -> ""
+        let rawCategory = '';
+        const slashIdx = title.indexOf('/');
+        if (slashIdx > 0) {
+            rawCategory = title.substring(slashIdx + 1).trim();
+        }
+        
+        const card = $el("div", {
+            className: "neo-gallery-category-card",
+            onclick: () => this.showPresetCategory(rawCategory, title)
         });
 
-        header.addEventListener("click", (e) => {
-            if (e.target.type !== "checkbox") {
-                const isHidden = content.style.display === "none";
-                content.style.display = isHidden ? "flex" : "none";
-                indicator.textContent = isHidden ? "-" : "+";
-                this.sectionStates[title] = isHidden;
-                this.savePluginData();
-            }
-        });
+        // Cover image area
+        const presetCoverWrapper = $el("div", { className: "neo-gallery-card-cover-wrapper" });
+        if (coverImage) {
+            const categoryParam = coverImage.category ? `&category=${encodeURIComponent(coverImage.category)}` : '';
+            const src = coverImage.preview || `${window.location.protocol}//${window.location.host}/neo_gallery/image?filename=${encodeURIComponent(coverImage.filename)}&subfolder=presets${categoryParam}`;
+            
+            const img = $el("img", {
+                className: "neo-gallery-card-cover",
+                src: src,
+                alt: title,
+                loading: "lazy"
+            });
+            
+            // Set a default height while image loads; will adjust after load
+            presetCoverWrapper.style.height = '120px';
+            
+            img.onload = () => {
+                const aspectRatio = img.naturalHeight / img.naturalWidth;
+                const cardWidth = presetCoverWrapper.clientWidth || 160;
+                const imgHeight = Math.max(cardWidth * aspectRatio, 80);
+                presetCoverWrapper.style.height = `${imgHeight}px`;
+            };
+            
+            presetCoverWrapper.appendChild(img);
+        } else {
+            presetCoverWrapper.appendChild($el("div", {
+                className: "neo-gallery-card-cover neo-gallery-card-placeholder",
+                textContent: "\uD83C\uDFA8"
+            }));
+        }
 
-        const imageGrid = $el("div", { className: "neo-gallery-image-grid" });
-        items.forEach(item => {
+        // Card info (name + count)
+        const info = $el("div", { className: "neo-gallery-card-info" }, [
+            $el("span", { className: "neo-gallery-card-name", textContent: title }),
+            $el("span", { className: "neo-gallery-card-count", textContent: `${items.length} items` })
+        ]);
+
+        card.appendChild(presetCoverWrapper);
+        card.appendChild(info);
+        return card;
+    }
+
+    showPresetCategory(rawCategory, displayTitle) {
+        this.currentView.mode = 'images';
+        this.currentView.source = 'presets';
+        // Store raw category for filtering in renderExpandedImages
+        this._presetRawCategory = rawCategory;
+        this._presetDisplayTitle = displayTitle;
+        
+        // Update breadcrumb with the display title
+        const breadcrumb = document.getElementById("neo-gallery-breadcrumb");
+        if (breadcrumb) {
+            breadcrumb.style.display = 'flex';
+            breadcrumb.innerHTML = '';
+            
+            // Home button
+            const homeBtn = $el("span", {
+                className: "neo-gallery-breadcrumb-item neo-gallery-breadcrumb-home",
+                textContent: "\uD83C\uDFE0",
+                onclick: (e) => { e.stopPropagation(); this.showCategoryCards(); }
+            });
+            breadcrumb.appendChild(homeBtn);
+            
+            // Separator and display title
+            const sep = $el("span", { className: "neo-gallery-breadcrumb-sep", textContent: ">" });
+            breadcrumb.appendChild(sep);
+            breadcrumb.appendChild($el("span", {
+                className: "neo-gallery-breadcrumb-item neo-gallery-breadcrumb-current",
+                textContent: displayTitle
+            }));
+        }
+
+        this.sortAndDisplayImages();
+    }
+
+    showCategoryImages(source, pathSegments, displayName) {
+        this.currentView.mode = 'images';
+        this.currentView.source = source;
+        this.currentView.categoryPath = pathSegments || [];
+        
+        // Update breadcrumb
+        const displaySource = displayName || source;
+        this.updateBreadcrumb(pathSegments, displaySource);
+
+        this.sortAndDisplayImages();
+    }
+
+    showCategoryCards() {
+        this.currentView.mode = 'categories';
+        this.currentView.source = null;
+        this.currentView.categoryPath = [];
+        
+        // Hide breadcrumb (show only home)
+        const breadcrumb = document.getElementById("neo-gallery-breadcrumb");
+        if (breadcrumb) {
+            breadcrumb.style.display = 'none';
+        }
+
+        this.sortAndDisplayImages();
+    }
+
+    renderExpandedImages() {
+        const { source, categoryPath } = this.currentView;
+        
+        // Collect all images from the selected source/category
+        let items = [];
+        let subfolder = source;
+
+        console.log('[Gallery] renderExpandedImages:', { source, categoryPath, presetRawCat: this._presetRawCategory });
+        if (source === 'presets') {
+            // Use _presetRawCategory for filtering (set by showPresetCategory)
+            const catToMatch = this._presetRawCategory || '';
+            console.log('[Gallery] Matching presets with category:', JSON.stringify(catToMatch));
+            items = this.allPresets.filter(i => i.category === catToMatch);
+            console.log('[Gallery] Found', items.length, 'presets for category');
+        } else {
+            // Custom directory
+            const dir = this.allCustomDirs.find(d => d.name === source);
+            if (dir) {
+                subfolder = source;
+                if (categoryPath.length > 0) {
+                    // Filter by category path
+                    const catKey = categoryPath[0];
+                    items = dir.items.filter(i => i.category === catKey || (!i.category && !catKey));
+                } else {
+                    items = [...dir.items];
+                }
+            }
+        }
+
+        if (items.length === 0) {
+            this.accordion.appendChild($el("div", {
+                className: "neo-gallery-no-files"
+            }, [
+                $el("div", { className: "neo-gallery-no-files-icon", textContent: "\uD83D\uDE14" }),
+                $el("div", { className: "neo-gallery-no-files-text", textContent: "No images found in this category" })
+            ]));
+            return;
+        }
+
+        // Sort items
+        const sortedItems = [...items].sort((a, b) => a.name.localeCompare(b.name));
+
+        // Image grid for expanded view
+        const imageGrid = $el("div", { className: "neo-gallery-image-grid neo-gallery-expanded-images" });
+        
+        for (const item of sortedItems) {
             const el = this.createImageElement(item, subfolder);
             if (!/\.(png|jpg|jpeg|gif|webp|bmp|tiff)$/i.test(item.filename)) {
                 el.style.width = `${this.maxThumbnailSize}px`;
             }
             imageGrid.appendChild(el);
-        });
-        content.appendChild(imageGrid);
+        }
 
-        section.appendChild(header);
-        section.appendChild(content);
-        return section;
+        this.accordion.appendChild(imageGrid);
     }
+
+    // ====== Image Element Creation ======
 
     createImageElement(image, subfolder) {
         // Use preview data URI directly if available
@@ -588,14 +881,14 @@ class NeoGallery {
             img.src = src;
         }
 
-        // Delete button for user_dir items - top-right corner
+        // Delete button for custom dir items - top-right corner
         let deleteBtn = null;
-        if (subfolder === "user_dir") {
+        if (!['presets'].includes(subfolder)) {
             deleteBtn = $el("div", {
                 className: "neo-gallery-delete-btn",
                 onclick: (e) => {
                     e.stopPropagation();
-                    this.deleteItem(image.name);
+                    this.deleteItem(image.name, subfolder);
                 }
             }, ["\u00D7"]);
         }
@@ -713,11 +1006,17 @@ class NeoGallery {
     }
 
     generateRandomPrompt() {
-        if (this.allPresets.length === 0) {
+        const allItems = [...this.allPresets];
+        // Also include items from custom dirs for random prompt
+        for (const dir of this.allCustomDirs) {
+            allItems.push(...dir.items.map(i => ({...i, subfolder: dir.name})));
+        }
+        
+        if (allItems.length === 0) {
             this.showToast('warning', 'No Presets', 'No presets available.');
             return;
         }
-        const randomItem = this.allPresets[Math.floor(Math.random() * this.allPresets.length)];
+        const randomItem = allItems[Math.floor(Math.random() * allItems.length)];
         if (randomItem && randomItem.txt_content) {
             this.copyToClipboard("Random Prompt", randomItem.txt_content);
         } else {
@@ -853,7 +1152,7 @@ class NeoGallery {
             className: "neo-gallery-no-files-message"
         }, [
             $el("div", { className: "neo-gallery-no-files-message-icon", textContent: "\uD83D\uDCF7" }),
-            $el("p", { className: "neo-gallery-no-files-message-text", textContent: "No presets found. Add images + .txt files to gallery/presets/." })
+            $el("p", { className: "neo-gallery-no-files-message-text", textContent: "No presets found. Add images + .txt files to gallery/presets/ or click \u{1F4C1} to add custom directories." })
         ]));
     }
 
@@ -935,10 +1234,25 @@ class NeoGallery {
 
         imgWrapper.appendChild(img);
 
-        const allImages = [
-            ...this.allUserDir.filter(u => u.custom_source === "user_dir").map(u => ({...u, subfolder: "user_dir"})).sort((a, b) => a.name.localeCompare(b.name)),
-            ...this.allPresets.map(p => ({...p, subfolder: "presets"})).sort((a, b) => a.name.localeCompare(b.name))
-        ];
+        // Build all images list for navigation
+        const allImages = [];
+        
+        // Add custom dir items
+        for (const dir of this.allCustomDirs) {
+            if (!this.isSearchActive || this.filteredCustomDirs.some(d => d.name === dir.name)) {
+                for (const item of dir.items) {
+                    allImages.push({...item, subfolder: dir.name});
+                }
+            }
+        }
+        
+        // Add presets
+        const presetItems = this.isSearchActive ? this.filteredPresets : this.allPresets;
+        for (const p of presetItems) {
+            allImages.push({...p, subfolder: "presets"});
+        }
+        
+        allImages.sort((a, b) => a.name.localeCompare(b.name));
         const currentIndex = allImages.findIndex(img => img.filename === image.filename && img.subfolder === subfolder);
 
         const prevBtn = $el("div", {
@@ -1221,7 +1535,24 @@ class NeoGallery {
 
     async init() {
         await this.loadPluginData();
+    }
+
+    async loadAndDisplay() {
+        // Show loading state immediately in accordion
+        this.accordion.innerHTML = '';
+        const loadingEl = $el("div", { className: "neo-gallery-loading-overlay" }, [
+            $el("div", { className: "neo-gallery-loading-spinner" }),
+            $el("span", { className: "neo-gallery-loading-text", textContent: "Loading gallery..." })
+        ]);
+        this.accordion.appendChild(loadingEl);
+
+        // Force DOM update before async operation
+        await Promise.resolve();
+        
         await this.loadGallery();
+        
+        // Remove loading state and display content
+        if (loadingEl.parentNode) loadingEl.remove();
         this.sortAndDisplayImages();
     }
 }
@@ -1249,21 +1580,34 @@ app.registerExtension({
             onChange: (val) => { if (app.neoGallery) app.neoGallery.updateLabelDisplay(val); }
         });
 
-        app.extensionManager.registerSidebarTab({
+        if (app.extensionManager && app.extensionManager.registerSidebarTab) {
+                app.extensionManager.registerSidebarTab({
             id: "neo.gallery",
             icon: "pi pi-id-card",
-            title: "\u753b\u5ef7",
+            title: "\u753B\u5EF7",
             tooltip: "Neo Gallery",
             type: "custom",
-            render: (el) => {
+            render: async (el) => {
+                // Clear any other content from previous renders first
                 el.innerHTML = "";
                 
-                if (!gallery.element.parentNode) {
-                    el.appendChild(gallery.element);
+                // Always append to ensure it's in the current container
+                if (gallery.element.parentNode) {
+                    gallery.element.parentNode.removeChild(gallery.element);
+                }
+                el.appendChild(gallery.element);
+                
+                // Load gallery data only when sidebar tab is opened
+                if (!gallery._loaded) {
+                    await gallery.loadAndDisplay();
+                    gallery._loaded = true;
                 } else {
-                    el.appendChild(gallery.element);
+                    // Use cached data — just re-render without API call
+                    gallery.accordion.innerHTML = "";
+                    gallery.sortAndDisplayImages();
                 }
             },
-        });
+            });
+        }
     },
 });

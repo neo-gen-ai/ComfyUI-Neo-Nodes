@@ -21,23 +21,33 @@ CUSTOM_DIR = GALLERY_DIR / "custom"
 IMG_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 
 
-def _get_user_custom_dir():
-    """Get user-configured custom directory path from settings.
+def _get_user_custom_dirs():
+    """Get all user-configured custom directory paths from settings.
     
-    Expects an absolute filesystem path (e.g., "C:/Users/Name/Images").
-    The path must exist on the server's filesystem.
+    Returns a list of Path objects for each configured directory.
+    Expects an array of absolute filesystem paths in "custom_directories" key.
+    Falls back to legacy single "custom_directory" for backward compatibility.
     """
+    dirs = []
     try:
         settings_path = CURRENT_DIR / "gallery_settings.json"
         if settings_path.exists():
             with open(settings_path, "r") as f:
                 settings = json.load(f)
-                user_dir = settings.get("custom_directory", "")
-                if user_dir and Path(user_dir).exists():
-                    return Path(user_dir)
+                # New format: array of directories
+                user_dirs = settings.get("custom_directories", [])
+                if isinstance(user_dirs, list):
+                    for d in user_dirs:
+                        if d and Path(d).exists():
+                            dirs.append(Path(d))
+                elif user_dirs:
+                    # Legacy single directory (backward compat)
+                    p = Path(user_dirs) if isinstance(user_dirs, str) else None
+                    if p and p.exists():
+                        dirs.append(p)
     except Exception:
         pass
-    return None
+    return dirs
 
 
 def _get_presets_dir():
@@ -181,21 +191,27 @@ def _scan_gallery_entries(directory: Path) -> list[dict]:
 
 @PromptServer.instance.routes.get("/neo_gallery/list")
 async def get_gallery_list(request):
-    """Return gallery listing (user_dir + presets)."""
-    user_custom_dir = _get_user_custom_dir()
+    """Return gallery listing (custom_dirs grouped by name + presets)."""
+    user_custom_dirs = _get_user_custom_dirs()
     presets = _scan_gallery_entries(PRESETS_DIR)
 
-    # Scan user-configured directory if set
-    user_entries = []
-    if user_custom_dir:
-        user_entries = _scan_gallery_entries(user_custom_dir)
-        for entry in user_entries:
-            entry["custom_source"] = "user_dir"  # tag to identify source
+    # Scan all user-configured directories, group by directory name
+    custom_dir_groups = {}  # dir_name -> {"name": ..., "path": ..., "items": [...]}
+    for dir_path in user_custom_dirs:
+        dir_name = dir_path.name if dir_path.name else str(dir_path)
+        entries = _scan_gallery_entries(dir_path)
+        for entry in entries:
+            entry["custom_source"] = dir_name  # tag to identify source directory
+        custom_dir_groups[dir_name] = {
+            "name": dir_name,
+            "path": str(dir_path),
+            "items": entries
+        }
 
     return web.json_response({
-        "user_dir": user_entries,
+        "custom_dirs": list(custom_dir_groups.values()),
         "presets": presets,
-        "total": len(user_entries) + len(presets)
+        "total": sum(len(g["items"]) for g in custom_dir_groups.values()) + len(presets)
     })
 
 
@@ -227,15 +243,22 @@ async def view_image(request):
         return web.Response(status=400)
 
     # Determine base directory based on subfolder
-    if subfolder == "user_dir":
-        user_custom_dir = _get_user_custom_dir()
-        base = user_custom_dir if user_custom_dir else None
-    elif subfolder == "presets":
-        base = PRESETS_DIR
-    elif subfolder == "custom":
-        base = CUSTOM_DIR
-    else:
+    if subfolder.startswith("__"):
         return web.Response(status=400)
+
+    # Find the matching custom_dir_groups entry by name, or use built-in dirs
+    user_custom_dirs = _get_user_custom_dirs()
+    base = None
+    for dir_path in user_custom_dirs:
+        dir_name = dir_path.name if dir_path.name else str(dir_path)
+        if subfolder == dir_name:
+            base = dir_path
+            break
+
+    if not base and subfolder == "presets":
+        base = PRESETS_DIR
+    elif not base and subfolder == "custom":
+        base = CUSTOM_DIR
 
     if not base or not base.exists():
         return web.Response(status=404)
@@ -323,30 +346,66 @@ def _load_settings() -> dict:
 
 @PromptServer.instance.routes.post("/neo_gallery/save_settings")
 async def save_gallery_settings(request):
-    """Save gallery settings (custom presets directory).
+    """Save gallery settings (custom directories list).
     
-    Expects an absolute filesystem path for custom_directory.
-    The path will be validated to ensure it exists on the server's filesystem.
+    Supports both legacy single directory and new array format.
+    New format: {"custom_directories": ["path1", "path2"]}
+    Legacy format: {"custom_directory": "path"} (will be migrated)
+    Actions: {"action": "add|remove|list", ...}
     """
     try:
         data = await request.json()
         current_settings = _load_settings()
         
-        # Handle old key name for backward compatibility
-        custom_dir = None
-        if "presets_directory" in data:
-            custom_dir = data["presets_directory"].strip()
-        elif "custom_directory" in data:
-            custom_dir = data["custom_directory"]
+        action = data.get("action")
         
-        if custom_dir is not None:
-            # Validate absolute path exists on server filesystem
-            if custom_dir and not Path(custom_dir).exists():
+        if action == "add":
+            # Add a new directory to the list
+            new_dir = data.get("path", "").strip()
+            if not new_dir:
+                return web.json_response({"success": False, "error": "No path provided"}, status=400)
+            if not Path(new_dir).exists():
                 return web.json_response(
-                    {"success": False, "error": f"Directory not found: {custom_dir}"}, 
+                    {"success": False, "error": f"Directory not found: {new_dir}"}, 
                     status=400
                 )
-            current_settings["custom_directory"] = custom_dir
+            # Get or create directories list
+            dirs = current_settings.get("custom_directories", [])
+            if new_dir not in dirs:
+                dirs.append(new_dir)
+            current_settings["custom_directories"] = dirs
+            # Migrate legacy key if exists
+            current_settings.pop("custom_directory", None)
+            
+        elif action == "remove":
+            # Remove a directory from the list
+            remove_path = data.get("path", "").strip()
+            dirs = current_settings.get("custom_directories", [])
+            if remove_path in dirs:
+                dirs.remove(remove_path)
+            current_settings["custom_directories"] = dirs
+            
+        elif action == "list":
+            # Just return the list, no changes
+            pass
+            
+        else:
+            # Legacy single directory handling (backward compat)
+            custom_dir = None
+            if "presets_directory" in data:
+                custom_dir = data["presets_directory"].strip()
+            elif "custom_directory" in data:
+                custom_dir = data["custom_directory"]
+            
+            if custom_dir is not None:
+                if custom_dir and not Path(custom_dir).exists():
+                    return web.json_response(
+                        {"success": False, "error": f"Directory not found: {custom_dir}"}, 
+                        status=400
+                    )
+                # Migrate to array format
+                current_settings["custom_directories"] = [custom_dir]
+                current_settings.pop("custom_directory", None)
         
         _save_settings(current_settings)
         return web.json_response({"success": True})
@@ -392,8 +451,23 @@ async def delete_gallery_item(request):
         if ".." in filename or not filename:
             return web.json_response({"error": "Invalid filename"}, status=400)
 
-        base = PRESETS_DIR if subfolder == "presets" else CUSTOM_DIR
-        if not base.exists():
+        # Try to find the base directory
+        user_custom_dirs = _get_user_custom_dirs()
+        base = None
+        
+        # Check custom directories first
+        for dir_path in user_custom_dirs:
+            dir_name = dir_path.name if dir_path.name else str(dir_path)
+            if subfolder == dir_name:
+                base = dir_path
+                break
+        
+        if not base and subfolder == "presets":
+            base = PRESETS_DIR
+        elif not base and subfolder == "custom":
+            base = CUSTOM_DIR
+
+        if not base or not base.exists():
             return web.json_response({"error": "Directory not found"}, status=404)
 
         img_deleted = False
