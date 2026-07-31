@@ -1832,24 +1832,64 @@ class NeoGallery {
 
         imgWrapper.appendChild(img);
 
-        // Build all images list for navigation
+        // Image info (dimensions) — displayed below the image, not overlapping
+        const imageInfo = $el("div", {
+            className: "neo-gallery-lightbox-image-info"
+        });
+        img.onload = () => {
+            if (imageInfo) {
+                imageInfo.textContent = `${img.naturalWidth} × ${img.naturalHeight}`;
+            }
+        };
+        // Append imageInfo inside imgWrapper so it stacks vertically below the image
+        imgWrapper.appendChild(imageInfo);
+
+        // Build all images list for navigation based on current view context
         const allImages = [];
+        const { source, categoryPath, mode } = this.currentView;
         
-        // Add custom dir items
-        for (const dir of this.allCustomDirs) {
-            if (!this.isSearchActive || this.filteredCustomDirs.some(d => d.name === dir.name)) {
-                for (const item of dir.items) {
-                    allImages.push({...item, subfolder: dir.name});
+        if (source === 'presets') {
+            // In presets view - only include preset items in the same category
+            const catToMatch = this._presetRawCategory || '';
+            const presetItems = this.isSearchActive ? this.filteredPresets : this.allPresets;
+            for (const p of presetItems) {
+                if (p.category === catToMatch) {
+                    allImages.push({...p, subfolder: "presets"});
                 }
+            }
+        } else if (source && mode !== 'categories') {
+            // In a custom directory view - only include items from that source
+            const dir = this.allCustomDirs.find(d => d.name === source);
+            if (dir) {
+                let dirItems = [...dir.items];
+                
+                // If we're in a subdirectory, filter by category path
+                if (categoryPath && categoryPath.length > 0) {
+                    const catKey = categoryPath[0];
+                    dirItems = dirItems.filter(i => i.category === catKey || (!i.category && !catKey));
+                }
+                
+                for (const item of dirItems) {
+                    allImages.push({...item, subfolder: source});
+                }
+            }
+        } else {
+            // In categories view - include all items from all sources
+            for (const dir of this.allCustomDirs) {
+                if (!this.isSearchActive || this.filteredCustomDirs.some(d => d.name === dir.name)) {
+                    for (const item of dir.items) {
+                        allImages.push({...item, subfolder: dir.name});
+                    }
+                }
+            }
+            
+            const presetItems = this.isSearchActive ? this.filteredPresets : this.allPresets;
+            for (const p of presetItems) {
+                allImages.push({...p, subfolder: "presets"});
             }
         }
         
-        // Add presets
-        const presetItems = this.isSearchActive ? this.filteredPresets : this.allPresets;
-        for (const p of presetItems) {
-            allImages.push({...p, subfolder: "presets"});
-        }
-        
+        // Sort by name to maintain consistent order with thumbnails
         allImages.sort((a, b) => a.name.localeCompare(b.name));
         const currentIndex = allImages.findIndex(img => img.filename === image.filename && img.subfolder === subfolder);
 
@@ -1937,6 +1977,7 @@ class NeoGallery {
             promptSection.appendChild(promptBtnsContainer);
         }
 
+        // Append elements: imgWrapper first (already contains imageInfo), then promptSection
         container.appendChild(imgWrapper);
         if (promptSection) container.appendChild(promptSection);
         container.appendChild(closeBtn);
@@ -2012,6 +2053,12 @@ class NeoGallery {
                 img.src = newImageUrl;
                 img.onload = () => {
                     img.style.opacity = '1';
+                    
+                    // Update image info overlay with dimensions
+                    const infoEl = container.querySelector('.neo-gallery-lightbox-image-info');
+                    if (infoEl) {
+                        infoEl.textContent = `${img.naturalWidth} × ${img.naturalHeight}`;
+                    }
                 };
             }, 150);
         }

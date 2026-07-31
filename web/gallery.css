@@ -367,26 +367,41 @@
 .neo-gallery-lightbox-img-wrapper {
     position: relative;
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
     flex: 1 1 auto;
     min-width: 0;
     height: 100%;
     padding: 16px;
-    border-right: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 /* Lightbox Image */
 .neo-gallery-lightbox-image {
     display: block;
     margin: 0 auto;
-    max-width: 100%;
-    max-height: calc(90vh - 80px);
+    max-width: calc(100vw - 500px);
+    max-height: calc(90vh - 60px);
+    width: auto;
+    height: auto;
     object-fit: contain;
     border-radius: 8px;
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.1);
     flex-shrink: 0;
     transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+/* Lightbox image info — displayed below the image */
+.neo-gallery-lightbox-image-info {
+    display: block;
+    text-align: center;
+    padding: 6px 12px;
+    margin-top: 8px;
+    color: #ccc;
+    font-size: 13px;
+    background-color: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(4px);
+    border-radius: 4px;
 }
 
 /* Lightbox Close Button */
