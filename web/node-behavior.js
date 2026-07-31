@@ -217,14 +217,11 @@ function createGenerateHandler(promptUI, promptService) {
 }
 
 /**
- * 创建随机生成提示词的处理函数
+ * 创建随机生成提示词的处理函数（纯本地操作，不需要大模型）
  */
 function createRandomHandler(promptUI, promptService) {
     return async () => {
-        const { randomBtn, customTextarea, textWidget, node, graph, downloadModal, statusBar } = promptUI;
-        
-        const modelOk = await checkModelAndPrompt(downloadModal, statusBar);
-        if (!modelOk) return;
+        const { randomBtn, customTextarea, textWidget, node, graph } = promptUI;
 
         randomBtn.disabled = true;
         randomBtn.textContent = "⏳";

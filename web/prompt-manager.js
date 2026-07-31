@@ -609,7 +609,7 @@ function createStatusBars() {
     const toggleWrapper = mkEl("div", "rs-toggle-wrapper");
     
     const toggleSwitch = mkEl("div", "rs-toggle-switch");
-    toggleSwitch.setAttribute("data-rs-tooltip", "Toggle external text input");
+    toggleSwitch.setAttribute("data-rs-tooltip", "Enable external text input");
     
     const toggleKnob = mkEl("div", "rs-toggle-knob");
     

@@ -347,6 +347,7 @@ async def get_directory_structure(request):
         return web.json_response({"error": "Invalid path"}, status=400)
     
     # Handle presets as a special directory
+    base: Path | None = None
     if dir_name == "presets":
         base = PRESETS_DIR
     else:
@@ -358,7 +359,7 @@ async def get_directory_structure(request):
                 base = dir_path
                 break
     
-    if not base or not base.exists():
+    if base is None or not base.exists():
         return web.json_response({"error": "Directory not found"}, status=404)
     
     # Construct full path with relative subdirectory
@@ -398,7 +399,7 @@ async def view_image(request):
 
     # Find the matching custom_dir_groups entry by name, or use built-in dirs
     user_custom_dirs = _get_user_custom_dirs()
-    base = None
+    base: Path | None = None
     
     # Handle hierarchical paths like "ningyao3D/26-06-26"
     dir_parts = [p for p in subfolder.split("/") if p]
@@ -430,7 +431,7 @@ async def view_image(request):
                 base = dir_path
                 break
 
-    if not base or not base.exists():
+    if base is None or not base.exists():
         return web.Response(status=404)
 
     # Check category subdirectory first, then fall back to root

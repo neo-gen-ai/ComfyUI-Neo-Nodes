@@ -531,19 +531,21 @@ app.registerExtension({
                     translateBtn.style.opacity = "1";
                     customTextarea.style.border = "1px solid #444";
 
-                    applyTheme(isDisabled);
+                    applyTheme(!isDisabled);
 
                     if (toggleSwitch && toggleKnob) {
                         if (isDisabled) {
-                            toggleSwitch.style.background = "#4a4a4a";
-                            toggleSwitch.style.borderColor = "#666";
-                            toggleKnob.style.transform = "translateX(12px)";
-                            toggleKnob.style.background = "#fff";
-                        } else {
+                            // LOCAL PROMPT: toggle OFF (knob left, gray background)
                             toggleSwitch.style.background = "#3a3a3a";
                             toggleSwitch.style.borderColor = "#555";
                             toggleKnob.style.transform = "translateX(0)";
                             toggleKnob.style.background = "#999";
+                        } else {
+                            // EXTERNAL INPUT: toggle ON (knob right, theme color background)
+                            toggleSwitch.style.background = "#4a4a4a";
+                            toggleSwitch.style.borderColor = "#666";
+                            toggleKnob.style.transform = "translateX(12px)";
+                            toggleKnob.style.background = "#fff";
                         }
                     }
 
