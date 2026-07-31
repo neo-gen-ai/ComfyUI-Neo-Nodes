@@ -173,6 +173,34 @@
     box-shadow: 0 4px 12px rgba(255, 106, 0, 0.2);
 }
 
+/* Type indicator badge (top-left corner) */
+.neo-gallery-card-type-badge {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    z-index: 5;
+    backdrop-filter: blur(4px);
+}
+
+.neo-gallery-card-type-badge.type-directory {
+    background-color: transparent;
+    color: white;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+}
+
+.neo-gallery-card-type-badge.type-image {
+    background-color: transparent;
+    color: #FF9944;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+}
+
 /* Card cover image area */
 .neo-gallery-card-cover-wrapper {
     width: 100%;
@@ -694,18 +722,25 @@
 
 .neo-gallery-random-btn,
 .neo-gallery-clear-btn {
-    padding: 4px 8px;
+    padding: 0;
+    margin: 0;
     background-color: transparent;
     border: 1px solid;
     border-radius: 4px;
     cursor: pointer;
-    font-size: 14px;
+    font-size: 16px;
     line-height: 1;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
 }
 
 .neo-gallery-random-btn {
     color: #FF6A00;
-    border-color: #FF6A00;
+    border-color: #555;
 }
 
 .neo-gallery-clear-btn {
@@ -714,7 +749,9 @@
 }
 
 .neo-gallery-random-btn:hover {
-    background-color: rgba(255, 106, 0, 0.1);
+    background-color: rgba(255, 106, 0, 0.2);
+    border-color: #FF6A00;
+    color: #FF9944;
 }
 
 .neo-gallery-clear-btn:hover {
@@ -908,6 +945,26 @@
     text-overflow: ellipsis;
 }
 
+/* Directory structure summary */
+.neo-gallery-dir-summary {
+    padding: 8px 12px;
+    background-color: rgba(255, 106, 0, 0.1);
+    border-left: 3px solid #FF6A00;
+    color: #FF9944;
+    font-size: 12px;
+    margin-bottom: 8px;
+}
+
+/* Section separator in directory view */
+.neo-gallery-section-separator {
+    padding: 8px 12px;
+    background-color: rgba(255, 255, 255, 0.05);
+    border-radius: 4px;
+    color: #aaa;
+    font-size: 12px;
+    margin: 12px 0 8px 0;
+}
+
 /* Load more button for large image lists */
 .neo-gallery-load-more-btn {
     display: block;
@@ -957,4 +1014,232 @@
 
 .neo-gallery-feedback-text {
     color: white;
+}
+
+/* ============================================
+   Directory Management Modal
+   ============================================ */
+
+.neo-gallery-dir-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2147483645;
+}
+
+.neo-gallery-dir-modal {
+    background-color: #2a2a2a;
+    border-radius: 8px;
+    width: 480px;
+    max-width: 90vw;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+/* Title bar */
+.neo-gallery-dir-modal-titlebar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    border-bottom: 1px solid #333;
+}
+
+.neo-gallery-dir-modal-title {
+    color: #eee;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.neo-gallery-dir-modal-close {
+    color: #888;
+    cursor: pointer;
+    font-size: 18px;
+    line-height: 1;
+    padding: 2px 6px;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+}
+
+.neo-gallery-dir-modal-close:hover {
+    color: #FF9944;
+    background-color: rgba(255, 106, 0, 0.1);
+}
+
+/* Directory list area */
+.neo-gallery-dir-list-container {
+    padding: 12px 16px;
+    border-bottom: 1px solid #333;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.neo-gallery-dir-empty {
+    color: #888;
+    font-size: 13px;
+    text-align: center;
+    padding: 12px 0;
+}
+
+/* Individual directory item */
+.neo-gallery-dir-items {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.neo-gallery-dir-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 10px;
+    background-color: #1a1a1a;
+    border-radius: 4px;
+    border: 1px solid #333;
+}
+
+.neo-gallery-dir-path {
+    color: #ccc;
+    font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    margin-right: 8px;
+}
+
+.neo-gallery-dir-remove-btn {
+    background-color: rgba(244, 67, 54, 0.2);
+    color: #f44336;
+    border: none;
+    border-radius: 4px;
+    padding: 4px 8px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+}
+
+.neo-gallery-dir-remove-btn:hover {
+    background-color: rgba(244, 67, 54, 0.4);
+    color: #ff8888;
+}
+
+/* Add new directory area */
+.neo-gallery-dir-add-area {
+    display: flex;
+    gap: 8px;
+    padding: 12px 16px;
+    border-bottom: 1px solid #333;
+}
+
+.neo-gallery-dir-input {
+    flex: 1;
+    padding: 8px 10px;
+    background-color: #1a1a1a;
+    border: 1px solid #444;
+    border-radius: 4px;
+    color: white;
+    font-size: 13px;
+    outline: none;
+}
+
+.neo-gallery-dir-input:focus {
+    border-color: #FF6A00;
+}
+
+.neo-gallery-dir-add-btn {
+    padding: 8px 12px;
+    background-color: rgba(255, 106, 0, 0.2);
+    color: #FF9944;
+    border: 1px solid #FF6A00;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+}
+
+.neo-gallery-dir-add-btn:hover {
+    background-color: rgba(255, 106, 0, 0.3);
+}
+
+/* Bulk add area */
+.neo-gallery-dir-bulk-area {
+    padding: 12px 16px;
+}
+
+.neo-gallery-dir-textarea {
+    width: 100%;
+    padding: 8px 10px;
+    background-color: #1a1a1a;
+    border: 1px solid #444;
+    border-radius: 4px;
+    color: white;
+    font-size: 12px;
+    font-family: monospace;
+    resize: vertical;
+    outline: none;
+    box-sizing: border-box;
+}
+
+.neo-gallery-dir-textarea:focus {
+    border-color: #FF6A00;
+}
+
+.neo-gallery-dir-bulk-btn {
+    margin-top: 8px;
+    padding: 6px 14px;
+    background-color: rgba(255, 106, 0, 0.15);
+    color: #FF9944;
+    border: 1px solid #FF6A00;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.2s ease;
+}
+
+.neo-gallery-dir-bulk-btn:hover {
+    background-color: rgba(255, 106, 0, 0.25);
+}
+
+/* Quick add buttons area */
+.neo-gallery-dir-quick-add {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    border-bottom: 1px solid #333;
+}
+
+.neo-gallery-dir-quick-label {
+    color: #888;
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+.neo-gallery-dir-quick-btn {
+    padding: 5px 10px;
+    background-color: rgba(255, 106, 0, 0.1);
+    color: #FF9944;
+    border: 1px solid rgba(255, 106, 0, 0.3);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.2s ease;
+}
+
+.neo-gallery-dir-quick-btn:hover {
+    background-color: rgba(255, 106, 0, 0.2);
+    border-color: #FF6A00;
+    color: #FFB84D;
 }

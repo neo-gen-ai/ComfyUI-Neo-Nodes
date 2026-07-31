@@ -18,7 +18,7 @@ GALLERY_DIR = CURRENT_DIR / "gallery"
 PRESETS_DIR = GALLERY_DIR / "presets"
 CUSTOM_DIR = GALLERY_DIR / "custom"
 
-IMG_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
+IMG_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tiff"}
 
 
 def _get_user_custom_dirs():
@@ -208,7 +208,18 @@ async def get_gallery_list(request):
     })
 
 
+
 CURRENT_WEB_DIR = CURRENT_DIR / "web"
+
+# Minimal 1x1 transparent PNG as placeholder
+_PLACEHOLDER_PNG = bytes([
+    0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D,
+    0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+    0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00,
+    0x0A, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00,
+    0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49,
+    0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82
+])
 
 
 @PromptServer.instance.routes.get("/neo_gallery/css")
@@ -220,6 +231,152 @@ async def serve_css(request):
             css_content = f.read()
         return web.Response(text=css_content, content_type="text/css")
     return web.Response(status=404)
+
+
+@PromptServer.instance.routes.get("/neo_gallery/placeholder.png")
+async def serve_placeholder(request):
+    """Serve a minimal placeholder image."""
+    return web.Response(body=_PLACEHOLDER_PNG, content_type="image/png")
+
+
+@PromptServer.instance.routes.get("/neo_gallery/resolve_path")
+async def resolve_comfyui_path(request):
+    """Resolve ComfyUI's built-in input/output directory paths.
+    
+    Query params:
+    - path_type: 'input' or 'output'
+    
+    Returns the absolute filesystem path that ComfyUI uses for these directories.
+    """
+    path_type = request.rel_url.query.get("path_type", "").lower()
+    
+    if path_type not in ("input", "output"):
+        return web.json_response({"success": False, "error": "Invalid path_type"}, status=400)
+    
+    try:
+        # Import folder_paths to get the actual ComfyUI directory paths
+        import folder_paths as _folder_paths
+        
+        if path_type == "input":
+            base_dir = _folder_paths.input_directory
+        else:  # output
+            base_dir = _folder_paths.output_directory
+        
+        # Validate the resolved path exists and is within expected bounds
+        resolved_path = Path(base_dir).resolve()
+        if not resolved_path.exists():
+            return web.json_response({
+                "success": False, 
+                "error": f"Directory does not exist: {resolved_path}"
+            }, status=404)
+        
+        # Security check: ensure path is within reasonable bounds (not parent of ComfyUI root)
+        comfy_root = Path(__file__).parent.parent.parent.resolve()  # ComfyUI/
+        if not str(resolved_path).startswith(str(comfy_root)):
+            return web.json_response({
+                "success": False, 
+                "error": f"Path outside ComfyUI directory: {resolved_path}"
+            }, status=400)
+        
+        return web.json_response({
+            "success": True,
+            "path": str(resolved_path),
+            "display_name": resolved_path.name
+        })
+    except Exception as e:
+        print(f"[Neo Gallery] Error resolving {path_type} path: {e}")
+        return web.json_response({
+            "success": False, 
+            "error": f"Failed to resolve {path_type} directory: {str(e)}"
+        }, status=500)
+
+
+def _scan_directory_structure(directory: Path, base_dir: Path) -> dict:
+    """Scan directory and return hierarchical structure of subdirectories.
+    
+    Returns a dict with:
+    - 'subdirs': list of subdirectory names (only direct children)
+    - 'images': list of image entries at this level (files directly in this dir, not in subdirs)
+    """
+    if not directory.exists():
+        return {"subdirs": [], "images": []}
+    
+    # Collect all items recursively first
+    all_entries = _scan_gallery_entries(directory)
+    
+    # Group by category (first-level subdir name)
+    subdir_map = {}  # subdir_name -> list of entries
+    
+    for entry in all_entries:
+        cat = entry.get("category", "")
+        if cat:
+            if cat not in subdir_map:
+                subdir_map[cat] = []
+            subdir_map[cat].append(entry)
+    
+    subdirs = sorted(subdir_map.keys())
+    
+    # Images at root level (no category)
+    images = [e for e in all_entries if not e.get("category")]
+    
+    return {
+        "subdirs": subdirs,
+        "images": images,
+        "has_subdirs": len(subdirs) > 0,
+        "image_count": len(images),
+        "total_images": len(all_entries)
+    }
+
+
+@PromptServer.instance.routes.get("/neo_gallery/dir_structure")
+async def get_directory_structure(request):
+    """Get hierarchical directory structure for a given path.
+    
+    Query params:
+    - dir_name: name of the custom directory or 'presets' (required)
+    - path: relative subdirectory path within that directory (optional, "/" separated)
+    """
+    if "dir_name" not in request.rel_url.query:
+        return web.json_response({"error": "Missing dir_name"}, status=400)
+    
+    dir_name = request.rel_url.query["dir_name"]
+    rel_path = request.rel_url.query.get("path", "")
+    
+    # Security check for path traversal
+    if ".." in rel_path:
+        return web.json_response({"error": "Invalid path"}, status=400)
+    
+    # Handle presets as a special directory
+    if dir_name == "presets":
+        base = PRESETS_DIR
+    else:
+        # Find the custom directory
+        user_custom_dirs = _get_user_custom_dirs()
+        for dir_path in user_custom_dirs:
+            d_name = dir_path.name if dir_path.name else str(dir_path)
+            if d_name == dir_name:
+                base = dir_path
+                break
+    
+    if not base or not base.exists():
+        return web.json_response({"error": "Directory not found"}, status=404)
+    
+    # Construct full path with relative subdirectory
+    if rel_path:
+        parts = [p for p in rel_path.split("/") if p]  # filter empty strings
+        target_dir = base
+        for part in parts:
+            target_dir = target_dir / part
+    else:
+        target_dir = base
+    
+    structure = _scan_directory_structure(target_dir, base)
+    
+    return web.json_response({
+        "dir_name": dir_name,
+        "path": rel_path,
+        **structure
+    })
 
 
 @PromptServer.instance.routes.get("/neo_gallery/image")
@@ -242,16 +399,36 @@ async def view_image(request):
     # Find the matching custom_dir_groups entry by name, or use built-in dirs
     user_custom_dirs = _get_user_custom_dirs()
     base = None
-    for dir_path in user_custom_dirs:
-        dir_name = dir_path.name if dir_path.name else str(dir_path)
-        if subfolder == dir_name:
-            base = dir_path
-            break
-
-    if not base and subfolder == "presets":
-        base = PRESETS_DIR
-    elif not base and subfolder == "custom":
-        base = CUSTOM_DIR
+    
+    # Handle hierarchical paths like "ningyao3D/26-06-26"
+    dir_parts = [p for p in subfolder.split("/") if p]
+    
+    def _match_dir_name(parts_list):
+        """Match directory name against user_custom_dirs by checking the last component of each path."""
+        target = parts_list[0]
+        for dir_path in user_custom_dirs:
+            # Match against the last component (e.g., "ningyao3D" from full path)
+            if dir_path.name == target:
+                return dir_path
+        return None
+    
+    if len(dir_parts) > 1:
+        # First part is the directory name, rest are subdirectories
+        matched_dir = _match_dir_name(dir_parts)
+        if matched_dir:
+            base = matched_dir / "/".join(dir_parts[1:])
+    elif subfolder in ("presets", "custom"):
+        if subfolder == "presets":
+            base = PRESETS_DIR
+        else:
+            base = CUSTOM_DIR
+    else:
+        # Try to find as custom directory name
+        for dir_path in user_custom_dirs:
+            d_name = dir_path.name if dir_path.name else str(dir_path)
+            if subfolder == d_name:
+                base = dir_path
+                break
 
     if not base or not base.exists():
         return web.Response(status=404)
@@ -268,7 +445,7 @@ async def view_image(request):
     
     # Build list of candidate filenames to try
     candidates_to_try = [filename]  # Full filename first (e.g., "001.png")
-    for ext in [".jpeg", ".jpg", ".png", ".webp"]:
+    for ext in [".jpeg", ".jpg", ".png", ".webp", ".gif", ".bmp", ".tiff"]:
         candidates_to_try.append(file_stem + ext)
     
     for candidate_filename in candidates_to_try:
