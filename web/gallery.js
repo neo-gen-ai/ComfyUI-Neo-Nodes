@@ -129,6 +129,9 @@ class NeoGallery {
         const breadcrumb = document.getElementById("neo-gallery-breadcrumb");
         if (!breadcrumb) return;
 
+        // Remove any existing sibling dropdowns first
+        this._removeSiblingDropdown();
+
         // Determine the root directory name for this navigation context
         const rootDirName = this.currentView.source || '';
         
@@ -143,7 +146,7 @@ class NeoGallery {
         breadcrumb.style.display = 'flex';
         breadcrumb.innerHTML = '';
         
-        // Home button - goes back to category cards view
+        // Home button - goes back to category cards view (left side)
         const homeBtn = $el("span", {
             className: "neo-gallery-breadcrumb-item neo-gallery-breadcrumb-home",
             textContent: "\uD83C\uDFE0",
@@ -182,11 +185,20 @@ class NeoGallery {
                 breadcrumb.appendChild(sep);
                 
                 if (i === pathSegments.length - 1) {
-                    // Last segment is the current location (not clickable)
-                    breadcrumb.appendChild($el("span", {
-                        className: "neo-gallery-breadcrumb-item neo-gallery-breadcrumb-current",
-                        textContent: pathSegments[i]
-                    }));
+                    // Last segment is the current location — clickable to show sibling directories
+                    const currentSegmentEl = $el("span", {
+                        className: "neo-gallery-breadcrumb-item neo-gallery-breadcrumb-current neo-gallery-breadcrumb-sibling-trigger",
+                        textContent: pathSegments[i],
+                        title: "点击显示同级目录"
+                    });
+                    
+                    // Add click handler to show sibling dropdown
+                    currentSegmentEl.onclick = (e) => {
+                        e.stopPropagation();
+                        this._toggleSiblingDropdown(e, rootDirName, pathSegments);
+                    };
+                    
+                    breadcrumb.appendChild(currentSegmentEl);
                 } else {
                     breadcrumb.appendChild($el("span", {
                         className: "neo-gallery-breadcrumb-item",
@@ -198,6 +210,30 @@ class NeoGallery {
                     }));
                 }
             }
+
+            // Add "up" button on the right side if there are parent directories to navigate to
+            if (pathSegments.length > 0) {
+                const sepUp = $el("span", { className: "neo-gallery-breadcrumb-sep", textContent: "" });
+                breadcrumb.appendChild(sepUp);
+
+                // Spacer to push up button to the right
+                const spacer = $el("div", { style: { flex: 1 } });
+                breadcrumb.appendChild(spacer);
+
+                // Up button - goes to parent directory
+                const upBtn = $el("span", {
+                    className: "neo-gallery-breadcrumb-item neo-gallery-breadcrumb-up",
+                    title: "上一级",
+                    textContent: "\u2B06",
+                    onclick: (e) => {
+                        e.stopPropagation();
+                        // Navigate to parent by removing the last segment
+                        const parentPath = pathSegments.slice(0, -1);
+                        this.showDirectoryStructure(rootDirName, parentPath);
+                    }
+                });
+                breadcrumb.appendChild(upBtn);
+            }
         } else if (sourceName) {
             // Fallback for presets view - just show source name
             const sep = $el("span", { className: "neo-gallery-breadcrumb-sep", textContent: ">" });
@@ -206,7 +242,118 @@ class NeoGallery {
                 className: "neo-gallery-breadcrumb-item neo-gallery-breadcrumb-current",
                 textContent: sourceName
             }));
+
+            // Add up button for presets view too (go back to categories)
+            if (pathSegments.length > 0 || sourceName) {
+                const spacer = $el("div", { style: { flex: 1 } });
+                breadcrumb.appendChild(spacer);
+
+                const upBtn = $el("span", {
+                    className: "neo-gallery-breadcrumb-item neo-gallery-breadcrumb-up",
+                    title: "返回上级",
+                    textContent: "\u2B06",
+                    onclick: (e) => {
+                        e.stopPropagation();
+                        this.showCategoryCards();
+                    }
+                });
+                breadcrumb.appendChild(upBtn);
+            }
         }
+    }
+
+    // ====== Sibling Directory Dropdown ======
+
+    _removeSiblingDropdown() {
+        const existing = document.getElementById('neo-gallery-sibling-dropdown');
+        if (existing) existing.remove();
+    }
+
+    async _toggleSiblingDropdown(event, rootDirName, pathSegments) {
+        // Remove any existing dropdown first
+        this._removeSiblingDropdown();
+
+        // If the clicked element already has a dropdown parent, close it
+        const trigger = event.currentTarget;
+        if (trigger.classList.contains('neo-gallery-breadcrumb-sibling-trigger')) {
+            // Check if there's an open sibling dropdown near this trigger
+            const existingDropdown = document.getElementById('neo-gallery-sibling-dropdown');
+            if (existingDropdown) {
+                existingDropdown.remove();
+                return;
+            }
+        }
+
+        // Get the parent directory path for fetching siblings (exclude current segment)
+        const parentPath = pathSegments.slice(0, -1);
+        
+        console.log('[Gallery] Sibling dropdown:', { rootDirName, pathSegments, parentPath });
+        
+        // Fetch sibling directories from backend
+        let siblings = [];
+        try {
+            const resp = await api.fetchApi(`/neo_gallery/dir_structure?dir_name=${encodeURIComponent(rootDirName)}&path=${encodeURIComponent(parentPath.join("/"))}`);
+            if (resp.ok) {
+                const structure = await resp.json();
+                console.log('[Gallery] Sibling dirs response:', structure.subdirs);
+                // Get subdirectories at this level — these are siblings of the current directory
+                siblings = (structure.subdirs || []).map(s => ({ name: s, path: [...parentPath, s] }));
+            }
+        } catch (e) {
+            console.error('[Gallery] Error fetching sibling directories:', e);
+        }
+
+        // Only show dropdown if there are siblings to navigate to
+        if (siblings.length === 0) return;
+
+        // Create dropdown container
+        const dropdown = $el("div", {
+            id: "neo-gallery-sibling-dropdown",
+            className: "neo-gallery-sibling-dropdown"
+        });
+
+        // Get trigger position for positioning the dropdown
+        const rect = event.target.getBoundingClientRect();
+        
+        // Position dropdown below the breadcrumb
+        dropdown.style.position = 'fixed';
+        dropdown.style.top = (rect.bottom + 4) + 'px';
+        dropdown.style.left = Math.min(rect.left, window.innerWidth - 200) + 'px';
+        dropdown.style.zIndex = '9999';
+
+        // Create list of sibling items
+        const listContainer = $el("div", { className: "neo-gallery-sibling-list" });
+        
+        for (const sib of siblings) {
+            const item = $el("div", {
+                className: "neo-gallery-sibling-item",
+                onclick: (e) => {
+                    e.stopPropagation();
+                    this._removeSiblingDropdown();
+                    // Navigate to sibling directory
+                    this.showDirectoryStructure(rootDirName, sib.path);
+                },
+                textContent: sib.name
+            });
+            
+            // Add hover effect
+            item.onmouseenter = () => item.classList.add('neo-gallery-sibling-item-hover');
+            item.onmouseleave = () => item.classList.remove('neo-gallery-sibling-item-hover');
+            
+            listContainer.appendChild(item);
+        }
+
+        dropdown.appendChild(listContainer);
+        document.body.appendChild(dropdown);
+
+        // Close dropdown when clicking outside
+        const closeHandler = (e) => {
+            if (!dropdown.contains(e.target) && e.target !== trigger) {
+                this._removeSiblingDropdown();
+                document.removeEventListener('click', closeHandler);
+            }
+        };
+        setTimeout(() => document.addEventListener('click', closeHandler), 10);
     }
 
     // ====== Directory Management ======
@@ -1240,8 +1387,11 @@ class NeoGallery {
             return;
         }
 
-        // Sort items
-        const sortedItems = [...images].sort((a, b) => a.name.localeCompare(b.name));
+        // Sort by mtime descending (newest first), fallback to name sort
+        const sortedItems = [...images].sort((a, b) => {
+            if ((b._mtime || 0) !== (a._mtime || 0)) return (b._mtime || 0) - (a._mtime || 0);
+            return a.name.localeCompare(b.name);
+        });
 
         // For large lists, use pagination to avoid freezing the UI
         const PAGE_SIZE = 100;
@@ -1397,8 +1547,11 @@ class NeoGallery {
             return;
         }
 
-        // Sort items
-        const sortedItems = [...items].sort((a, b) => a.name.localeCompare(b.name));
+        // Sort by mtime descending (newest first), fallback to name sort
+        const sortedItems = [...items].sort((a, b) => {
+            if ((b._mtime || 0) !== (a._mtime || 0)) return (b._mtime || 0) - (a._mtime || 0);
+            return a.name.localeCompare(b.name);
+        });
 
         // For large lists, use pagination to avoid freezing the UI
         const PAGE_SIZE = 100;
@@ -2228,7 +2381,7 @@ app.registerExtension({
         if (app.extensionManager && app.extensionManager.registerSidebarTab) {
                 app.extensionManager.registerSidebarTab({
             id: "neo.gallery",
-            icon: "pi pi-id-card",
+            icon: "pi pi-images",
             title: "画廊",
             tooltip: "Neo Gallery",
             type: "custom",

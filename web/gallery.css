@@ -285,6 +285,55 @@
     font-size: 13px;
 }
 
+/* Up button in breadcrumb */
+.neo-gallery-breadcrumb-up {
+    color: #FF9944 !important;
+    cursor: pointer;
+    transition: color 0.2s ease;
+    user-select: none;
+    padding: 2px 6px;
+    border-radius: 3px;
+}
+
+.neo-gallery-breadcrumb-up:hover {
+    color: #FFB84D !important;
+    background-color: rgba(255, 106, 0, 0.1);
+}
+
+/* Sibling dropdown menu */
+.neo-gallery-sibling-dropdown {
+    min-width: 120px;
+    max-width: 200px;
+    background-color: #2a2a2a;
+    border: 1px solid #FF6A00;
+    border-radius: 4px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+    overflow: hidden;
+}
+
+.neo-gallery-sibling-list {
+    padding: 4px 0;
+    max-height: 600px;
+    overflow-y: auto;
+}
+
+.neo-gallery-sibling-item {
+    padding: 6px 12px;
+    color: #ccc;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.neo-gallery-sibling-item:hover,
+.neo-gallery-sibling-item-hover {
+    background-color: rgba(255, 106, 0, 0.15);
+    color: #FF9944;
+}
+
 .neo-gallery-breadcrumb-item {
     color: #aaa;
     cursor: pointer;
@@ -302,8 +351,14 @@
 
 .neo-gallery-breadcrumb-current {
     color: #eee;
-    cursor: default;
+    cursor: pointer;
     font-weight: 500;
+}
+
+.neo-gallery-breadcrumb-sibling-trigger:hover {
+    color: #FF9944 !important;
+    background-color: rgba(255, 106, 0, 0.1);
+    border-radius: 3px;
 }
 
 .neo-gallery-breadcrumb-sep {
