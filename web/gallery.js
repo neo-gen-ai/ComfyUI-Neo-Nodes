@@ -624,7 +624,7 @@ class NeoGallery {
         const coverWrapper = $el("div", { className: "neo-gallery-card-cover-wrapper" });
         if (coverImage) {
             const categoryParam = coverImage.category ? `&category=${encodeURIComponent(coverImage.category)}` : '';
-            const src = coverImage.preview || `${window.location.protocol}//${window.location.host}/neo_gallery/image?filename=${encodeURIComponent(coverImage.filename)}&subfolder=${encodeURIComponent(name)}${categoryParam}`;
+            const src = `${window.location.protocol}//${window.location.host}/neo_gallery/image?filename=${encodeURIComponent(coverImage.filename)}&subfolder=${encodeURIComponent(name)}${categoryParam}`;
             
             const img = $el("img", {
                 className: "neo-gallery-card-cover",
@@ -833,18 +833,49 @@ class NeoGallery {
         // Sort items
         const sortedItems = [...items].sort((a, b) => a.name.localeCompare(b.name));
 
+        // For large lists, use pagination to avoid freezing the UI
+        const PAGE_SIZE = 100;
+        let displayedCount = Math.min(PAGE_SIZE, sortedItems.length);
+        
         // Image grid for expanded view
         const imageGrid = $el("div", { className: "neo-gallery-image-grid neo-gallery-expanded-images" });
         
-        for (const item of sortedItems) {
-            const el = this.createImageElement(item, subfolder);
-            if (!/\.(png|jpg|jpeg|gif|webp|bmp|tiff)$/i.test(item.filename)) {
-                el.style.width = `${this.maxThumbnailSize}px`;
+        const renderPage = (count) => {
+            for (let i = 0; i < count && this._renderQueue.length > 0; i++) {
+                const item = this._renderQueue.shift();
+                const el = this.createImageElement(item, subfolder);
+                if (!/\.(png|jpg|jpeg|gif|webp|bmp|tiff)$/i.test(item.filename)) {
+                    el.style.width = `${this.maxThumbnailSize}px`;
+                }
+                imageGrid.appendChild(el);
             }
-            imageGrid.appendChild(el);
-        }
+        };
 
+        // Render first page immediately using requestAnimationFrame to avoid blocking
+        this._renderQueue = [...sortedItems];
+        
+        // Append grid and load more button BEFORE rendering to ensure DOM structure is correct
         this.accordion.appendChild(imageGrid);
+        
+        renderPage(displayedCount);
+        
+        if (displayedCount < sortedItems.length) {
+            const createLoadMoreBtn = () => {
+                const btn = $el("div", {
+                    className: "neo-gallery-load-more-btn",
+                    textContent: `Load more (${this._renderQueue.length} remaining)`
+                });
+                btn.onclick = () => {
+                    btn.remove();
+                    renderPage(PAGE_SIZE);
+                    if (this._renderQueue.length > 0) {
+                        this.accordion.appendChild(createLoadMoreBtn());
+                    }
+                };
+                return btn;
+            };
+            this.accordion.appendChild(createLoadMoreBtn());
+        }
     }
 
     // ====== Image Element Creation ======

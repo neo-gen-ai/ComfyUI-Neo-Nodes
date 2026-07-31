@@ -106,21 +106,14 @@ def _parse_txt(raw_txt: str) -> dict:
 
 
 def _make_entry(image_path: Path, txt_path: Path, raw_txt: str) -> dict | None:
-    """Build a gallery entry dict from image + txt paths."""
-    try:
-        raw = image_path.read_bytes()
-        preview_b64 = base64.b64encode(raw).decode("ascii")
-        ext = image_path.suffix.lower()
-        if ext == ".jpeg":
-            ext = ".jpg"
-        mime = f"image/{ext.lstrip('.')}"
-        preview_datauri = f"data:{mime};base64,{preview_b64}"
-    except Exception:
-        preview_datauri = None
-
+    """Build a gallery entry dict from image + txt paths.
+    
+    Note: preview data is NOT included here to keep API responses small.
+    The frontend fetches images via /neo_gallery/image endpoint instead.
+    """
     fields = _parse_txt(raw_txt)
-    fields["preview"] = preview_datauri
-
+    # Don't include preview in listing - let frontend fetch via URL
+    
     return {
         "name": image_path.stem,
         "filename": image_path.name,
@@ -265,19 +258,47 @@ async def view_image(request):
 
     # Check category subdirectory first, then fall back to root
     fullpath = None
-    extensions = ["", ".jpeg", ".jpg", ".png", ".webp"]
-    for ext in extensions:
+    
+    # Determine the stem (filename without extension) for matching
+    from pathlib import PurePath as _PurePath
+    _p = _PurePath(filename)
+    file_stem = _p.stem  # e.g. "001" from "001.png"
+    
+    checked_paths = set()
+    
+    # Build list of candidate filenames to try
+    candidates_to_try = [filename]  # Full filename first (e.g., "001.png")
+    for ext in [".jpeg", ".jpg", ".png", ".webp"]:
+        candidates_to_try.append(file_stem + ext)
+    
+    for candidate_filename in candidates_to_try:
+        if candidate_filename in checked_paths:
+            continue
+        
+        # Try with category first
         if category:
-            candidate = base / category / f"{filename}{ext}"
+            candidate = base / category / candidate_filename
             if candidate.exists():
                 fullpath = candidate
+                checked_paths.add(str(candidate))
                 break
+        
         # Also check root level (fallback)
-        if fullpath is None:
-            candidate = base / f"{filename}{ext}"
+        if not fullpath:
+            candidate = base / candidate_filename
             if candidate.exists():
                 fullpath = candidate
+                checked_paths.add(str(candidate))
                 break
+    
+    # Final fallback: scan the entire base directory recursively for matching stem
+    if fullpath is None:
+        for p in base.rglob(f"{file_stem}*"):
+            if p.is_file() and str(p) not in checked_paths:
+                ext_lower = p.suffix.lower()
+                if ext_lower in IMG_EXTENSIONS:
+                    fullpath = p
+                    break
 
     if fullpath and fullpath.exists():
         with open(fullpath, "rb") as f:
