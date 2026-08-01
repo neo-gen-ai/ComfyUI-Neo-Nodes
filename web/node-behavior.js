@@ -33,6 +33,15 @@ function getTextKey(instanceUid) {
 /**
  * 保存文本到 localStorage 和 widget
  */
+/**
+ * Set textarea value and dispatch synthetic "input" event (triggers auto-switch from EXTERNAL to LOCAL)
+ */
+function setTextAndTrigger(customTextarea, value) {
+    if (!customTextarea) return;
+    customTextarea.value = value;
+    customTextarea.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
 function saveTextToStorage(node, textWidget, customTextarea, forceSave = false) {
     const instanceUid = getInstanceUid(node);
     const textKey = getTextKey(instanceUid);
@@ -115,7 +124,7 @@ function createEnhanceHandler(promptUI, promptService) {
         try {
             const data = await promptService.enhance(currentText);
             if (data.status === "success") {
-                customTextarea.value = data.enhanced;
+                setTextAndTrigger(customTextarea, data.enhanced);
                 saveTextToStorage(node, textWidget, customTextarea);
                 if (graph) graph.setDirtyCanvas(true, true);
             } else {
@@ -154,7 +163,7 @@ function createTranslateHandler(promptUI, promptService) {
         try {
             const data = await promptService.translate(currentText);
             if (data.status === "success") {
-                customTextarea.value = data.translated;
+                setTextAndTrigger(customTextarea, data.translated);
                 saveTextToStorage(node, textWidget, customTextarea);
                 if (graph) graph.setDirtyCanvas(true, true);
             } else {
@@ -199,7 +208,7 @@ function createGenerateHandler(promptUI, promptService) {
             const data = await promptService.smart(currentPrompt, quickText);
             
             if (data.status === "success") {
-                customTextarea.value = data.prompt;
+                setTextAndTrigger(customTextarea, data.prompt);
                 saveTextToStorage(node, textWidget, customTextarea);
                 if (graph) graph.setDirtyCanvas(true, true);
             } else {
@@ -229,7 +238,7 @@ function createRandomHandler(promptUI, promptService) {
         try {
             const data = await promptService.random();
             if (data.status === "success") {
-                customTextarea.value = data.prompt;
+                setTextAndTrigger(customTextarea, data.prompt);
                 saveTextToStorage(node, textWidget, customTextarea);
                 if (graph) graph.setDirtyCanvas(true, true);
             } else {
@@ -397,6 +406,43 @@ function createNodeBehaviorManager() {
 }
 
 // ==========================================
+// 文本变更回调
+// ==========================================
+
+/**
+ * 创建文本变更回调 - 当本地操作修改了 customText 时自动切换到 LOCAL PROMPT 状态
+ */
+function createOnTextChangeCallback(statusBar, updateStatusAndUI, node) {
+    return function() {
+        if (!statusBar) return;
+        
+        const statusTextEl = statusBar.querySelector("span");
+        if (statusTextEl && statusTextEl.textContent.includes("EXTERNAL INPUT")) {
+            // 自动切换到 LOCAL PROMPT 状态 - set rs_disable_state to true so updateStatusAndUI applies green theme
+            if (node) node.properties.rs_disable_state = true;
+            const disableWidget = node?.widgets?.find(w => w.name === "disable_text_input");
+            if (disableWidget) disableWidget.value = true;
+            
+            // 自动切换状态并更新 UI
+            if (updateStatusAndUI) updateStatusAndUI();
+            
+            // 显示切换提示
+            statusTextEl.textContent = "⚡ Switched to LOCAL PROMPT";
+            statusBar.style.background = "#1a3a1a";
+            statusBar.style.color = "#4ade80";
+            
+            setTimeout(() => {
+                if (statusTextEl) {
+                    statusTextEl.textContent = "🟢 LOCAL PROMPT";
+                }
+                statusBar.style.background = "";
+                statusBar.style.color = "";
+            }, 1500);
+        }
+    };
+}
+
+// ==========================================
 // 导出
 // ==========================================
 
@@ -404,6 +450,7 @@ export const NodeBehaviors = {
     // 工具函数
     getInstanceUid,
     getTextKey,
+    setTextAndTrigger,
     saveTextToStorage,
     restoreTextFromStorage,
     
@@ -415,6 +462,9 @@ export const NodeBehaviors = {
     createTranslateHandler,
     createGenerateHandler,
     createRandomHandler,
+    
+    // 文本变更回调
+    createOnTextChangeCallback,
     
     // 事件监听器
     createPopupCloser,

@@ -243,10 +243,12 @@ app.registerExtension({
                 updateStatusAndUI();
             }, 100);
 
-            // Text input event - use shared method
+            // Text input event - use shared method + auto-switch from EXTERNAL to LOCAL
+            const onTextChange = NodeBehaviors.createOnTextChangeCallback(statusBar, updateStatusAndUI, node);
             customTextarea.addEventListener("input", () => {
                 if (textWidget) textWidget.value = customTextarea.value;
                 NodeBehaviors.saveTextToStorage(node, textWidget, customTextarea);
+                onTextChange();
                 if (node.graph) node.graph.setDirtyCanvas(true, true);
             });
 
@@ -633,10 +635,12 @@ app.registerExtension({
                 updateStatusAndUI();
             }, 100);
 
-            // 文本输入事件 - 使用共享方法
+            // 文本输入事件 - 使用共享方法 + auto-switch from EXTERNAL to LOCAL
+            const onTextChange = NodeBehaviors.createOnTextChangeCallback(statusBar, updateStatusAndUI, node);
             customTextarea.addEventListener("input", () => {
                 if (textWidget) textWidget.value = customTextarea.value;
                 NodeBehaviors.saveTextToStorage(node, textWidget, customTextarea);
+                onTextChange();
                 if (node.graph) node.graph.setDirtyCanvas(true, true);
             });
 

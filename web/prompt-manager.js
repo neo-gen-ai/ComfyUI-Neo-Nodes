@@ -733,6 +733,14 @@ function createPromptManagerUI() {
     let isListOpen = false;
     let isSettingsBtnClicked = false;
 
+
+        // Helper: dispatch synthetic "input" event on customTextarea (triggers auto-switch from EXTERNAL to LOCAL)
+        function triggerTextChange() {
+            if (customTextarea) {
+                customTextarea.dispatchEvent(new Event("input", { bubbles: true }));
+            }
+        }
+
     function init(ctx) {
         context = ctx;
         const { node, graph, textWidget } = ctx;
@@ -863,6 +871,7 @@ function createPromptManagerUI() {
                         }
                         if (customTextarea) {
                             customTextarea.value = data.text || "";
+                            triggerTextChange();
                         }
 
                         const currentUid = node.properties.rs_instance_uid || node.widgets?.find(w => w.name === "instance_uid")?.value;
@@ -970,6 +979,7 @@ function createPromptManagerUI() {
                         }
                         if (customTextarea) {
                             customTextarea.value = data.text || "";
+                            triggerTextChange();
                         }
 
                         const currentUid = node.properties.rs_instance_uid || node.widgets?.find(w => w.name === "instance_uid")?.value;
@@ -1062,6 +1072,7 @@ function createPromptManagerUI() {
                         }
                         if (customTextarea) {
                             customTextarea.value = data.text || "";
+                            triggerTextChange();
                         }
 
                         const currentUid = node.properties.rs_instance_uid || node.widgets?.find(w => w.name === "instance_uid")?.value;
