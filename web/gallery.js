@@ -1059,6 +1059,14 @@ class NeoGallery {
             if (slider) slider.value = newSize;
             if (label) label.textContent = `${newSize}px`;
         }
+        // Update CSS Grid minmax to match thumbnail size
+        // Find the visible grid (the one currently in the accordion)
+        const grids = document.querySelectorAll('.neo-gallery-category-grid');
+        for (const grid of grids) {
+            if (grid.offsetParent !== null) { // visible grid
+                grid.style.gridTemplateColumns = `repeat(auto-fill, ${newSize}px)`;
+            }
+        }
         this.sortAndDisplayImages();
     }
 
@@ -1102,6 +1110,12 @@ class NeoGallery {
         const customDirsToDisplay = this.isSearchActive ? this.filteredCustomDirs : this.allCustomDirs;
         const presetsToDisplay = this.isSearchActive ? this.filteredPresets : this.allPresets;
 
+        // Check if we're in directory view mode (hierarchical navigation)
+        if (this.currentView.mode === 'directory' && this._currentDirStructure) {
+            this.renderDirectoryStructure(this._currentDirStructure, this.currentView.source, this.currentView.categoryPath);
+            return;
+        }
+
         // Check if we're in image view mode (showing expanded category)
         if (this.currentView.mode === 'images') {
             this.renderExpandedImages();
@@ -1143,7 +1157,10 @@ class NeoGallery {
             presetGroups.get(cat).push(item);
         });
 
-        const container = $el("div", { className: "neo-gallery-category-grid" });
+        const container = $el("div", {
+            className: "neo-gallery-category-grid",
+            style: { gridTemplateColumns: `repeat(auto-fill, ${this.maxThumbnailSize}px)` }
+        });
 
         // Add custom dir cards - use hierarchical navigation
         for (const dir of dirGroups) {
@@ -1197,7 +1214,8 @@ class NeoGallery {
             img.onload = () => {
                 const aspectRatio = img.naturalHeight / img.naturalWidth;
                 const cardWidth = coverWrapper.clientWidth || 160;
-                const imgHeight = Math.max(cardWidth * aspectRatio, 80);
+                const maxCoverHeight = this.maxThumbnailSize - (this.displayLabels ? 52 : 36);
+                const imgHeight = Math.min(Math.max(cardWidth * aspectRatio, 80), maxCoverHeight);
                 coverWrapper.style.height = `${imgHeight}px`;
             };
             
@@ -1274,7 +1292,8 @@ class NeoGallery {
             img.onload = () => {
                 const aspectRatio = img.naturalHeight / img.naturalWidth;
                 const cardWidth = presetCoverWrapper.clientWidth || 160;
-                const imgHeight = Math.max(cardWidth * aspectRatio, 80);
+                const maxCoverHeight = this.maxThumbnailSize - (this.displayLabels ? 52 : 36);
+                const imgHeight = Math.min(Math.max(cardWidth * aspectRatio, 80), maxCoverHeight);
                 presetCoverWrapper.style.height = `${imgHeight}px`;
             };
             
@@ -1390,7 +1409,10 @@ class NeoGallery {
         this.accordion.appendChild(summaryEl);
         
         // Create card grid for subdirectories (always first)
-        const container = $el("div", { className: "neo-gallery-category-grid" });
+        const container = $el("div", {
+            className: "neo-gallery-category-grid",
+            style: { gridTemplateColumns: `repeat(auto-fill, ${this.maxThumbnailSize}px)` }
+        });
         
         for (const subdir of subdirs) {
             const card = this.createSubdirCard(subdir, dirName, [...pathSegments, subdir]);
@@ -1444,7 +1466,8 @@ class NeoGallery {
     createSubdirCard(subdirName, parentDir, fullPath) {
         const card = $el("div", {
             className: "neo-gallery-category-card",
-            onclick: () => this.showDirectoryStructure(parentDir, fullPath)
+            onclick: () => this.showDirectoryStructure(parentDir, fullPath),
+            style: { width: `${this.maxThumbnailSize}px`, height: `${this.maxThumbnailSize}px` }
         });
 
         // Type indicator badge (top-left corner) — will update after async fetch
@@ -1456,7 +1479,7 @@ class NeoGallery {
         // Cover image area (will be updated with actual cover after async fetch)
         const coverWrapper = $el("div", { 
             className: "neo-gallery-card-cover-wrapper",
-            style: { minHeight: '80px' }
+            style: { minHeight: `${Math.max(this.maxThumbnailSize * 0.5, 80)}px`, maxHeight: `${this.maxThumbnailSize}px` }
         });
         
         // Show placeholder while loading
@@ -1528,7 +1551,8 @@ class NeoGallery {
                     img.onload = () => {
                         const aspectRatio = img.naturalHeight / img.naturalWidth;
                         const cardWidth = coverWrapper.clientWidth || 160;
-                        const imgHeight = Math.max(cardWidth * aspectRatio, 80);
+                        const maxCoverHeight = this.maxThumbnailSize - (this.displayLabels ? 52 : 36);
+                        const imgHeight = Math.min(Math.max(cardWidth * aspectRatio, 80), maxCoverHeight);
                         coverWrapper.style.height = `${imgHeight}px`;
                     };
                     
