@@ -1187,8 +1187,9 @@ class NeoGallery {
     }
 
     createDirCard(name, path, items) {
-        // Get first image as cover
-        const coverImage = items.find(i => /\.(png|jpg|jpeg|gif|webp)$/i.test(i.filename));
+        // Get up to 2 image files as covers
+        const imageItems = items.filter(i => /\.(png|jpg|jpeg|gif|webp)$/i.test(i.filename));
+        const coverImages = imageItems.slice(0, 2);
         
         const card = $el("div", {
             className: "neo-gallery-category-card",
@@ -1197,29 +1198,46 @@ class NeoGallery {
 
         // Cover image area
         const coverWrapper = $el("div", { className: "neo-gallery-card-cover-wrapper" });
-        if (coverImage) {
-            const categoryParam = coverImage.category ? `&category=${encodeURIComponent(coverImage.category)}` : '';
-            const src = `${window.location.protocol}//${window.location.host}/neo_gallery/image?filename=${encodeURIComponent(coverImage.filename)}&subfolder=${encodeURIComponent(name)}${categoryParam}`;
-            
-            const img = $el("img", {
-                className: "neo-gallery-card-cover",
-                src: src,
-                alt: name,
-                loading: "lazy"
+        if (coverImages.length > 0) {
+            // Create split image grid
+            const coverGrid = $el("div", {
+                className: "neo-gallery-card-cover-grid"
             });
             
-            // Set a default height while image loads; will adjust after load
-            coverWrapper.style.height = '120px';
+            let loadedCount = 0;
+            coverImages.forEach((imgData) => {
+                const categoryParam = imgData.category ? `&category=${encodeURIComponent(imgData.category)}` : '';
+                const src = `${window.location.protocol}//${window.location.host}/neo_gallery/image?filename=${encodeURIComponent(imgData.filename)}&subfolder=${encodeURIComponent(name)}${categoryParam}`;
+                
+                const imgItem = $el("div", {
+                    className: "neo-gallery-card-cover-grid-item"
+                });
+                
+                const img = $el("img", {
+                    src: src,
+                    alt: name,
+                    loading: "lazy"
+                });
+                
+                img.onload = () => {
+                    loadedCount++;
+                    if (loadedCount === coverImages.length) {
+                        const cardWidth = coverWrapper.clientWidth || 160;
+                        const maxCoverHeight = this.maxThumbnailSize - (this.displayLabels ? 52 : 36);
+                        const imgHeight = Math.min(Math.max(cardWidth * 0.5, 40), maxCoverHeight / 2);
+                        coverGrid.style.height = `${imgHeight * 2}px`;
+                    }
+                };
+                
+                img.onerror = () => {
+                    imgItem.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#555;font-size:24px;">\uD83D\uDCC1</div>';
+                };
+                
+                imgItem.appendChild(img);
+                coverGrid.appendChild(imgItem);
+            });
             
-            img.onload = () => {
-                const aspectRatio = img.naturalHeight / img.naturalWidth;
-                const cardWidth = coverWrapper.clientWidth || 160;
-                const maxCoverHeight = this.maxThumbnailSize - (this.displayLabels ? 52 : 36);
-                const imgHeight = Math.min(Math.max(cardWidth * aspectRatio, 80), maxCoverHeight);
-                coverWrapper.style.height = `${imgHeight}px`;
-            };
-            
-            coverWrapper.appendChild(img);
+            coverWrapper.appendChild(coverGrid);
         } else {
             coverWrapper.appendChild($el("div", {
                 className: "neo-gallery-card-cover neo-gallery-card-placeholder",
@@ -1258,8 +1276,9 @@ class NeoGallery {
     }
 
     createPresetCategoryCard(title, items) {
-        // Get first image as cover
-        const coverImage = items.find(i => /\.(png|jpg|jpeg|gif|webp)$/i.test(i.filename));
+        // Get up to 2 image files as covers
+        const imageItems = items.filter(i => /\.(png|jpg|jpeg|gif|webp)$/i.test(i.filename));
+        const coverImages = imageItems.slice(0, 2);
         
         // Extract the raw category from display title: "Presets/Anime" -> "Anime", "Presets" -> ""
         let rawCategory = '';
@@ -1275,29 +1294,46 @@ class NeoGallery {
 
         // Cover image area
         const presetCoverWrapper = $el("div", { className: "neo-gallery-card-cover-wrapper" });
-        if (coverImage) {
-            const categoryParam = coverImage.category ? `&category=${encodeURIComponent(coverImage.category)}` : '';
-            const src = coverImage.preview || `${window.location.protocol}//${window.location.host}/neo_gallery/image?filename=${encodeURIComponent(coverImage.filename)}&subfolder=presets${categoryParam}`;
-            
-            const img = $el("img", {
-                className: "neo-gallery-card-cover",
-                src: src,
-                alt: title,
-                loading: "lazy"
+        if (coverImages.length > 0) {
+            // Create split image grid
+            const coverGrid = $el("div", {
+                className: "neo-gallery-card-cover-grid"
             });
             
-            // Set a default height while image loads; will adjust after load
-            presetCoverWrapper.style.height = '120px';
+            let loadedCount = 0;
+            coverImages.forEach((imgData) => {
+                const categoryParam = imgData.category ? `&category=${encodeURIComponent(imgData.category)}` : '';
+                const src = imgData.preview || `${window.location.protocol}//${window.location.host}/neo_gallery/image?filename=${encodeURIComponent(imgData.filename)}&subfolder=presets${categoryParam}`;
+                
+                const imgItem = $el("div", {
+                    className: "neo-gallery-card-cover-grid-item"
+                });
+                
+                const img = $el("img", {
+                    src: src,
+                    alt: title,
+                    loading: "lazy"
+                });
+                
+                img.onload = () => {
+                    loadedCount++;
+                    if (loadedCount === coverImages.length) {
+                        const cardWidth = presetCoverWrapper.clientWidth || 160;
+                        const maxCoverHeight = this.maxThumbnailSize - (this.displayLabels ? 52 : 36);
+                        const imgHeight = Math.min(Math.max(cardWidth * 0.5, 40), maxCoverHeight / 2);
+                        coverGrid.style.height = `${imgHeight * 2}px`;
+                    }
+                };
+                
+                img.onerror = () => {
+                    imgItem.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#555;font-size:24px;">\uD83C\uDFA8</div>';
+                };
+                
+                imgItem.appendChild(img);
+                coverGrid.appendChild(imgItem);
+            });
             
-            img.onload = () => {
-                const aspectRatio = img.naturalHeight / img.naturalWidth;
-                const cardWidth = presetCoverWrapper.clientWidth || 160;
-                const maxCoverHeight = this.maxThumbnailSize - (this.displayLabels ? 52 : 36);
-                const imgHeight = Math.min(Math.max(cardWidth * aspectRatio, 80), maxCoverHeight);
-                presetCoverWrapper.style.height = `${imgHeight}px`;
-            };
-            
-            presetCoverWrapper.appendChild(img);
+            presetCoverWrapper.appendChild(coverGrid);
         } else {
             presetCoverWrapper.appendChild($el("div", {
                 className: "neo-gallery-card-cover neo-gallery-card-placeholder",
@@ -1305,11 +1341,11 @@ class NeoGallery {
             }));
         }
 
-        // Type indicator badge (top-left corner) — 📁 for directory, 🖼️ for image preset
+        // Type indicator badge (top-left corner) — 📁 for directory
         const typeBadge = $el("div", {
-            className: "neo-gallery-card-type-badge type-image",
-            title: "Preset Category"
-        }, ["\uD83D\uDDBC\uFE0F"]);
+            className: "neo-gallery-card-type-badge type-directory",
+            title: "Directory"
+        }, ["\uD83D\uDCC1"]);
 
         // Card info (name + count)
         const info = $el("div", { className: "neo-gallery-card-info" }, [
@@ -1464,10 +1500,14 @@ class NeoGallery {
     }
 
     createSubdirCard(subdirName, parentDir, fullPath) {
+        // Calculate height to match image thumbnail containers (maxThumbnailSize - reservedSpace)
+        const reservedSpace = this.displayLabels ? 52 : 36;
+        const cardHeight = Math.max(this.maxThumbnailSize - reservedSpace, 40);
+        
         const card = $el("div", {
             className: "neo-gallery-category-card",
             onclick: () => this.showDirectoryStructure(parentDir, fullPath),
-            style: { width: `${this.maxThumbnailSize}px`, height: `${this.maxThumbnailSize}px` }
+            style: { width: `${this.maxThumbnailSize}px`, height: `${cardHeight}px` }
         });
 
         // Type indicator badge (top-left corner) — will update after async fetch
@@ -1513,23 +1553,15 @@ class NeoGallery {
                     countEl.textContent = `${structure.total_images} items`;
                 }
 
-                // Update type badge based on content type
+                // Update type badge - always show directory icon
                 if (typeBadge) {
-                    if (structure.images && structure.images.length > 0) {
-                        typeBadge.className = 'neo-gallery-card-type-badge neo-gallery-card-type-loading type-image';
-                        typeBadge.title = 'Preset Category';
-                        typeBadge.textContent = '\uD83D\uDDBC\uFE0F';
-                    } else if (structure.subdirs && structure.subdirs.length > 0) {
-                        typeBadge.className = 'neo-gallery-card-type-badge neo-gallery-card-type-loading type-directory';
-                        typeBadge.title = 'Directory';
-                        typeBadge.textContent = '\uD83D\uDCC1';
-                    }
+                    typeBadge.className = 'neo-gallery-card-type-badge neo-gallery-card-type-loading type-directory';
+                    typeBadge.title = 'Directory';
+                    typeBadge.textContent = '\uD83D\uDCC1';
                 }
 
-                // If there are images, use the first one as cover
+                // If there are images, use the first two as a split cover
                 if (structure.images && structure.images.length > 0) {
-                    const firstImage = structure.images[0];
-                    const categoryParam = firstImage.category ? `&category=${encodeURIComponent(firstImage.category)}` : '';
                     let currentSubfolder;
                     if (fullPath.length > 0) {
                         currentSubfolder = parentDir + "/" + fullPath.join("/");
@@ -1537,35 +1569,59 @@ class NeoGallery {
                         currentSubfolder = parentDir;
                     }
                     
-                    const coverSrc = `${window.location.protocol}//${window.location.host}/neo_gallery/image?filename=${encodeURIComponent(firstImage.filename)}&subfolder=${encodeURIComponent(currentSubfolder)}${categoryParam}`;
+                    // Take up to 2 images for the split cover
+                    const coverImages = structure.images.slice(0, 2);
                     
-                    // Replace placeholder with actual image
+                    // Replace placeholder with split image grid
                     coverWrapper.innerHTML = '';
-                    const img = $el("img", {
-                        className: "neo-gallery-card-cover",
-                        src: coverSrc,
-                        alt: subdirName,
-                        loading: "lazy"
+                    const coverGrid = $el("div", {
+                        className: "neo-gallery-card-cover-grid"
                     });
                     
-                    img.onload = () => {
-                        const aspectRatio = img.naturalHeight / img.naturalWidth;
-                        const cardWidth = coverWrapper.clientWidth || 160;
-                        const maxCoverHeight = this.maxThumbnailSize - (this.displayLabels ? 52 : 36);
-                        const imgHeight = Math.min(Math.max(cardWidth * aspectRatio, 80), maxCoverHeight);
-                        coverWrapper.style.height = `${imgHeight}px`;
-                    };
+                    let loadedCount = 0;
+                    coverImages.forEach((imgData, index) => {
+                        const categoryParam = imgData.category ? `&category=${encodeURIComponent(imgData.category)}` : '';
+                        const coverSrc = `${window.location.protocol}//${window.location.host}/neo_gallery/image?filename=${encodeURIComponent(imgData.filename)}&subfolder=${encodeURIComponent(currentSubfolder)}${categoryParam}`;
+                        
+                        const imgItem = $el("div", {
+                            className: "neo-gallery-card-cover-grid-item"
+                        });
+                        
+                        const img = $el("img", {
+                            src: coverSrc,
+                            alt: subdirName,
+                            loading: "lazy"
+                        });
+                        
+                        img.onload = () => {
+                            loadedCount++;
+                            // Adjust grid height after all images loaded
+                            if (loadedCount === coverImages.length) {
+                                const cardWidth = coverWrapper.clientWidth || 160;
+                                const maxCoverHeight = this.maxThumbnailSize - (this.displayLabels ? 52 : 36);
+                                const imgHeight = Math.min(Math.max(cardWidth * 0.5, 40), maxCoverHeight / 2);
+                                coverGrid.style.height = `${imgHeight * 2}px`;
+                            }
+                        };
+                        
+                        img.onerror = () => {
+                            imgItem.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#555;font-size:24px;">\uD83D\uDCC1</div>';
+                        };
+                        
+                        imgItem.appendChild(img);
+                        coverGrid.appendChild(imgItem);
+                    });
                     
-                    // Fallback if image load fails
-                    img.onerror = () => {
+                    coverWrapper.appendChild(coverGrid);
+                    
+                    // Fallback if no images loaded properly
+                    if (coverImages.length === 0) {
                         coverWrapper.innerHTML = '';
                         coverWrapper.appendChild($el("div", {
                             className: "neo-gallery-card-cover neo-gallery-card-placeholder",
                             textContent: "\uD83D\uDCC1"
                         }));
-                    };
-                    
-                    coverWrapper.appendChild(img);
+                    }
                 } else if (structure.subdirs && structure.subdirs.length > 0) {
                     // If no images but has subdirs, show a nested folder icon
                     coverWrapper.innerHTML = '';

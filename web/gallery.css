@@ -211,6 +211,29 @@
     object-fit: contain;
 }
 
+/* Directory card with two images side by side */
+.neo-gallery-card-cover-grid {
+    display: flex;
+    width: 100%;
+    height: 100%;
+    gap: 2px;
+    padding: 2px;
+    background-color: #111;
+}
+
+.neo-gallery-card-cover-grid-item {
+    flex: 1;
+    overflow: hidden;
+    border-radius: 4px;
+}
+
+.neo-gallery-card-cover-grid-item img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
 /* Placeholder when no cover image */
 .neo-gallery-card-placeholder {
     display: flex;
@@ -224,6 +247,7 @@
 /* Card info area (name + count) */
 .neo-gallery-card-info {
     padding: 8px;
+    text-align: center;
 }
 
 .neo-gallery-card-name {

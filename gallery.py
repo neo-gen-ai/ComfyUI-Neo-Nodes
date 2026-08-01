@@ -723,7 +723,8 @@ async def delete_gallery_item(request):
         # Check custom directories first
         for dir_path in user_custom_dirs:
             dir_name = dir_path.name if dir_path.name else str(dir_path)
-            if subfolder == dir_name:
+            # Match exact directory name or hierarchical path starting with directory name
+            if subfolder == dir_name or subfolder.startswith(dir_name + "/"):
                 base = dir_path
                 break
         
@@ -734,25 +735,35 @@ async def delete_gallery_item(request):
 
         if not base or not base.exists():
             return web.json_response({"error": "Directory not found"}, status=404)
+        
+        # Resolve subdirectory path within the base directory
+        if subfolder.startswith(base.name + "/"):
+            rel_path = subfolder[len(base.name) + 1:]
+            target_dir = base / rel_path if rel_path else base
+        else:
+            target_dir = base
+        
+        if not target_dir.exists():
+            return web.json_response({"error": "Subdirectory not found"}, status=404)
 
         img_deleted = False
         txt_deleted = False
 
         # Delete image
         for ext in IMG_EXTENSIONS:
-            p = base / f"{filename}{ext}"
+            p = target_dir / f"{filename}{ext}"
             if p.exists():
                 p.unlink()
                 img_deleted = True
 
         # Delete companion .txt
-        txt = base / f"{filename}.txt"
+        txt = target_dir / f"{filename}.txt"
         if txt.exists():
             txt.unlink()
             txt_deleted = True
 
         # Also try deleting by stem
-        stem_path = base / filename
+        stem_path = target_dir / filename
         if stem_path.exists() and stem_path.suffix.lower() == ".txt":
             stem_path.unlink()
             txt_deleted = True
