@@ -766,6 +766,54 @@ class NeoGallery {
         return dropdown;
     }
 
+    _removeSendMenu() {
+        const existing = document.getElementById('neo-gallery-send-menu');
+        if (existing) existing.remove();
+    }
+
+    async _showSendMenu(image, button) {
+        this._removeSendMenu();
+        const menuItems = [];
+        app.graph._nodes.forEach(node => {
+            if (!node.widgets) return;
+            node.widgets.forEach((widget, index) => {
+                const wn = (widget.name || '').toLowerCase();
+                if (/negative/.test(wn)) return;
+                if (widget.inputEl && /string|text|custom/.test(widget.type || '')) {
+                    menuItems.push({ nodeId: node.id, widgetIndex: index, label: `\u25B8 ${node.title || 'Node'} \u2192 ${widget.name}`, isNeoPrompt: /neo.?prompt/i.test(node.title) });
+                }
+            });
+        });
+        menuItems.sort((a, b) => {
+            if (a.isNeoPrompt !== b.isNeoPrompt) return a.isNeoPrompt ? -1 : 1;
+            return 0;
+        });
+        const selKeys = Object.keys(app.canvas.selected_nodes);
+        let showSelectedOption = false;
+        if (selKeys.length > 0) {
+            const sn = app.canvas.selected_nodes[selKeys[0]];
+            if (sn && sn.widgets && sn.widgets.some(w => !/negative/.test((w.name||'').toLowerCase()) && w.inputEl && /string|text|custom/.test(w.type||''))) showSelectedOption = true;
+        }
+        if (menuItems.length === 0 && !showSelectedOption) { this.showToast('warning', 'No Target', 'No valid text nodes found.'); return; }
+        const dropdown = $el("div", { id: "neo-gallery-send-menu", className: "neo-gallery-send-menu" });
+        if (showSelectedOption) {
+            const si = $el("div", { className: "neo-gallery-send-menu-item neo-gallery-send-menu-selected", onclick: (e) => { e.stopPropagation(); this._removeSendMenu(); const s = document.getElementById("target-node-dropdown"); if (s) s.value = "selected"; this.copyToClipboard(image.name, image.txt_content, button, 'send'); }, textContent: "\u2B50 Active Selected Text Node" });
+            dropdown.appendChild(si);
+        }
+        for (const item of menuItems) {
+            const el = $el("div", { className: "neo-gallery-send-menu-item", onclick: (e) => { e.stopPropagation(); this._removeSendMenu(); const s = document.getElementById("target-node-dropdown"); if (s) s.value = `${item.nodeId}:widget:${item.widgetIndex}`; this.copyToClipboard(image.name, image.txt_content, button, 'send'); }, textContent: item.label });
+            dropdown.appendChild(el);
+        }
+        const rect = button.getBoundingClientRect();
+        dropdown.style.position = 'fixed'; dropdown.style.left = Math.min(rect.left, window.innerWidth - 250) + 'px'; dropdown.style.zIndex = '10001';
+        document.body.appendChild(dropdown);
+        requestAnimationFrame(() => {
+            dropdown.style.top = (rect.top - dropdown.offsetHeight - 8) + 'px';
+        });
+        const closeHandler = (e) => { if (!dropdown.contains(e.target) && e.target !== button) { this._removeSendMenu(); document.removeEventListener('click', closeHandler); } };
+        setTimeout(() => document.addEventListener('click', closeHandler), 10);
+    }
+
     createSearchInput() {
         const input = $el("input", {
             type: "text",
@@ -1644,12 +1692,12 @@ class NeoGallery {
             }, ["\u00D7"]);
         }
 
-        // Send button
+        // Send button — shows dropdown menu for target selection
         const sendBtn = $el("div", {
             className: "neo-gallery-thumb-send-btn",
             onclick: (e) => {
                 e.stopPropagation();
-                this.copyToClipboard(image.name, image.txt_content, sendBtn, 'send');
+                this._showSendMenu(image, sendBtn);
             }
         }, ["\u2708\uFE0F"]);
 
@@ -1971,7 +2019,7 @@ class NeoGallery {
             className: "neo-gallery-lightbox-btn neo-gallery-lightbox-send-btn",
             onclick: (e) => {
                 e.stopPropagation();
-                this.copyToClipboard(image.name, image.txt_content, sendBtn, 'send');
+                this._showSendMenu(image, sendBtn);
             }
         }, ["\u2708\uFE0F Send"]);
 
@@ -2276,7 +2324,7 @@ class NeoGallery {
                     className: "neo-gallery-lightbox-btn neo-gallery-lightbox-send-btn",
                     onclick: (e) => {
                         e.stopPropagation();
-                        app.neoGallery.copyToClipboard(image.name, image.txt_content, sendBtn, 'send');
+                        app.neoGallery._showSendMenu(image, sendBtn);
                     }
                 }, ["\u2708\uFE0F Send"]);
                 
