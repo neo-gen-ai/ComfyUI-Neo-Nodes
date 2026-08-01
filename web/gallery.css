@@ -93,21 +93,17 @@
     color: #FF9944;
 }
 
-/* Search and dropdown row */
+/* Search row */
 .neo-gallery-search-row {
     display: flex;
     gap: 8px;
     margin-bottom: 10px;
-    align-items: stretch;
+    align-items: center;
 }
 
 .neo-gallery-search-container {
     flex: 1;
-}
-
-.neo-gallery-dropdown-container {
-    width: 180px;
-    flex-shrink: 0;
+    min-width: 0;
 }
 
 /* Thumbnail size control row */
@@ -714,15 +710,15 @@
 
 .neo-gallery-search-input {
     width: 100%;
-    padding: 4px 8px;
+    padding: 0 10px;
     border-radius: 4px;
     border: 1px solid #444;
     background-color: #2a2a2a;
     color: white;
     font-size: 12px;
     outline: none;
-    box-sizing: content-box;
-    height: 26px;
+    box-sizing: border-box;
+    height: 28px;
 }
 
 .neo-gallery-search-input::placeholder {
@@ -787,10 +783,9 @@
 }
 
 /* ============================================
-   Accordion Section Buttons (Random, Clear)
-   ============================================ */
+Accordion Section Buttons (Clear)
+============================================ */
 
-.neo-gallery-random-btn,
 .neo-gallery-clear-btn {
     padding: 0;
     margin: 0;
@@ -811,6 +806,7 @@
 .neo-gallery-random-btn {
     color: #FF6A00;
     border-color: #555;
+    font-size: 14px;
 }
 
 .neo-gallery-clear-btn {
@@ -921,8 +917,9 @@
     opacity: 1 !important;
 }
 
-/* Thumbnail action buttons (Send, Copy) */
+/* Thumbnail action buttons (Send, Copy, Image Send) */
 .neo-gallery-thumb-send-btn,
+.neo-gallery-thumb-img-send-btn,
 .neo-gallery-thumb-copy-btn {
     display: flex;
     align-items: center;
@@ -941,6 +938,7 @@
 }
 
 .neo-gallery-thumb-send-btn:hover,
+.neo-gallery-thumb-img-send-btn:hover,
 .neo-gallery-thumb-copy-btn:hover {
     background-color: rgba(0, 0, 0, 0.8);
     transform: scale(1.1);
@@ -948,6 +946,7 @@
 
 /* Feedback positioning - fixed to viewport, will be set dynamically by JS */
 .neo-gallery-thumb-send-btn .neo-gallery-feedback,
+.neo-gallery-thumb-img-send-btn .neo-gallery-feedback,
 .neo-gallery-thumb-copy-btn .neo-gallery-feedback {
     position: fixed;
     transform: translate(-50%, -100%);

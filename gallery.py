@@ -239,6 +239,72 @@ async def serve_placeholder(request):
     return web.Response(body=_PLACEHOLDER_PNG, content_type="image/png")
 
 
+@PromptServer.instance.routes.get("/neo_gallery/copy_to_input")
+async def copy_to_input(request):
+    """Copy an image from gallery to ComfyUI input directory for LoadImage nodes."""
+    try:
+        import folder_paths as _folder_paths
+        import shutil
+        
+        filename = request.rel_url.query.get("filename", "")
+        subfolder = request.rel_url.query.get("subfolder", "")
+        
+        if not filename or ".." in filename or "/" in filename:
+            return web.json_response({"success": False, "error": "Invalid filename"}, status=400)
+        
+        # Find source image in gallery directories
+        source_path = None
+        user_custom_dirs = _get_user_custom_dirs()
+        
+        # Check custom directories
+        for dir_path in user_custom_dirs:
+            candidate = dir_path / filename
+            if candidate.exists():
+                source_path = candidate
+                break
+        
+        # Check presets
+        if not source_path:
+            candidate = PRESETS_DIR / filename
+            if candidate.exists():
+                source_path = candidate
+        
+        # Check custom
+        if not source_path:
+            candidate = CUSTOM_DIR / filename
+            if candidate.exists():
+                source_path = candidate
+        
+        if not source_path:
+            return web.json_response({"success": False, "error": "Image not found"}, status=404)
+        
+        # Check if source is already in input directory
+        input_dir = Path(_folder_paths.input_directory).resolve()
+        resolved_source = source_path.resolve()
+        if resolved_source.parent == input_dir:
+            # Already in input directory, no need to copy
+            return web.json_response({"success": True, "filename": filename, "skipped": True})
+        
+        # Copy to input directory
+        dest_path = input_dir / filename
+        
+        # If destination exists, add a suffix
+        if dest_path.exists():
+            stem = Path(filename).stem
+            ext = Path(filename).suffix
+            counter = 1
+            while (input_dir / f"{stem}_{counter}{ext}").exists():
+                counter += 1
+            dest_path = input_dir / f"{stem}_{counter}{ext}"
+        
+        shutil.copy2(source_path, dest_path)
+        
+        return web.json_response({"success": True, "filename": dest_path.name})
+    except Exception as e:
+        print(f"[Neo Gallery] Error copying to input: {e}")
+        return web.json_response({"success": False, "error": str(e)}, status=500)
+
+
 @PromptServer.instance.routes.get("/neo_gallery/resolve_path")
 async def resolve_comfyui_path(request):
     """Resolve ComfyUI's built-in input/output directory paths.

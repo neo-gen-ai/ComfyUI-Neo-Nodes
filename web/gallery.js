@@ -23,7 +23,6 @@ class NeoGallery {
         this.filteredPresets = [];
         this.sortAscending = true;
         this.searchInput = this.createSearchInput();
-        this.targetNodeDropdown = this.createTargetNodeDropdown();
         this.thumbnailSizeSlider = this.createThumbnailSizeSlider();
         this.customDirSettingBtn = null;
         // Card-based layout state
@@ -49,7 +48,6 @@ class NeoGallery {
         });
 
         const customDirBtn = this.createCustomDirSettingBtn();
-        const randomPromptBtn = this.createRandomPromptBtn();
 
         // Main content area for gallery cards/images
         this.accordion = $el("div", { className: "neo-gallery-accordion" });
@@ -64,12 +62,11 @@ class NeoGallery {
                 $el("div", { 
                     style: { display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 10, gridColumn: '2' }
                 }, [this.thumbnailSizeSlider]),
-                $el("div", { style: { display: 'flex', gap: '12px', alignItems: 'center' } }, [customDirBtn, randomPromptBtn])
+                $el("div", { style: { display: 'flex', gap: '12px', alignItems: 'center' } }, [customDirBtn])
             ]),
-            // Search and target row
+            // Search row
             $el("div", { className: "neo-gallery-search-row" }, [
-                $el("div", { className: "neo-gallery-search-container" }, [this.searchInput]),
-                $el("div", { className: "neo-gallery-dropdown-container" }, [this.targetNodeDropdown])
+                $el("div", { className: "neo-gallery-search-container" }, [this.searchInput])
             ]),
             // Breadcrumb navigation (shown when viewing category images)
             $el("div", { 
@@ -84,20 +81,6 @@ class NeoGallery {
 
         // Load custom directory settings from backend (sets the button text)
         this.loadGallerySettings();
-    }
-
-    createRandomPromptBtn() {
-        const btn = $el("button", {
-            className: "neo-gallery-random-btn",
-            title: "Random Prompt",
-            style: { marginLeft: '8px' },
-            onclick: (e) => {
-                e.stopPropagation();
-                this.generateRandomPrompt();
-            },
-            textContent: "\uD83C\uDFB2"
-        });
-        return btn;
     }
 
     createCustomDirSettingBtn() {
@@ -771,6 +754,150 @@ class NeoGallery {
         if (existing) existing.remove();
     }
 
+    _removeImgSendMenu() {
+        const existing = document.getElementById('neo-gallery-img-send-menu');
+        if (existing) existing.remove();
+    }
+
+    async _showImgSendMenu(image, button) {
+        this._removeImgSendMenu();
+        if (!/\.(png|jpg|jpeg|gif|webp|bmp|tiff)$/i.test(image.filename)) {
+            this.showToast('warning', 'Not an Image', 'This file is not an image.');
+            return;
+        }
+        const menuItems = [];
+        console.log('[Gallery] Scanning nodes for LoadImage:', app.graph._nodes.length, 'nodes');
+        app.graph._nodes.forEach(node => {
+            console.log('[Gallery] Node:', node.comfyClass, node.title, 'widgets:', node.widgets?.length);
+            if (!node.widgets) return;
+            node.widgets.forEach((widget, index) => {
+                const wn = (widget.name || '').toLowerCase();
+                const isLoadImage = /load.?image/i.test(node.comfyClass || '') || /load.?image/i.test(node.title || '');
+                const isImageWidget = /image|upload/.test(wn);
+                console.log('[Gallery] Widget:', widget.name, 'type:', widget.type, 'inputEl:', !!widget.inputEl, 'isLoadImage:', isLoadImage, 'isImageWidget:', isImageWidget);
+                // For LoadImage nodes, only add image combo widget (not upload button or preview)
+                if (isLoadImage && widget.type === 'combo' && /image/.test(wn)) {
+                    menuItems.push({ nodeId: node.id, widgetIndex: index, label: `\u25B8 ${node.title || 'Node'} \u2192 ${widget.name}`, isLoadImage, isText: false });
+                } else if ((isLoadImage || isImageWidget) && widget.inputEl) {
+                    menuItems.push({ nodeId: node.id, widgetIndex: index, label: `\u25B8 ${node.title || 'Node'} \u2192 ${widget.name}`, isLoadImage, isText: widget.type === 'customtext' || widget.type === 'text' });
+                }
+            });
+        });
+        console.log('[Gallery] Found menuItems:', menuItems.length);
+        const selKeys = Object.keys(app.canvas.selected_nodes);
+        let selectedNodeId = null;
+        if (selKeys.length > 0) {
+            const sn = app.canvas.selected_nodes[selKeys[0]];
+            // Check if selected node is a LoadImage node with image widget OR has a text widget
+            const isLoadImage = /load.?image/i.test(sn.comfyClass || '') || /load.?image/i.test(sn.title || '');
+            const hasImageWidget = sn.widgets && sn.widgets.some(w => /image|upload/.test((w.name||'').toLowerCase()));
+            const hasTextWidget = sn.widgets && sn.widgets.some(w => ['string', 'text', 'customtext'].includes(w.type));
+            if ((isLoadImage && hasImageWidget) || hasTextWidget) {
+                selectedNodeId = sn.id;
+            }
+        }
+        if (menuItems.length === 0 && !selectedNodeId) { this.showToast('warning', 'No Target', 'No LoadImage-type nodes found.'); return; }
+        
+        // Mark selected items and sort to top
+        menuItems.forEach(item => {
+            item.isSelected = item.nodeId === selectedNodeId;
+        });
+        menuItems.sort((a, b) => {
+            if (a.isSelected !== b.isSelected) return a.isSelected ? -1 : 1;
+            if (a.isLoadImage !== b.isLoadImage) return a.isLoadImage ? -1 : 1;
+            return 0;
+        });
+        console.log('[Gallery] Sorted menuItems:', menuItems.map(i => ({label: i.label, isSelected: i.isSelected, isLoadImage: i.isLoadImage})));
+        
+        // If only one target and no selection, send directly without menu
+        if (menuItems.length === 1 && !selectedNodeId) {
+            const item = menuItems[0];
+            this.sendImageToNode(image, `${item.nodeId}:widget:${item.widgetIndex}`, button);
+            return;
+        }
+        
+        const dropdown = $el("div", { id: "neo-gallery-img-send-menu", className: "neo-gallery-send-menu" });
+        for (const item of menuItems) {
+            const label = item.isSelected ? `${item.label} \u2713` : item.label;
+            const el = $el("div", { className: "neo-gallery-send-menu-item" + (item.isSelected ? " neo-gallery-send-menu-selected" : ""), onclick: (e) => { e.stopPropagation(); this._removeImgSendMenu(); this.sendImageToNode(image, `${item.nodeId}:widget:${item.widgetIndex}`, button); }, textContent: label });
+            dropdown.appendChild(el);
+        }
+        const rect = button.getBoundingClientRect();
+        dropdown.style.position = 'fixed'; dropdown.style.left = Math.min(rect.left, window.innerWidth - 250) + 'px'; dropdown.style.zIndex = '10001';
+        document.body.appendChild(dropdown);
+        requestAnimationFrame(() => {
+            dropdown.style.top = (rect.top - dropdown.offsetHeight - 8) + 'px';
+        });
+        const closeHandler = (e) => { if (!dropdown.contains(e.target) && e.target !== button) { this._removeImgSendMenu(); document.removeEventListener('click', closeHandler); } };
+        setTimeout(() => document.addEventListener('click', closeHandler), 10);
+    }
+
+    async sendImageToNode(image, target, button) {
+        const selectedValue = target === 'selected' ? 'selected' : target;
+        let targetNode = null;
+        let targetWidget = null;
+        if (selectedValue === 'selected') {
+            const selKeys = Object.keys(app.canvas.selected_nodes);
+            if (selKeys.length > 0) {
+                targetNode = app.canvas.selected_nodes[selKeys[0]];
+                targetWidget = targetNode?.widgets?.find(w => /image|upload/.test((w.name||'').toLowerCase()));
+            }
+        } else {
+            const [nodeId, , index] = selectedValue.split(':');
+            targetNode = app.graph.getNodeById(parseInt(nodeId));
+            targetWidget = targetNode?.widgets?.[parseInt(index)];
+        }
+        if (!targetNode || !targetWidget) {
+            this.showToast('error', 'Send Failed', 'Could not find target node/widget.');
+            return;
+        }
+        const widgetType = targetWidget.type || '';
+        
+        // For LoadImage combo widget, copy image to input directory first
+        if (widgetType === 'combo') {
+            try {
+                const resp = await api.fetchApi('/neo_gallery/copy_to_input?filename=' + encodeURIComponent(image.filename) + (image.subfolder ? '&subfolder=' + encodeURIComponent(image.subfolder) : ''));
+                if (resp.ok) {
+                    const result = await resp.json();
+                    if (result.success) {
+                        // If skipped (already in input dir), use original filename
+                        targetWidget.value = result.skipped ? image.filename : result.filename;
+                    } else {
+                        this.showToast('error', 'Copy Failed', result.error || 'Failed to copy image to input directory');
+                        return;
+                    }
+                } else {
+                    this.showToast('error', 'Copy Failed', 'Failed to copy image');
+                    return;
+                }
+            } catch (e) {
+                console.error('[Gallery] Error copying image:', e);
+                this.showToast('error', 'Copy Failed', 'Error copying image');
+                return;
+            }
+        } else {
+            const filePath = `${image.subfolder || ''}/${image.filename}`;
+            if (widgetType === 'customtext' || widgetType === 'text') {
+                targetWidget.value = filePath;
+            } else {
+                targetWidget.value = {
+                    filename: image.filename,
+                    subfolder: image.subfolder || '',
+                    type: image.type || 'input'
+                };
+            }
+        }
+        // For combo widgets, call callback if available to update preview
+        if (widgetType === 'combo' && targetWidget.callback) {
+            targetWidget.callback(targetWidget.value);
+        } else if (targetNode.onWidgetChanged) {
+            targetNode.onWidgetChanged(targetWidget.name, targetWidget.value);
+        }
+        app.graph.setDirtyCanvas(true, true);
+        this.showInlineFeedback(button, '\u2705 Image Sent!', 'success');
+        this.showToast('success', 'Image Sent!', `Sent to ${targetNode.title || 'Node'} - ${targetWidget.name}`);
+    }
+
     async _showSendMenu(image, button) {
         this._removeSendMenu();
         const menuItems = [];
@@ -784,24 +911,39 @@ class NeoGallery {
                 }
             });
         });
+        const selKeys = Object.keys(app.canvas.selected_nodes);
+        let selectedNodeId = null;
+        if (selKeys.length > 0) {
+            const sn = app.canvas.selected_nodes[selKeys[0]];
+            if (sn && sn.widgets && sn.widgets.some(w => !/negative/.test((w.name||'').toLowerCase()) && w.inputEl && /string|text|custom/.test(w.type||''))) {
+                selectedNodeId = sn.id;
+            }
+        }
+        if (menuItems.length === 0 && !selectedNodeId) { this.showToast('warning', 'No Target', 'No valid text nodes found.'); return; }
+        
+        // Mark selected items and sort to top
+        menuItems.forEach(item => {
+            item.isSelected = item.nodeId === selectedNodeId;
+        });
         menuItems.sort((a, b) => {
+            if (a.isSelected !== b.isSelected) return a.isSelected ? -1 : 1;
             if (a.isNeoPrompt !== b.isNeoPrompt) return a.isNeoPrompt ? -1 : 1;
             return 0;
         });
-        const selKeys = Object.keys(app.canvas.selected_nodes);
-        let showSelectedOption = false;
-        if (selKeys.length > 0) {
-            const sn = app.canvas.selected_nodes[selKeys[0]];
-            if (sn && sn.widgets && sn.widgets.some(w => !/negative/.test((w.name||'').toLowerCase()) && w.inputEl && /string|text|custom/.test(w.type||''))) showSelectedOption = true;
+        
+        // If only one target and no selection, send directly without menu
+        if (menuItems.length === 1 && !selectedNodeId) {
+            const item = menuItems[0];
+            const s = document.getElementById("target-node-dropdown");
+            if (s) s.value = `${item.nodeId}:widget:${item.widgetIndex}`;
+            this.copyToClipboard(image.name, image.txt_content, button, 'send');
+            return;
         }
-        if (menuItems.length === 0 && !showSelectedOption) { this.showToast('warning', 'No Target', 'No valid text nodes found.'); return; }
+        
         const dropdown = $el("div", { id: "neo-gallery-send-menu", className: "neo-gallery-send-menu" });
-        if (showSelectedOption) {
-            const si = $el("div", { className: "neo-gallery-send-menu-item neo-gallery-send-menu-selected", onclick: (e) => { e.stopPropagation(); this._removeSendMenu(); const s = document.getElementById("target-node-dropdown"); if (s) s.value = "selected"; this.copyToClipboard(image.name, image.txt_content, button, 'send'); }, textContent: "\u2B50 Active Selected Text Node" });
-            dropdown.appendChild(si);
-        }
         for (const item of menuItems) {
-            const el = $el("div", { className: "neo-gallery-send-menu-item", onclick: (e) => { e.stopPropagation(); this._removeSendMenu(); const s = document.getElementById("target-node-dropdown"); if (s) s.value = `${item.nodeId}:widget:${item.widgetIndex}`; this.copyToClipboard(image.name, image.txt_content, button, 'send'); }, textContent: item.label });
+            const label = item.isSelected ? `${item.label} \u2713` : item.label;
+            const el = $el("div", { className: "neo-gallery-send-menu-item" + (item.isSelected ? " neo-gallery-send-menu-selected" : ""), onclick: (e) => { e.stopPropagation(); this._removeSendMenu(); const s = document.getElementById("target-node-dropdown"); if (s) s.value = `${item.nodeId}:widget:${item.widgetIndex}`; this.copyToClipboard(image.name, image.txt_content, button, 'send'); }, textContent: label });
             dropdown.appendChild(el);
         }
         const rect = button.getBoundingClientRect();
@@ -1692,23 +1834,38 @@ class NeoGallery {
             }, ["\u00D7"]);
         }
 
-        // Send button — shows dropdown menu for target selection
-        const sendBtn = $el("div", {
-            className: "neo-gallery-thumb-send-btn",
+        // Image send button — shows dropdown menu for LoadImage-type node selection
+        const imgSendBtn = $el("div", {
+            className: "neo-gallery-thumb-img-send-btn",
             onclick: (e) => {
                 e.stopPropagation();
-                this._showSendMenu(image, sendBtn);
+                this._showImgSendMenu(image, imgSendBtn);
             }
-        }, ["\u2708\uFE0F"]);
+        }, ["\uD83D\uDCE4"]);
 
-        // Copy button
-        const copyBtn = $el("div", {
-            className: "neo-gallery-thumb-copy-btn",
-            onclick: (e) => {
-                e.stopPropagation();
-                this.copyToClipboard(image.name, image.txt_content, copyBtn, 'copy');
-            }
-        }, ["\u29C9"]);
+        // Send button — only show if image has prompt text
+        let sendBtn = null;
+        if (image.txt_content) {
+            sendBtn = $el("div", {
+                className: "neo-gallery-thumb-send-btn",
+                onclick: (e) => {
+                    e.stopPropagation();
+                    this._showSendMenu(image, sendBtn);
+                }
+            }, ["\u2708\uFE0F"]);
+        }
+
+        // Copy button — only show if image has prompt text
+        let copyBtn = null;
+        if (image.txt_content) {
+            copyBtn = $el("div", {
+                className: "neo-gallery-thumb-copy-btn",
+                onclick: (e) => {
+                    e.stopPropagation();
+                    this.copyToClipboard(image.name, image.txt_content, copyBtn, 'copy');
+                }
+            }, ["\u29C9"]);
+        }
 
         const imgEl = $el("img", {
             className: "neo-gallery-thumb-img",
@@ -1722,7 +1879,7 @@ class NeoGallery {
         // Buttons overlay at bottom of the image (floating above image edge)
         const btnBar = $el("div", {
             className: "neo-gallery-thumb-btn-bar"
-        }, [sendBtn, copyBtn]);
+        }, [sendBtn, imgSendBtn, copyBtn].filter(Boolean));
 
         // Wrap image and floating buttons together
         const imgWrapper = $el("div", {
@@ -1804,25 +1961,6 @@ class NeoGallery {
         return existing.endsWith('.') ? existing + ' ' + newText : existing + ', ' + newText;
     }
 
-    generateRandomPrompt() {
-        const allItems = [...this.allPresets];
-        // Also include items from custom dirs for random prompt
-        for (const dir of this.allCustomDirs) {
-            allItems.push(...dir.items.map(i => ({...i, subfolder: dir.name})));
-        }
-        
-        if (allItems.length === 0) {
-            this.showToast('warning', 'No Presets', 'No presets available.');
-            return;
-        }
-        const randomItem = allItems[Math.floor(Math.random() * allItems.length)];
-        if (randomItem && randomItem.txt_content) {
-            this.copyToClipboard("Random Prompt", randomItem.txt_content);
-        } else {
-            this.showToast('error', 'No Prompt', 'No txt data in selected preset.');
-        }
-    }
-
     copyToClipboard(imageName, txtContent, feedbackBtn = null, actionType = 'send') {
         let textToCopy = String(txtContent || "").trim();
         textToCopy = this.cleanText(textToCopy);
@@ -1897,6 +2035,8 @@ class NeoGallery {
             });
         }
     }
+
+
 
     // ====== Utility ======
 
@@ -2015,13 +2155,17 @@ class NeoGallery {
             className: "neo-gallery-lightbox-nav-btns"
         });
 
-        const sendBtn = $el("div", {
-            className: "neo-gallery-lightbox-btn neo-gallery-lightbox-send-btn",
-            onclick: (e) => {
-                e.stopPropagation();
-                this._showSendMenu(image, sendBtn);
-            }
-        }, ["\u2708\uFE0F Send"]);
+        // Send button — only show if image has prompt text
+        let sendBtn = null;
+        if (image.txt_content) {
+            sendBtn = $el("div", {
+                className: "neo-gallery-lightbox-btn neo-gallery-lightbox-send-btn",
+                onclick: (e) => {
+                    e.stopPropagation();
+                    this._showSendMenu(image, sendBtn);
+                }
+            }, ["\u2708\uFE0F Send"]);
+        }
 
         const copyBtn = $el("div", {
             className: "neo-gallery-lightbox-btn neo-gallery-lightbox-copy-btn",
