@@ -63,10 +63,6 @@ class NeoGallery {
 
         const customDirBtn = this.components.createCustomDirSettingBtn(this);
 
-        // Create target node dropdown and use selected node checkbox
-        this.targetNodeDropdown = this.components.createTargetNodeDropdown(this);
-        this.useSelectedNodeCheckbox = this.components.createUseSelectedNodeCheckbox(this);
-
         // Main content area
         this.accordion = $el("div", { className: "neo-gallery-accordion" });
 
@@ -89,20 +85,6 @@ class NeoGallery {
                 className: "neo-gallery-breadcrumb",
                 style: { display: 'none' }
             }, [this.components.createBreadcrumbHome(this)]),
-            // Add target node selection controls
-            $el("div", { 
-                className: "neo-gallery-target-controls",
-                style: { 
-                    display: 'flex', 
-                    gap: '10px', 
-                    alignItems: 'center',
-                    padding: '8px 12px',
-                    borderBottom: '1px solid #333'
-                }
-            }, [
-                this.targetNodeDropdown,
-                this.useSelectedNodeCheckbox
-            ]),
             this.accordion,
             this.customDirInput
         ]);

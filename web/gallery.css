@@ -124,24 +124,6 @@
 }
 
 /* ============================================
-   Target Node Dropdown
-   ============================================ */
-
-.neo-gallery-target-dropdown {
-    width: 100%;
-    padding: 4px 8px;
-    border-radius: 4px;
-    border: 1px solid #444;
-    background-color: #2a2a2a;
-    color: white;
-    font-size: 12px;
-    text-overflow: ellipsis;
-    outline: none;
-    box-sizing: content-box;
-    height: 26px;
-}
-
-/* ============================================
    Category Card Grid Layout
    ============================================ */
 
