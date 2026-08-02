@@ -123,6 +123,112 @@ def _make_entry(image_path: Path, txt_path: Path, raw_txt: str) -> dict | None:
 
 
 def _scan_gallery_entries(directory: Path) -> list[dict]:
+    """Scan directory (non-recursive) and return gallery entries.
+
+    Strategy: group files by stem (relative to directory). An image + sibling .txt = valid preset.
+    Only scans the immediate directory, not subdirectories.
+    Files directly in the root get category='' (empty string).
+    """
+    entries: list[dict] = []
+    if not directory.exists():
+        return entries
+
+    stems: dict[str, list[Path]] = {}  # key: stem -> [Path]
+    for p in directory.iterdir():
+        if not p.is_file():
+            continue
+        lower = p.suffix.lower()
+        if lower not in IMG_EXTENSIONS and lower != ".txt":
+            continue
+
+        stems.setdefault(p.stem, []).append(p)
+
+    for stem, files in sorted(stems.items()):
+        image_file = None
+        txt_file = None
+        for f in files:
+            if f.suffix.lower() in IMG_EXTENSIONS:
+                image_file = f
+            elif f.suffix.lower() == ".txt":
+                txt_file = f
+
+        if not image_file:
+            continue
+
+        txt_path = txt_file if txt_file else (image_file.with_suffix(".txt"))
+        raw_txt = ""
+        if txt_path.exists():
+            try:
+                raw_txt = txt_path.read_text(encoding="utf-8")
+            except Exception:
+                raw_txt = ""
+
+        entry = _make_entry(image_file, txt_path, raw_txt)
+        if entry:
+            entry["category"] = ""
+            entry["subfolder"] = ""
+            entries.append(entry)
+
+    return entries
+
+
+def _scan_gallery_entries_with_subdirs(directory: Path) -> dict:
+    """Scan directory and return entries grouped by subdirectory.
+
+    Returns a dict with:
+    - 'root': list of entries directly in the root directory
+    - 'subdirs': dict mapping subdir name to list of entries in that subdir
+    """
+    result = {"root": [], "subdirs": {}}
+    
+    if not directory.exists():
+        return result
+
+    # Scan root level
+    root_stems: dict[str, list[Path]] = {}
+    for p in directory.iterdir():
+        if p.is_file():
+            lower = p.suffix.lower()
+            if lower in IMG_EXTENSIONS or lower == ".txt":
+                root_stems.setdefault(p.stem, []).append(p)
+
+    for stem, files in sorted(root_stems.items()):
+        image_file = None
+        txt_file = None
+        for f in files:
+            if f.suffix.lower() in IMG_EXTENSIONS:
+                image_file = f
+            elif f.suffix.lower() == ".txt":
+                txt_file = f
+
+        if not image_file:
+            continue
+
+        txt_path = txt_file if txt_file else (image_file.with_suffix(".txt"))
+        raw_txt = ""
+        if txt_path.exists():
+            try:
+                raw_txt = txt_path.read_text(encoding="utf-8")
+            except Exception:
+                raw_txt = ""
+
+        entry = _make_entry(image_file, txt_path, raw_txt)
+        if entry:
+            entry["category"] = ""
+            entry["subfolder"] = ""
+            result["root"].append(entry)
+
+    # Scan subdirectories (non-recursive, only direct children)
+    for p in directory.iterdir():
+        if p.is_dir():
+            subdir_entries = _scan_gallery_entries(p)
+            if subdir_entries:
+                result["subdirs"][p.name] = subdir_entries
+
+    return result
+
+
+def _scan_gallery_entries_recursive(directory: Path) -> list[dict]:
     """Walk directory recursively and return gallery entries.
 
     Strategy: group files by stem (relative to directory). An image + sibling .txt = valid preset.
@@ -144,9 +250,12 @@ def _scan_gallery_entries(directory: Path) -> list[dict]:
         rel = p.relative_to(directory)
         parts = rel.parts
         category = ""
+        subfolder = ""
         if len(parts) > 1:
             # Subdirectory name(s) — use the first part as category
             category = parts[0]
+            # Build full subfolder path (e.g., "26-06-26/images")
+            subfolder = "/".join(parts[:-1])
 
         stems.setdefault((category, p.stem), []).append(p)
 
@@ -173,6 +282,7 @@ def _scan_gallery_entries(directory: Path) -> list[dict]:
         entry = _make_entry(image_file, txt_path, raw_txt)
         if entry:
             entry["category"] = category
+            entry["subfolder"] = subfolder
             entries.append(entry)
 
     return entries
@@ -186,24 +296,33 @@ def _scan_gallery_entries(directory: Path) -> list[dict]:
 async def get_gallery_list(request):
     """Return gallery listing (custom_dirs grouped by name + presets)."""
     user_custom_dirs = _get_user_custom_dirs()
-    presets = _scan_gallery_entries(PRESETS_DIR)
-
+    
+    # 使用新的扫描函数，返回子目录信息
+    presets_structure = _scan_gallery_entries_with_subdirs(PRESETS_DIR)
+    
     # Scan all user-configured directories, group by directory name
-    custom_dir_groups = {}  # dir_name -> {"name": ..., "path": ..., "items": [...]}
+    custom_dir_groups = {}  # dir_name -> {"name": ..., "path": ..., "items": [...], "subdirs": {...}}
     for dir_path in user_custom_dirs:
         dir_name = dir_path.name if dir_path.name else str(dir_path)
-        entries = _scan_gallery_entries(dir_path)
+        structure = _scan_gallery_entries_with_subdirs(dir_path)
+        entries = structure["root"]
         for entry in entries:
             entry["custom_source"] = dir_name  # tag to identify source directory
         custom_dir_groups[dir_name] = {
             "name": dir_name,
             "path": str(dir_path),
-            "items": entries
+            "items": entries,
+            "subdirs": structure["subdirs"]
         }
+
+    # 将 presets 结构转换为前端格式
+    presets = presets_structure["root"]
+    presets_subdirs = presets_structure["subdirs"]
 
     return web.json_response({
         "custom_dirs": list(custom_dir_groups.values()),
         "presets": presets,
+        "presets_subdirs": presets_subdirs,
         "total": sum(len(g["items"]) for g in custom_dir_groups.values()) + len(presets)
     })
 
@@ -256,29 +375,53 @@ async def copy_to_input(request):
         source_path = None
         user_custom_dirs = _get_user_custom_dirs()
         
-        # Check custom directories
-        for dir_path in user_custom_dirs:
-            candidate = dir_path / filename
-            if candidate.exists():
-                source_path = candidate
-                break
+        # Handle subfolder paths like "presets/26-06-26/images"
+        if subfolder:
+            dir_parts = [p for p in subfolder.split("/") if p]
+            
+            # Check if it's a presets path
+            if dir_parts[0] == "presets":
+                candidate = PRESETS_DIR
+                for part in dir_parts[1:]:
+                    candidate = candidate / part
+                candidate = candidate / filename
+                if candidate.exists():
+                    source_path = candidate
+            else:
+                # Check custom directories
+                for dir_path in user_custom_dirs:
+                    d_name = dir_path.name if dir_path.name else str(dir_path)
+                    if dir_parts[0] == d_name:
+                        candidate = dir_path
+                        for part in dir_parts[1:]:
+                            candidate = candidate / part
+                        candidate = candidate / filename
+                        if candidate.exists():
+                            source_path = candidate
+                            break
         
-        # Check presets
+        # Fallback: check root level of directories
+        if not source_path:
+            for dir_path in user_custom_dirs:
+                candidate = dir_path / filename
+                if candidate.exists():
+                    source_path = candidate
+                    break
+        
         if not source_path:
             candidate = PRESETS_DIR / filename
             if candidate.exists():
                 source_path = candidate
         
-        # Check custom
         if not source_path:
             candidate = CUSTOM_DIR / filename
             if candidate.exists():
                 source_path = candidate
         
+        # Check if source is already in input directory
         if not source_path:
             return web.json_response({"success": False, "error": "Image not found"}, status=404)
         
-        # Check if source is already in input directory
         input_dir = Path(_folder_paths.input_directory).resolve()
         resolved_source = source_path.resolve()
         if resolved_source.parent == input_dir:
@@ -358,7 +501,7 @@ async def resolve_comfyui_path(request):
 
 
 def _scan_directory_structure(directory: Path, base_dir: Path) -> dict:
-    """Scan directory and return hierarchical structure of subdirectories.
+    """Scan directory (non-recursive) and return hierarchical structure of subdirectories.
     
     Returns a dict with:
     - 'subdirs': list of subdirectory names (only direct children)
@@ -367,7 +510,7 @@ def _scan_directory_structure(directory: Path, base_dir: Path) -> dict:
     if not directory.exists():
         return {"subdirs": [], "images": []}
     
-    # Collect all items recursively first
+    # Scan only direct children (non-recursive)
     all_entries = _scan_gallery_entries(directory)
     
     # Group by category (first-level subdir name)
@@ -479,16 +622,27 @@ async def view_image(request):
                 return dir_path
         return None
     
-    if len(dir_parts) > 1:
+    if subfolder == "presets" or subfolder == "":
+        base = PRESETS_DIR
+    elif subfolder == "custom":
+        base = CUSTOM_DIR
+    elif len(dir_parts) > 0 and dir_parts[0] == "presets":
+        # Handle hierarchical paths like "presets/26-06-26/images"
+        base = PRESETS_DIR / "/".join(dir_parts[1:])
+    elif len(dir_parts) > 0 and len(dir_parts) == 1:
+        # Single part like "26-06-26" - try presets first, then custom dirs
+        candidate = PRESETS_DIR / dir_parts[0]
+        if candidate.exists():
+            base = candidate
+        else:
+            matched_dir = _match_dir_name(dir_parts)
+            if matched_dir:
+                base = matched_dir
+    elif len(dir_parts) > 1:
         # First part is the directory name, rest are subdirectories
         matched_dir = _match_dir_name(dir_parts)
         if matched_dir:
             base = matched_dir / "/".join(dir_parts[1:])
-    elif subfolder in ("presets", "custom"):
-        if subfolder == "presets":
-            base = PRESETS_DIR
-        else:
-            base = CUSTOM_DIR
     else:
         # Try to find as custom directory name
         for dir_path in user_custom_dirs:
@@ -515,12 +669,16 @@ async def view_image(request):
     for ext in [".jpeg", ".jpg", ".png", ".webp", ".gif", ".bmp", ".tiff"]:
         candidates_to_try.append(file_stem + ext)
     
+    # If subfolder already contains the full path (e.g., "presets/26-06-26/images"),
+    # don't try to add category again
+    use_category = category and not any(part in subfolder for part in category.split("/"))
+    
     for candidate_filename in candidates_to_try:
         if candidate_filename in checked_paths:
             continue
         
-        # Try with category first
-        if category:
+        # Try with category first (only if subfolder doesn't already contain the category path)
+        if use_category and category:
             candidate = base / category / candidate_filename
             if candidate.exists():
                 fullpath = candidate

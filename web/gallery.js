@@ -1,6 +1,17 @@
 import { app } from "../../../../scripts/app.js";
 import { api } from "../../../../scripts/api.js";
 import { $el } from "../../../../scripts/ui.js";
+import { GalleryComponents } from './gallery-components.js';
+import {
+    PAGE_SIZE,
+    getReservedSpace,
+    isImageFile,
+    sortByMtime,
+    showNoFilesMessage,
+    showLoadingOverlay,
+    showToast,
+    showInlineFeedback
+} from './gallery-utils.js';
 
 // Load gallery CSS
 const galleryCssLink = document.createElement('link');
@@ -16,44 +27,50 @@ class NeoGallery {
         this.app = app;
         this.maxThumbnailSize = 300;
         this.displayLabels = true;
-        // New data structure: custom_dirs grouped by dir name
-        this.allCustomDirs = [];   // [{name, path, items: [...]}, ...]
+        this.allCustomDirs = [];
         this.allPresets = [];
         this.filteredCustomDirs = [];
         this.filteredPresets = [];
         this.sortAscending = true;
-        this.searchInput = this.createSearchInput();
-        this.thumbnailSizeSlider = this.createThumbnailSizeSlider();
+        this._renderQueue = [];
+        this._renderedCount = 0;
+        
+        // UI components
+        this.components = new GalleryComponents(this);
+        this.searchInput = this.components.createSearchInput(this);
+        this.thumbnailSizeSlider = this.components.createThumbnailSizeSlider(this);
         this.customDirSettingBtn = null;
+        
         // Card-based layout state
         this.currentView = {
-            mode: 'categories',  // 'categories' | 'images'
-            source: null,        // dir name or 'presets'
-            categoryPath: [],    // breadcrumb path segments
+            mode: 'categories',
+            source: null,
+            categoryPath: [],
         };
         this.placeholderImageUrl = `${window.location.protocol}//${window.location.host}/neo_gallery/placeholder.png`;
         this.sectionStates = {};
         this.isSearchActive = false;
-
-        // Use a unique ID so we can find and clean up old instances across all containers
         this.elementId = "neo-gallery-panel-root";
-
-        // Create the custom dir setting button (will be populated after settings load)
+        
+        // Custom dir input
         this.customDirInput = $el("input", {
             type: "text",
             value: "",
             readonly: true,
             className: "neo-gallery-custom-dir-input-inline",
-            style: { display: "none" } // hidden, used only for value storage
+            style: { display: "none" }
         });
 
-        const customDirBtn = this.createCustomDirSettingBtn();
+        const customDirBtn = this.components.createCustomDirSettingBtn(this);
 
-        // Main content area for gallery cards/images
+        // Create target node dropdown and use selected node checkbox
+        this.targetNodeDropdown = this.components.createTargetNodeDropdown(this);
+        this.useSelectedNodeCheckbox = this.components.createUseSelectedNodeCheckbox(this);
+
+        // Main content area
         this.accordion = $el("div", { className: "neo-gallery-accordion" });
 
         this.element = $el("div", { id: this.elementId, className: "neo-gallery-panel" }, [
-            // Header row — title left (col1), spacer (col2), buttons right (col3)
             $el("div", { 
                 className: "neo-gallery-header-row",
                 style: { display: 'grid', gridTemplateColumns: 'auto 1fr auto', alignItems: 'center' }
@@ -64,280 +81,40 @@ class NeoGallery {
                 }, [this.thumbnailSizeSlider]),
                 $el("div", { style: { display: 'flex', gap: '12px', alignItems: 'center' } }, [customDirBtn])
             ]),
-            // Search row
             $el("div", { className: "neo-gallery-search-row" }, [
                 $el("div", { className: "neo-gallery-search-container" }, [this.searchInput])
             ]),
-            // Breadcrumb navigation (shown when viewing category images)
             $el("div", { 
                 id: "neo-gallery-breadcrumb",
                 className: "neo-gallery-breadcrumb",
                 style: { display: 'none' }
-            }, [this.createBreadcrumbHome()]),
-            // Main content area (cards or expanded images)
+            }, [this.components.createBreadcrumbHome(this)]),
+            // Add target node selection controls
+            $el("div", { 
+                className: "neo-gallery-target-controls",
+                style: { 
+                    display: 'flex', 
+                    gap: '10px', 
+                    alignItems: 'center',
+                    padding: '8px 12px',
+                    borderBottom: '1px solid #333'
+                }
+            }, [
+                this.targetNodeDropdown,
+                this.useSelectedNodeCheckbox
+            ]),
             this.accordion,
             this.customDirInput
         ]);
 
-        // Load custom directory settings from backend (sets the button text)
         this.loadGallerySettings();
     }
 
-    createCustomDirSettingBtn() {
-        const btn = $el("button", {
-            className: "neo-gallery-custom-dir-btn",
-            title: "Set custom directory",
-            onclick: async () => await this.promptAndSetCustomDir(),
-            textContent: "+"
-        });
-        this.customDirSettingBtn = btn;
-        return btn;
-    }
-
-    // ====== Breadcrumb Navigation ======
-
-    createBreadcrumbHome() {
-        const homeBtn = $el("span", {
-            className: "neo-gallery-breadcrumb-item neo-gallery-breadcrumb-home",
-            textContent: "\uD83C\uDFE0",
-            onclick: (e) => {
-                e.stopPropagation();
-                this.showCategoryCards();
-            }
-        });
-        return homeBtn;
-    }
-
-    updateBreadcrumb(pathSegments, sourceName) {
-        const breadcrumb = document.getElementById("neo-gallery-breadcrumb");
-        if (!breadcrumb) return;
-
-        // Remove any existing sibling dropdowns first
-        this._removeSiblingDropdown();
-
-        // Determine the root directory name for this navigation context
-        const rootDirName = this.currentView.source || '';
-        
-        if (pathSegments.length === 0 && !sourceName && !rootDirName) {
-            // Show only home button
-            breadcrumb.style.display = 'flex';
-            breadcrumb.innerHTML = '';
-            breadcrumb.appendChild(this.createBreadcrumbHome());
-            return;
-        }
-
-        breadcrumb.style.display = 'flex';
-        breadcrumb.innerHTML = '';
-        
-        // Home button - goes back to category cards view (left side)
-        const homeBtn = $el("span", {
-            className: "neo-gallery-breadcrumb-item neo-gallery-breadcrumb-home",
-            textContent: "\uD83C\uDFE0",
-            onclick: (e) => {
-                e.stopPropagation();
-                this.showCategoryCards();
-            }
-        });
-        breadcrumb.appendChild(homeBtn);
-
-        // For directory navigation, show full path as segments
-        if (rootDirName) {
-            const sep1 = $el("span", { className: "neo-gallery-breadcrumb-sep", textContent: ">" });
-            breadcrumb.appendChild(sep1);
-            
-            // Root directory is clickable to go back to dir root
-            if (pathSegments.length > 0) {
-                breadcrumb.appendChild($el("span", {
-                    className: "neo-gallery-breadcrumb-item",
-                    textContent: rootDirName,
-                    onclick: (e) => {
-                        e.stopPropagation();
-                        this.showDirectoryStructure(rootDirName, []);
-                    }
-                }));
-            } else {
-                breadcrumb.appendChild($el("span", {
-                    className: "neo-gallery-breadcrumb-item neo-gallery-breadcrumb-current",
-                    textContent: rootDirName
-                }));
-            }
-
-            // Separator and path segments (subdirectories)
-            for (let i = 0; i < pathSegments.length; i++) {
-                const sep = $el("span", { className: "neo-gallery-breadcrumb-sep", textContent: ">" });
-                breadcrumb.appendChild(sep);
-                
-                if (i === pathSegments.length - 1) {
-                    // Last segment is the current location — clickable to show sibling directories
-                    const currentSegmentEl = $el("span", {
-                        className: "neo-gallery-breadcrumb-item neo-gallery-breadcrumb-current neo-gallery-breadcrumb-sibling-trigger",
-                        textContent: pathSegments[i],
-                        title: "点击显示同级目录"
-                    });
-                    
-                    // Add click handler to show sibling dropdown
-                    currentSegmentEl.onclick = (e) => {
-                        e.stopPropagation();
-                        this._toggleSiblingDropdown(e, rootDirName, pathSegments);
-                    };
-                    
-                    breadcrumb.appendChild(currentSegmentEl);
-                } else {
-                    breadcrumb.appendChild($el("span", {
-                        className: "neo-gallery-breadcrumb-item",
-                        textContent: pathSegments[i],
-                        onclick: (e) => {
-                            e.stopPropagation();
-                            this.showDirectoryStructure(rootDirName, pathSegments.slice(0, i + 1));
-                        }
-                    }));
-                }
-            }
-
-            // Add "up" button on the right side if there are parent directories to navigate to
-            if (pathSegments.length > 0) {
-                const sepUp = $el("span", { className: "neo-gallery-breadcrumb-sep", textContent: "" });
-                breadcrumb.appendChild(sepUp);
-
-                // Spacer to push up button to the right
-                const spacer = $el("div", { style: { flex: 1 } });
-                breadcrumb.appendChild(spacer);
-
-                // Up button - goes to parent directory
-                const upBtn = $el("span", {
-                    className: "neo-gallery-breadcrumb-item neo-gallery-breadcrumb-up",
-                    title: "上一级",
-                    textContent: "\u2B06",
-                    onclick: (e) => {
-                        e.stopPropagation();
-                        // Navigate to parent by removing the last segment
-                        const parentPath = pathSegments.slice(0, -1);
-                        this.showDirectoryStructure(rootDirName, parentPath);
-                    }
-                });
-                breadcrumb.appendChild(upBtn);
-            }
-        } else if (sourceName) {
-            // Fallback for presets view - just show source name
-            const sep = $el("span", { className: "neo-gallery-breadcrumb-sep", textContent: ">" });
-            breadcrumb.appendChild(sep);
-            breadcrumb.appendChild($el("span", {
-                className: "neo-gallery-breadcrumb-item neo-gallery-breadcrumb-current",
-                textContent: sourceName
-            }));
-
-            // Add up button for presets view too (go back to categories)
-            if (pathSegments.length > 0 || sourceName) {
-                const spacer = $el("div", { style: { flex: 1 } });
-                breadcrumb.appendChild(spacer);
-
-                const upBtn = $el("span", {
-                    className: "neo-gallery-breadcrumb-item neo-gallery-breadcrumb-up",
-                    title: "返回上级",
-                    textContent: "\u2B06",
-                    onclick: (e) => {
-                        e.stopPropagation();
-                        this.showCategoryCards();
-                    }
-                });
-                breadcrumb.appendChild(upBtn);
-            }
-        }
-    }
-
-    // ====== Sibling Directory Dropdown ======
-
-    _removeSiblingDropdown() {
-        const existing = document.getElementById('neo-gallery-sibling-dropdown');
-        if (existing) existing.remove();
-    }
-
-    async _toggleSiblingDropdown(event, rootDirName, pathSegments) {
-        // Remove any existing dropdown first
-        this._removeSiblingDropdown();
-
-        // If the clicked element already has a dropdown parent, close it
-        const trigger = event.currentTarget;
-        if (trigger.classList.contains('neo-gallery-breadcrumb-sibling-trigger')) {
-            // Check if there's an open sibling dropdown near this trigger
-            const existingDropdown = document.getElementById('neo-gallery-sibling-dropdown');
-            if (existingDropdown) {
-                existingDropdown.remove();
-                return;
-            }
-        }
-
-        // Get the parent directory path for fetching siblings (exclude current segment)
-        const parentPath = pathSegments.slice(0, -1);
-        
-        console.log('[Gallery] Sibling dropdown:', { rootDirName, pathSegments, parentPath });
-        
-        // Fetch sibling directories from backend
-        let siblings = [];
-        try {
-            const resp = await api.fetchApi(`/neo_gallery/dir_structure?dir_name=${encodeURIComponent(rootDirName)}&path=${encodeURIComponent(parentPath.join("/"))}`);
-            if (resp.ok) {
-                const structure = await resp.json();
-                console.log('[Gallery] Sibling dirs response:', structure.subdirs);
-                // Get subdirectories at this level — these are siblings of the current directory
-                siblings = (structure.subdirs || []).map(s => ({ name: s, path: [...parentPath, s] }));
-            }
-        } catch (e) {
-            console.error('[Gallery] Error fetching sibling directories:', e);
-        }
-
-        // Only show dropdown if there are siblings to navigate to
-        if (siblings.length === 0) return;
-
-        // Create dropdown container
-        const dropdown = $el("div", {
-            id: "neo-gallery-sibling-dropdown",
-            className: "neo-gallery-sibling-dropdown"
-        });
-
-        // Get trigger position for positioning the dropdown
-        const rect = event.target.getBoundingClientRect();
-        
-        // Position dropdown below the breadcrumb
-        dropdown.style.position = 'fixed';
-        dropdown.style.top = (rect.bottom + 4) + 'px';
-        dropdown.style.left = Math.min(rect.left, window.innerWidth - 200) + 'px';
-        dropdown.style.zIndex = '9999';
-
-        // Create list of sibling items
-        const listContainer = $el("div", { className: "neo-gallery-sibling-list" });
-        
-        for (const sib of siblings) {
-            const item = $el("div", {
-                className: "neo-gallery-sibling-item",
-                onclick: (e) => {
-                    e.stopPropagation();
-                    this._removeSiblingDropdown();
-                    // Navigate to sibling directory
-                    this.showDirectoryStructure(rootDirName, sib.path);
-                },
-                textContent: sib.name
-            });
-            
-            // Add hover effect
-            item.onmouseenter = () => item.classList.add('neo-gallery-sibling-item-hover');
-            item.onmouseleave = () => item.classList.remove('neo-gallery-sibling-item-hover');
-            
-            listContainer.appendChild(item);
-        }
-
-        dropdown.appendChild(listContainer);
-        document.body.appendChild(dropdown);
-
-        // Close dropdown when clicking outside
-        const closeHandler = (e) => {
-            if (!dropdown.contains(e.target) && e.target !== trigger) {
-                this._removeSiblingDropdown();
-                document.removeEventListener('click', closeHandler);
-            }
-        };
-        setTimeout(() => document.addEventListener('click', closeHandler), 10);
-    }
+    // Static constants for settings
+    static THUMBNAIL_SIZE_MIN = 150;
+    static THUMBNAIL_SIZE_MAX = 500;
+    static THUMBNAIL_SIZE_STEP = 25;
+    static THUMBNAIL_SIZE_DEFAULT = 300;
 
     // ====== Directory Management ======
 
@@ -347,11 +124,8 @@ class NeoGallery {
             if (resp.ok) {
                 const settings = await resp.json();
                 const customDir = settings.custom_directory || "";
-                
-                // Update hidden input for value storage
                 this.customDirInput.value = customDir;
                 
-                // Update button title to show current path
                 if (this.customDirSettingBtn) {
                     if (customDir) {
                         const displayName = customDir.split(/[\\/]/).pop();
@@ -373,262 +147,7 @@ class NeoGallery {
     }
 
     async promptAndSetCustomDir() {
-        // Remove existing modal if any
-        const existingModal = document.querySelector('.neo-gallery-dir-modal');
-        if (existingModal) existingModal.remove();
-
-        let currentDirs = [];
-        try {
-            const resp = await api.fetchApi('/neo_gallery/get_settings');
-            if (resp.ok) {
-                const settings = await resp.json();
-                const dirs = settings.custom_directories || [];
-                if (Array.isArray(dirs)) {
-                    currentDirs = [...dirs];
-                } else if (settings.custom_directory) {
-                    currentDirs = [settings.custom_directory];
-                }
-            }
-        } catch(e) {}
-
-        // Create modal overlay
-        const modalOverlay = $el("div", {
-            className: "neo-gallery-dir-modal-overlay",
-            onclick: (e) => { if (e.target === modalOverlay) this.closeDirModal(); }
-        });
-
-        const modal = $el("div", {
-            className: "neo-gallery-dir-modal"
-        });
-
-        // Title bar
-        const titleBar = $el("div", { className: "neo-gallery-dir-modal-titlebar" }, [
-            $el("span", { className: "neo-gallery-dir-modal-title", textContent: "\uD83D\uDCC1 Manage Directories" }),
-            $el("span", { 
-                className: "neo-gallery-dir-modal-close",
-                onclick: () => this.closeDirModal(),
-                textContent: "\u00D7"
-            })
-        ]);
-
-        // Directory list area
-        const dirListContainer = $el("div", { className: "neo-gallery-dir-list-container" });
-        
-        if (currentDirs.length === 0) {
-            dirListContainer.appendChild($el("div", {
-                className: "neo-gallery-dir-empty",
-                textContent: "No directories configured yet."
-            }));
-        } else {
-            const dirItems = $el("div", { className: "neo-gallery-dir-items" });
-            
-            for (const dirPath of currentDirs) {
-                const item = $el("div", { className: "neo-gallery-dir-item" }, [
-                    $el("span", { 
-                        className: "neo-gallery-dir-path",
-                        textContent: dirPath,
-                        title: dirPath
-                    }),
-                    $el("button", {
-                        className: "neo-gallery-dir-remove-btn",
-                        onclick: async (e) => {
-                            e.stopPropagation();
-                            await this.removeCustomDir(dirPath);
-                            // Refresh modal after removal
-                            setTimeout(() => this.promptAndSetCustomDir(), 300);
-                        },
-                        textContent: "\u2715"
-                    })
-                ]);
-                dirItems.appendChild(item);
-            }
-            
-            dirListContainer.appendChild(dirItems);
-        }
-
-        // Add new directory input area
-        const addArea = $el("div", { className: "neo-gallery-dir-add-area" }, [
-            $el("input", {
-                type: "text",
-                id: "neo-gallery-new-dir-input",
-                className: "neo-gallery-dir-input",
-                placeholder: "Enter directory path...",
-                title: "Paste or type a full directory path here"
-            }),
-            $el("button", {
-                className: "neo-gallery-dir-add-btn",
-                onclick: async () => {
-                    const input = document.getElementById('neo-gallery-new-dir-input');
-                    const dirPath = input.value.trim();
-                    
-                    if (!dirPath) return;
-
-                    // Validate directory exists
-                    try {
-                        const resp = await api.fetchApi('/neo_gallery/save_settings', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ action: "add", path: dirPath })
-                        });
-                        const result = await resp.json();
-                        
-                        if (resp.ok && result.success) {
-                            input.value = '';
-                            // Refresh modal to show updated list
-                            setTimeout(() => this.promptAndSetCustomDir(), 300);
-                            
-                            // Reload gallery in background
-                            try { await this.loadGallery(); this.sortAndDisplayImages(); } catch(e) {}
-                        } else {
-                            alert('Failed: ' + (result.error || 'Unknown error'));
-                        }
-                    } catch (e) {
-                        console.error('[Neo Gallery] Error adding directory:', e);
-                        alert('Error adding directory');
-                    }
-                },
-                textContent: "\u27A4"
-            })
-        ]);
-
-        // Quick add buttons for common ComfyUI directories
-        const quickAddArea = $el("div", { className: "neo-gallery-dir-quick-add" }, [
-            $el("span", { 
-                className: "neo-gallery-dir-quick-label",
-                textContent: "Quick add:"
-            }),
-            $el("button", {
-                className: "neo-gallery-dir-quick-btn neo-gallery-dir-quick-input",
-                onclick: async () => {
-                    try {
-                        const resp = await api.fetchApi('/neo_gallery/resolve_path?path_type=input');
-                        if (resp.ok) {
-                            const result = await resp.json();
-                            if (result.success && result.path) {
-                                // Directly add to settings and refresh modal
-                                const saveResp = await api.fetchApi('/neo_gallery/save_settings', {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ action: "add", path: result.path })
-                                });
-                                const saveResult = await saveResp.json();
-                                
-                                if (saveResp.ok && saveResult.success) {
-                                    // Refresh modal to show updated list
-                                    setTimeout(() => this.promptAndSetCustomDir(), 300);
-                                    
-                                    // Reload gallery in background
-                                    try { await this.loadGallery(); this.sortAndDisplayImages(); } catch(e) {}
-                                } else {
-                                    alert('Failed: ' + (saveResult.error || 'Unknown error'));
-                                }
-                            } else {
-                                alert(result.error || 'Could not resolve input directory');
-                            }
-                        } else {
-                            alert('Failed to get ComfyUI input path');
-                        }
-                    } catch(e) {
-                        console.error('[Gallery] Error resolving input path:', e);
-                        alert('Error getting ComfyUI input path');
-                    }
-                },
-                textContent: "\uD83D\uDCE5 Input"
-            }),
-            $el("button", {
-                className: "neo-gallery-dir-quick-btn neo-gallery-dir-quick-output",
-                onclick: async () => {
-                    try {
-                        const resp = await api.fetchApi('/neo_gallery/resolve_path?path_type=output');
-                        if (resp.ok) {
-                            const result = await resp.json();
-                            if (result.success && result.path) {
-                                // Directly add to settings and refresh modal
-                                const saveResp = await api.fetchApi('/neo_gallery/save_settings', {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ action: "add", path: result.path })
-                                });
-                                const saveResult = await saveResp.json();
-                                
-                                if (saveResp.ok && saveResult.success) {
-                                    // Refresh modal to show updated list
-                                    setTimeout(() => this.promptAndSetCustomDir(), 300);
-                                    
-                                    // Reload gallery in background
-                                    try { await this.loadGallery(); this.sortAndDisplayImages(); } catch(e) {}
-                                } else {
-                                    alert('Failed: ' + (saveResult.error || 'Unknown error'));
-                                }
-                            } else {
-                                alert(result.error || 'Could not resolve output directory');
-                            }
-                        } else {
-                            alert('Failed to get ComfyUI output path');
-                        }
-                    } catch(e) {
-                        console.error('[Gallery] Error resolving output path:', e);
-                        alert('Error getting ComfyUI output path');
-                    }
-                },
-                textContent: "\uD83D\uDCE4 Output"
-            })
-        ]);
-
-        // Bulk add area for multiple directories
-        const bulkArea = $el("div", { className: "neo-gallery-dir-bulk-area" }, [
-            $el("textarea", {
-                id: "neo-gallery-bulk-dir-input",
-                className: "neo-gallery-dir-textarea",
-                placeholder: "Bulk add (one path per line):\n/path/to/dir1\n/path/to/dir2",
-                rows: 3
-            }),
-            $el("button", {
-                className: "neo-gallery-dir-bulk-btn",
-                onclick: async () => {
-                    const textarea = document.getElementById('neo-gallery-bulk-dir-input');
-                    const lines = textarea.value.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-                    
-                    if (lines.length === 0) return;
-
-                    let successCount = 0;
-                    for (const dirPath of lines) {
-                        try {
-                            const resp = await api.fetchApi('/neo_gallery/save_settings', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ action: "add", path: dirPath })
-                            });
-                            const result = await resp.json();
-                            if (resp.ok && result.success) successCount++;
-                        } catch(e) {}
-                    }
-
-                    if (successCount > 0) {
-                        textarea.value = '';
-                        setTimeout(() => this.promptAndSetCustomDir(), 300);
-                        try { await this.loadGallery(); this.sortAndDisplayImages(); } catch(e) {}
-                    } else if (lines.length > 0) {
-                        alert('All directories failed to add. Check paths and try again.');
-                    }
-                },
-                textContent: "Add All"
-            })
-        ]);
-
-        modal.appendChild(titleBar);
-        modal.appendChild(dirListContainer);
-        modal.appendChild(addArea);
-        modal.appendChild(quickAddArea);
-        modal.appendChild(bulkArea);
-        modalOverlay.appendChild(modal);
-        document.body.appendChild(modalOverlay);
-
-        // Focus the input
-        setTimeout(() => {
-            const input = document.getElementById('neo-gallery-new-dir-input');
-            if (input) input.focus();
-        }, 100);
+        await this.components.buildDirModal(this);
     }
 
     closeDirModal() {
@@ -648,7 +167,7 @@ class NeoGallery {
         
         if (saveResp.ok && result.success) {
             await this.loadGallery();
-            this.sortAndDisplayImages();
+            await this.sortAndDisplayImages();
         } else {
             alert('Failed to remove directory: ' + (result.error || ''));
         }
@@ -690,391 +209,6 @@ class NeoGallery {
         }
     }
 
-    // ====== UI Builders ======
-
-    createTargetNodeDropdown() {
-        const dropdown = $el("select", {
-            id: "target-node-dropdown",
-            className: "neo-gallery-target-dropdown",
-            title: "Target for prompt insertion: where the gallery prompt will be sent"
-        });
-
-        // Placeholder option
-        dropdown.appendChild($el("option", {
-            value: "",
-            textContent: "Select prompt target...",
-            className: "neo-gallery-dropdown-placeholder"
-        }));
-
-        // Active Selected Node option (dynamically updated)
-        dropdown.appendChild($el("option", { value: "selected", textContent: "\u2B50 Active Selected Text Node", id: "selected-node-option" }));
-
-        const updateDropdownOptions = () => {
-            while (dropdown.children.length > 2) {
-                dropdown.removeChild(dropdown.lastChild);
-            }
-
-            const activeOption = dropdown.querySelector('#selected-node-option');
-            if (activeOption) {
-                activeOption.textContent = '\u2B50 Active Selected Text Node';
-                activeOption.style.display = '';
-            }
-
-            app.graph._nodes.forEach(node => {
-                const validTextWidgets = [];
-
-                if (node.widgets) {
-                    node.widgets.forEach((widget, index) => {
-                        const widgetName = (widget.name || '').toLowerCase();
-                        if (/negative/.test(widgetName)) return;
-                        if (widget.inputEl && /string|text|custom/.test(widget.type || '')) {
-                            validTextWidgets.push({ widget, index });
-                        }
-                    });
-                }
-                if (validTextWidgets.length > 0) {
-                    validTextWidgets.forEach(({ widget, index }) => {
-                        dropdown.appendChild($el("option", {
-                            value: `${node.id}:widget:${index}`,
-                            textContent: `\u25B8 ${node.title || 'Node'} \u2192 ${widget.name}`
-                        }));
-                    });
-                }
-            });
-        };
-
-        updateDropdownOptions();
-        app.graph.onNodeAdded = updateDropdownOptions;
-        app.graph.onNodeRemoved = updateDropdownOptions;
-        return dropdown;
-    }
-
-    _removeSendMenu() {
-        const existing = document.getElementById('neo-gallery-send-menu');
-        if (existing) existing.remove();
-    }
-
-    _removeImgSendMenu() {
-        const existing = document.getElementById('neo-gallery-img-send-menu');
-        if (existing) existing.remove();
-    }
-
-    async _showImgSendMenu(image, button) {
-        this._removeImgSendMenu();
-        if (!/\.(png|jpg|jpeg|gif|webp|bmp|tiff)$/i.test(image.filename)) {
-            this.showToast('warning', 'Not an Image', 'This file is not an image.');
-            return;
-        }
-        const menuItems = [];
-        console.log('[Gallery] Scanning nodes for LoadImage:', app.graph._nodes.length, 'nodes');
-        app.graph._nodes.forEach(node => {
-            console.log('[Gallery] Node:', node.comfyClass, node.title, 'widgets:', node.widgets?.length);
-            if (!node.widgets) return;
-            node.widgets.forEach((widget, index) => {
-                const wn = (widget.name || '').toLowerCase();
-                const isLoadImage = /load.?image/i.test(node.comfyClass || '') || /load.?image/i.test(node.title || '');
-                const isImageWidget = /image|upload/.test(wn);
-                console.log('[Gallery] Widget:', widget.name, 'type:', widget.type, 'inputEl:', !!widget.inputEl, 'isLoadImage:', isLoadImage, 'isImageWidget:', isImageWidget);
-                // For LoadImage nodes, only add image combo widget (not upload button or preview)
-                if (isLoadImage && widget.type === 'combo' && /image/.test(wn)) {
-                    menuItems.push({ nodeId: node.id, widgetIndex: index, label: `\u25B8 ${node.title || 'Node'} \u2192 ${widget.name}`, isLoadImage, isText: false });
-                } else if ((isLoadImage || isImageWidget) && widget.inputEl) {
-                    menuItems.push({ nodeId: node.id, widgetIndex: index, label: `\u25B8 ${node.title || 'Node'} \u2192 ${widget.name}`, isLoadImage, isText: widget.type === 'customtext' || widget.type === 'text' });
-                }
-            });
-        });
-        console.log('[Gallery] Found menuItems:', menuItems.length);
-        const selKeys = Object.keys(app.canvas.selected_nodes);
-        let selectedNodeId = null;
-        if (selKeys.length > 0) {
-            const sn = app.canvas.selected_nodes[selKeys[0]];
-            // Check if selected node is a LoadImage node with image widget OR has a text widget
-            const isLoadImage = /load.?image/i.test(sn.comfyClass || '') || /load.?image/i.test(sn.title || '');
-            const hasImageWidget = sn.widgets && sn.widgets.some(w => /image|upload/.test((w.name||'').toLowerCase()));
-            const hasTextWidget = sn.widgets && sn.widgets.some(w => ['string', 'text', 'customtext'].includes(w.type));
-            if ((isLoadImage && hasImageWidget) || hasTextWidget) {
-                selectedNodeId = sn.id;
-            }
-        }
-        if (menuItems.length === 0 && !selectedNodeId) { this.showToast('warning', 'No Target', 'No LoadImage-type nodes found.'); return; }
-        
-        // Mark selected items and sort to top
-        menuItems.forEach(item => {
-            item.isSelected = item.nodeId === selectedNodeId;
-        });
-        menuItems.sort((a, b) => {
-            if (a.isSelected !== b.isSelected) return a.isSelected ? -1 : 1;
-            if (a.isLoadImage !== b.isLoadImage) return a.isLoadImage ? -1 : 1;
-            return 0;
-        });
-        console.log('[Gallery] Sorted menuItems:', menuItems.map(i => ({label: i.label, isSelected: i.isSelected, isLoadImage: i.isLoadImage})));
-        
-        // If only one target and no selection, send directly without menu
-        if (menuItems.length === 1 && !selectedNodeId) {
-            const item = menuItems[0];
-            this.sendImageToNode(image, `${item.nodeId}:widget:${item.widgetIndex}`, button);
-            return;
-        }
-        
-        const dropdown = $el("div", { id: "neo-gallery-img-send-menu", className: "neo-gallery-send-menu" });
-        for (const item of menuItems) {
-            const label = item.isSelected ? `${item.label} \u2713` : item.label;
-            const el = $el("div", { className: "neo-gallery-send-menu-item" + (item.isSelected ? " neo-gallery-send-menu-selected" : ""), onclick: (e) => { e.stopPropagation(); this._removeImgSendMenu(); this.sendImageToNode(image, `${item.nodeId}:widget:${item.widgetIndex}`, button); }, textContent: label });
-            dropdown.appendChild(el);
-        }
-        const rect = button.getBoundingClientRect();
-        dropdown.style.position = 'fixed'; dropdown.style.left = Math.min(rect.left, window.innerWidth - 250) + 'px'; dropdown.style.zIndex = '10001';
-        document.body.appendChild(dropdown);
-        requestAnimationFrame(() => {
-            dropdown.style.top = (rect.top - dropdown.offsetHeight - 8) + 'px';
-        });
-        const closeHandler = (e) => { if (!dropdown.contains(e.target) && e.target !== button) { this._removeImgSendMenu(); document.removeEventListener('click', closeHandler); } };
-        setTimeout(() => document.addEventListener('click', closeHandler), 10);
-    }
-
-    async sendImageToNode(image, target, button) {
-        const selectedValue = target === 'selected' ? 'selected' : target;
-        let targetNode = null;
-        let targetWidget = null;
-        if (selectedValue === 'selected') {
-            const selKeys = Object.keys(app.canvas.selected_nodes);
-            if (selKeys.length > 0) {
-                targetNode = app.canvas.selected_nodes[selKeys[0]];
-                targetWidget = targetNode?.widgets?.find(w => /image|upload/.test((w.name||'').toLowerCase()));
-            }
-        } else {
-            const [nodeId, , index] = selectedValue.split(':');
-            targetNode = app.graph.getNodeById(parseInt(nodeId));
-            targetWidget = targetNode?.widgets?.[parseInt(index)];
-        }
-        if (!targetNode || !targetWidget) {
-            this.showToast('error', 'Send Failed', 'Could not find target node/widget.');
-            return;
-        }
-        const widgetType = targetWidget.type || '';
-        
-        // For LoadImage combo widget, copy image to input directory first
-        if (widgetType === 'combo') {
-            try {
-                const resp = await api.fetchApi('/neo_gallery/copy_to_input?filename=' + encodeURIComponent(image.filename) + (image.subfolder ? '&subfolder=' + encodeURIComponent(image.subfolder) : ''));
-                if (resp.ok) {
-                    const result = await resp.json();
-                    if (result.success) {
-                        // If skipped (already in input dir), use original filename
-                        targetWidget.value = result.skipped ? image.filename : result.filename;
-                    } else {
-                        this.showToast('error', 'Copy Failed', result.error || 'Failed to copy image to input directory');
-                        return;
-                    }
-                } else {
-                    this.showToast('error', 'Copy Failed', 'Failed to copy image');
-                    return;
-                }
-            } catch (e) {
-                console.error('[Gallery] Error copying image:', e);
-                this.showToast('error', 'Copy Failed', 'Error copying image');
-                return;
-            }
-        } else {
-            const filePath = `${image.subfolder || ''}/${image.filename}`;
-            if (widgetType === 'customtext' || widgetType === 'text') {
-                targetWidget.value = filePath;
-            } else {
-                targetWidget.value = {
-                    filename: image.filename,
-                    subfolder: image.subfolder || '',
-                    type: image.type || 'input'
-                };
-            }
-        }
-        // For combo widgets, call callback if available to update preview
-        if (widgetType === 'combo' && targetWidget.callback) {
-            targetWidget.callback(targetWidget.value);
-        } else if (targetNode.onWidgetChanged) {
-            targetNode.onWidgetChanged(targetWidget.name, targetWidget.value);
-        }
-        app.graph.setDirtyCanvas(true, true);
-        this.showInlineFeedback(button, '\u2705 Image Sent!', 'success');
-        this.showToast('success', 'Image Sent!', `Sent to ${targetNode.title || 'Node'} - ${targetWidget.name}`);
-    }
-
-    async _showSendMenu(image, button) {
-        this._removeSendMenu();
-        const menuItems = [];
-        app.graph._nodes.forEach(node => {
-            if (!node.widgets) return;
-            node.widgets.forEach((widget, index) => {
-                const wn = (widget.name || '').toLowerCase();
-                if (/negative/.test(wn)) return;
-                if (widget.inputEl && /string|text|custom/.test(widget.type || '')) {
-                    menuItems.push({ nodeId: node.id, widgetIndex: index, label: `\u25B8 ${node.title || 'Node'} \u2192 ${widget.name}`, isNeoPrompt: /neo.?prompt/i.test(node.title) });
-                }
-            });
-        });
-        const selKeys = Object.keys(app.canvas.selected_nodes);
-        let selectedNodeId = null;
-        if (selKeys.length > 0) {
-            const sn = app.canvas.selected_nodes[selKeys[0]];
-            if (sn && sn.widgets && sn.widgets.some(w => !/negative/.test((w.name||'').toLowerCase()) && w.inputEl && /string|text|custom/.test(w.type||''))) {
-                selectedNodeId = sn.id;
-            }
-        }
-        if (menuItems.length === 0 && !selectedNodeId) { this.showToast('warning', 'No Target', 'No valid text nodes found.'); return; }
-        
-        // Mark selected items and sort to top
-        menuItems.forEach(item => {
-            item.isSelected = item.nodeId === selectedNodeId;
-        });
-        menuItems.sort((a, b) => {
-            if (a.isSelected !== b.isSelected) return a.isSelected ? -1 : 1;
-            if (a.isNeoPrompt !== b.isNeoPrompt) return a.isNeoPrompt ? -1 : 1;
-            return 0;
-        });
-        
-        // If only one target and no selection, send directly without menu
-        if (menuItems.length === 1 && !selectedNodeId) {
-            const item = menuItems[0];
-            const s = document.getElementById("target-node-dropdown");
-            if (s) s.value = `${item.nodeId}:widget:${item.widgetIndex}`;
-            this.copyToClipboard(image.name, image.txt_content, button, 'send');
-            return;
-        }
-        
-        const dropdown = $el("div", { id: "neo-gallery-send-menu", className: "neo-gallery-send-menu" });
-        for (const item of menuItems) {
-            const label = item.isSelected ? `${item.label} \u2713` : item.label;
-            const el = $el("div", { className: "neo-gallery-send-menu-item" + (item.isSelected ? " neo-gallery-send-menu-selected" : ""), onclick: (e) => { e.stopPropagation(); this._removeSendMenu(); const s = document.getElementById("target-node-dropdown"); if (s) s.value = `${item.nodeId}:widget:${item.widgetIndex}`; this.copyToClipboard(image.name, image.txt_content, button, 'send'); }, textContent: label });
-            dropdown.appendChild(el);
-        }
-        const rect = button.getBoundingClientRect();
-        dropdown.style.position = 'fixed'; dropdown.style.left = Math.min(rect.left, window.innerWidth - 250) + 'px'; dropdown.style.zIndex = '10001';
-        document.body.appendChild(dropdown);
-        requestAnimationFrame(() => {
-            dropdown.style.top = (rect.top - dropdown.offsetHeight - 8) + 'px';
-        });
-        const closeHandler = (e) => { if (!dropdown.contains(e.target) && e.target !== button) { this._removeSendMenu(); document.removeEventListener('click', closeHandler); } };
-        setTimeout(() => document.addEventListener('click', closeHandler), 10);
-    }
-
-    createSearchInput() {
-        const input = $el("input", {
-            type: "text",
-            placeholder: "Search prompt images...",
-            className: "neo-gallery-search-input"
-        });
-        input.addEventListener("input", this.debounce(() => this.handleSearch(input.value), 300));
-        return input;
-    }
-
-    createThumbnailSizeSlider() {
-        const valueLabel = $el("span", {
-            className: "thumbnail-size-value",
-            textContent: `${this.maxThumbnailSize}px`
-        });
-
-        const slider = $el("input", {
-            type: "range",
-            min: 150,
-            max: 500,
-            step: 25,
-            value: this.maxThumbnailSize,
-            className: "neo-gallery-thumbnail-slider",
-            onchange: () => {
-                const val = parseInt(slider.value);
-                this.updateThumbnailSize(val);
-                valueLabel.textContent = `${val}px`;
-                this.savePluginData({ maxThumbnailSize: val });
-            }
-        });
-
-        return $el("div", { className: "neo-gallery-slider-row" }, [$el("span", { className: "neo-gallery-size-label", textContent: "Size:" }), slider, valueLabel]);
-    }
-
-    // ====== Actions ======
-
-    async deleteItem(name, subfolder) {
-        try {
-            const response = await api.fetchApi('/neo_gallery/delete', {
-                method: 'DELETE',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ filename: name, subfolder })
-            });
-            const result = await response.json();
-            if (result.deleted) {
-                // Remove from allCustomDirs
-                for (const dir of this.allCustomDirs) {
-                    dir.items = dir.items.filter(item => item.name !== name);
-                }
-                // Remove from presets
-                this.allPresets = this.allPresets.filter(item => item.name !== name);
-                
-                if (this.isSearchActive) {
-                    this.handleSearch(this.searchInput.value);
-                } else {
-                    this.sortAndDisplayImages();
-                }
-                this.showToast('success', 'Deleted', `Removed: ${name}`);
-            } else {
-                this.showToast('warning', 'Delete Failed', 'Item not found or already deleted.');
-            }
-        } catch (error) {
-            console.error("Error deleting item:", error);
-            this.showToast('error', 'Delete Failed', error.message);
-        }
-    }
-
-    handleSearch(searchTerm) {
-        searchTerm = searchTerm.toLowerCase();
-        this.isSearchActive = searchTerm.length > 0;
-        
-        // Filter custom dirs by matching items
-        this.filteredCustomDirs = this.allCustomDirs.map(dir => ({
-            ...dir,
-            items: dir.items.filter(img =>
-                (img.name && img.name.toLowerCase().includes(searchTerm)) ||
-                (img.style && img.style.toLowerCase().includes(searchTerm)) ||
-                (img.content && img.content.toLowerCase().includes(searchTerm))
-            )
-        })).filter(dir => dir.items.length > 0);
-
-        this.filteredPresets = this.allPresets.filter(img =>
-            (img.name && img.name.toLowerCase().includes(searchTerm)) ||
-            (img.style && img.style.toLowerCase().includes(searchTerm)) ||
-            (img.content && img.content.toLowerCase().includes(searchTerm))
-        );
-        
-        // Reset view to categories when searching
-        this.currentView.mode = 'categories';
-        this.currentView.source = null;
-        this.currentView.categoryPath = [];
-        
-        this.sortAndDisplayImages();
-    }
-
-    updateThumbnailSize(newSize) {
-        this.maxThumbnailSize = newSize;
-        if (this.thumbnailSizeSlider) {
-            const slider = this.thumbnailSizeSlider.querySelector("input[type='range']");
-            const label = this.thumbnailSizeSlider.querySelector(".thumbnail-size-value");
-            if (slider) slider.value = newSize;
-            if (label) label.textContent = `${newSize}px`;
-        }
-        // Update CSS Grid minmax to match thumbnail size
-        // Find the visible grid (the one currently in the accordion)
-        const grids = document.querySelectorAll('.neo-gallery-category-grid');
-        for (const grid of grids) {
-            if (grid.offsetParent !== null) { // visible grid
-                grid.style.gridTemplateColumns = `repeat(auto-fill, ${newSize}px)`;
-            }
-        }
-        this.sortAndDisplayImages();
-    }
-
-    updateLabelDisplay(display) {
-        this.displayLabels = display;
-        this.sortAndDisplayImages();
-    }
-
     // ====== Data Loading ======
 
     async loadGallery() {
@@ -1082,47 +216,44 @@ class NeoGallery {
             const resp = await api.fetchApi('/neo_gallery/list');
             if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
             const data = await resp.json();
-            console.log('Gallery API response:', data);
-            // New format: custom_dirs grouped by directory name
             this.allCustomDirs = (data.custom_dirs || []).map(dir => ({
                 name: dir.name,
                 path: dir.path,
-                items: dir.items || []
+                items: dir.items || [],
+                subdirs: dir.subdirs || {}
             }));
             this.allPresets = data.presets || [];
-            console.log('Loaded custom_dirs:', this.allCustomDirs.length, 'presets:', this.allPresets.length);
+            this.allPresetsSubdirs = data.presets_subdirs || {};
             this.filteredCustomDirs = this.allCustomDirs;
             this.filteredPresets = this.allPresets;
         } catch (error) {
             console.error('Error loading gallery:', error);
             this.allCustomDirs = [];
             this.allPresets = [];
+            this.allPresetsSubdirs = {};
             this.filteredCustomDirs = [];
             this.filteredPresets = [];
         }
     }
 
-    // ====== Rendering - Card-based Layout ======
+    // ====== Rendering ======
 
-    sortAndDisplayImages() {
+    async sortAndDisplayImages() {
         this.accordion.innerHTML = "";
 
         const customDirsToDisplay = this.isSearchActive ? this.filteredCustomDirs : this.allCustomDirs;
         const presetsToDisplay = this.isSearchActive ? this.filteredPresets : this.allPresets;
 
-        // Check if we're in directory view mode (hierarchical navigation)
         if (this.currentView.mode === 'directory' && this._currentDirStructure) {
             this.renderDirectoryStructure(this._currentDirStructure, this.currentView.source, this.currentView.categoryPath);
             return;
         }
 
-        // Check if we're in image view mode (showing expanded category)
         if (this.currentView.mode === 'images') {
             this.renderExpandedImages();
             return;
         }
 
-        // Categories view - show card grid
         const totalDirs = customDirsToDisplay.filter(d => d.items.length > 0).length;
         const totalPresets = presetsToDisplay.length;
 
@@ -1132,24 +263,17 @@ class NeoGallery {
         }
 
         if (totalDirs === 0 && totalPresets === 0 && this.isSearchActive) {
-            this.accordion.appendChild($el("div", {
-                className: "neo-gallery-no-files"
-            }, [
-                $el("div", { className: "neo-gallery-no-files-icon", textContent: "\uD83D\uDE14" }),
-                $el("div", { className: "neo-gallery-no-files-text", textContent: "No matching images found" })
-            ]));
+            showNoFilesMessage(this.accordion, "No matching images found");
             return;
         }
 
-        // Render category cards (custom dirs + presets)
-        const cardContainer = this.createCategoryCardGrid(customDirsToDisplay, presetsToDisplay);
+        const cardContainer = await this.createCategoryCardGrid(customDirsToDisplay, presetsToDisplay);
         if (cardContainer) {
             this.accordion.appendChild(cardContainer);
         }
     }
 
-    createCategoryCardGrid(dirGroups, presetItems) {
-        // Group presets by category
+    async createCategoryCardGrid(dirGroups, presetItems) {
         const presetGroups = new Map();
         presetItems.forEach(item => {
             const cat = item.category || "";
@@ -1162,238 +286,39 @@ class NeoGallery {
             style: { gridTemplateColumns: `repeat(auto-fill, ${this.maxThumbnailSize}px)` }
         });
 
-        // Add custom dir cards - use hierarchical navigation
         for (const dir of dirGroups) {
-            if (dir.items.length === 0) continue;
-            const card = this.createDirCard(dir.name, dir.path, dir.items);
+            if (dir.items.length === 0 && !dir.subdirs) continue;
+            const card = await this.components.createDirCard(this, dir.name, dir.path, dir.items, dir.subdirs);
             container.appendChild(card);
         }
 
-        // Add preset category cards - also use hierarchical navigation
         const allCategories = [...presetGroups.keys()].sort((a, b) => {
             if (!a) return -1;
             if (!b) return 1;
             return a.localeCompare(b);
         });
 
+        // presets 显示为目录卡片（非递归）
         for (const cat of allCategories) {
             const groupItems = presetGroups.get(cat);
             const title = cat ? `Presets/${cat}` : "Presets";
-            const card = this.createPresetCategoryCard(title, groupItems);
+            const card = await this.components.createPresetCategoryCard(this, title, groupItems, cat);
+            container.appendChild(card);
+        }
+
+        // 显示 presets 子目录卡片
+        const presetsSubdirs = this.allPresetsSubdirs || {};
+        for (const subdirName of Object.keys(presetsSubdirs).sort()) {
+            const subdirItems = presetsSubdirs[subdirName];
+            if (subdirItems.length === 0) continue;
+            const card = await this.components.createSubdirCard(this, subdirName, 'presets', [subdirName]);
             container.appendChild(card);
         }
 
         return container;
     }
 
-    createDirCard(name, path, items) {
-        // Get up to 2 image files as covers
-        const imageItems = items.filter(i => /\.(png|jpg|jpeg|gif|webp)$/i.test(i.filename));
-        const coverImages = imageItems.slice(0, 2);
-        
-        const card = $el("div", {
-            className: "neo-gallery-category-card",
-            onclick: () => this.showDirectoryStructure(name, [])
-        });
-
-        // Cover image area
-        const coverWrapper = $el("div", { className: "neo-gallery-card-cover-wrapper" });
-        if (coverImages.length > 0) {
-            // Create split image grid
-            const coverGrid = $el("div", {
-                className: "neo-gallery-card-cover-grid"
-            });
-            
-            let loadedCount = 0;
-            coverImages.forEach((imgData) => {
-                const categoryParam = imgData.category ? `&category=${encodeURIComponent(imgData.category)}` : '';
-                const src = `${window.location.protocol}//${window.location.host}/neo_gallery/image?filename=${encodeURIComponent(imgData.filename)}&subfolder=${encodeURIComponent(name)}${categoryParam}`;
-                
-                const imgItem = $el("div", {
-                    className: "neo-gallery-card-cover-grid-item"
-                });
-                
-                const img = $el("img", {
-                    src: src,
-                    alt: name,
-                    loading: "lazy"
-                });
-                
-                img.onload = () => {
-                    loadedCount++;
-                    if (loadedCount === coverImages.length) {
-                        const cardWidth = coverWrapper.clientWidth || 160;
-                        const maxCoverHeight = this.maxThumbnailSize - (this.displayLabels ? 52 : 36);
-                        const imgHeight = Math.min(Math.max(cardWidth * 0.5, 40), maxCoverHeight / 2);
-                        coverGrid.style.height = `${imgHeight * 2}px`;
-                    }
-                };
-                
-                img.onerror = () => {
-                    imgItem.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#555;font-size:24px;">\uD83D\uDCC1</div>';
-                };
-                
-                imgItem.appendChild(img);
-                coverGrid.appendChild(imgItem);
-            });
-            
-            coverWrapper.appendChild(coverGrid);
-        } else {
-            coverWrapper.appendChild($el("div", {
-                className: "neo-gallery-card-cover neo-gallery-card-placeholder",
-                textContent: "\uD83D\uDCC1"
-            }));
-        }
-
-        // Card info (name + count)
-        const info = $el("div", { className: "neo-gallery-card-info" }, [
-            $el("span", { className: "neo-gallery-card-name", textContent: name }),
-            $el("span", { className: "neo-gallery-card-count", textContent: `${items.length} items` })
-        ]);
-
-        // Type indicator badge (top-left corner) — 📁 for directory, 🖼️ for image preset
-        const typeBadge = $el("div", {
-            className: "neo-gallery-card-type-badge type-directory",
-            title: "Directory"
-        }, ["\uD83D\uDCC1"]);
-
-        // Delete button (top-right on hover)
-        const deleteBtn = $el("div", {
-            className: "neo-gallery-card-delete-btn",
-            title: `Remove directory "${name}"`,
-            onclick: (e) => {
-                e.stopPropagation();
-                this.removeCustomDir(path);
-            }
-        }, ["\u00D7"]);
-
-        card.appendChild(typeBadge);
-        card.appendChild(coverWrapper);
-        card.appendChild(info);
-        card.appendChild(deleteBtn);
-
-        return card;
-    }
-
-    createPresetCategoryCard(title, items) {
-        // Get up to 2 image files as covers
-        const imageItems = items.filter(i => /\.(png|jpg|jpeg|gif|webp)$/i.test(i.filename));
-        const coverImages = imageItems.slice(0, 2);
-        
-        // Extract the raw category from display title: "Presets/Anime" -> "Anime", "Presets" -> ""
-        let rawCategory = '';
-        const slashIdx = title.indexOf('/');
-        if (slashIdx > 0) {
-            rawCategory = title.substring(slashIdx + 1).trim();
-        }
-        
-        const card = $el("div", {
-            className: "neo-gallery-category-card",
-            onclick: () => this.showPresetCategory(rawCategory, title)
-        });
-
-        // Cover image area
-        const presetCoverWrapper = $el("div", { className: "neo-gallery-card-cover-wrapper" });
-        if (coverImages.length > 0) {
-            // Create split image grid
-            const coverGrid = $el("div", {
-                className: "neo-gallery-card-cover-grid"
-            });
-            
-            let loadedCount = 0;
-            coverImages.forEach((imgData) => {
-                const categoryParam = imgData.category ? `&category=${encodeURIComponent(imgData.category)}` : '';
-                const src = imgData.preview || `${window.location.protocol}//${window.location.host}/neo_gallery/image?filename=${encodeURIComponent(imgData.filename)}&subfolder=presets${categoryParam}`;
-                
-                const imgItem = $el("div", {
-                    className: "neo-gallery-card-cover-grid-item"
-                });
-                
-                const img = $el("img", {
-                    src: src,
-                    alt: title,
-                    loading: "lazy"
-                });
-                
-                img.onload = () => {
-                    loadedCount++;
-                    if (loadedCount === coverImages.length) {
-                        const cardWidth = presetCoverWrapper.clientWidth || 160;
-                        const maxCoverHeight = this.maxThumbnailSize - (this.displayLabels ? 52 : 36);
-                        const imgHeight = Math.min(Math.max(cardWidth * 0.5, 40), maxCoverHeight / 2);
-                        coverGrid.style.height = `${imgHeight * 2}px`;
-                    }
-                };
-                
-                img.onerror = () => {
-                    imgItem.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#555;font-size:24px;">\uD83C\uDFA8</div>';
-                };
-                
-                imgItem.appendChild(img);
-                coverGrid.appendChild(imgItem);
-            });
-            
-            presetCoverWrapper.appendChild(coverGrid);
-        } else {
-            presetCoverWrapper.appendChild($el("div", {
-                className: "neo-gallery-card-cover neo-gallery-card-placeholder",
-                textContent: "\uD83C\uDFA8"
-            }));
-        }
-
-        // Type indicator badge (top-left corner) — 📁 for directory
-        const typeBadge = $el("div", {
-            className: "neo-gallery-card-type-badge type-directory",
-            title: "Directory"
-        }, ["\uD83D\uDCC1"]);
-
-        // Card info (name + count)
-        const info = $el("div", { className: "neo-gallery-card-info" }, [
-            $el("span", { className: "neo-gallery-card-name", textContent: title }),
-            $el("span", { className: "neo-gallery-card-count", textContent: `${items.length} items` })
-        ]);
-
-        card.appendChild(typeBadge);
-        card.appendChild(presetCoverWrapper);
-        card.appendChild(info);
-        return card;
-    }
-
-    showPresetCategory(rawCategory, displayTitle) {
-        this.currentView.mode = 'images';
-        this.currentView.source = 'presets';
-        // Store raw category for filtering in renderExpandedImages
-        this._presetRawCategory = rawCategory;
-        this._presetDisplayTitle = displayTitle;
-        
-        // Update breadcrumb with the display title
-        const breadcrumb = document.getElementById("neo-gallery-breadcrumb");
-        if (breadcrumb) {
-            breadcrumb.style.display = 'flex';
-            breadcrumb.innerHTML = '';
-            
-            // Home button
-            const homeBtn = $el("span", {
-                className: "neo-gallery-breadcrumb-item neo-gallery-breadcrumb-home",
-                textContent: "\uD83C\uDFE0",
-                onclick: (e) => { e.stopPropagation(); this.showCategoryCards(); }
-            });
-            breadcrumb.appendChild(homeBtn);
-            
-            // Separator and display title
-            const sep = $el("span", { className: "neo-gallery-breadcrumb-sep", textContent: ">" });
-            breadcrumb.appendChild(sep);
-            breadcrumb.appendChild($el("span", {
-                className: "neo-gallery-breadcrumb-item neo-gallery-breadcrumb-current",
-                textContent: displayTitle
-            }));
-        }
-
-        this.sortAndDisplayImages();
-    }
-
     async showDirectoryStructure(source, pathSegments = []) {
-        // Fetch directory structure from backend API
         const dirName = source;
         const relPath = pathSegments.join("/");
         
@@ -1403,20 +328,17 @@ class NeoGallery {
             
             const structure = await resp.json();
             
-            // Update current view state
-            this.currentView.mode = 'directory';  // New mode for hierarchical navigation
+            this.currentView.mode = 'directory';
             this.currentView.source = dirName;
             this.currentView.categoryPath = pathSegments;
             this._currentDirStructure = structure;
             
-            // Update breadcrumb - pass empty string to avoid redundancy with rootDirName
-            this.updateBreadcrumb(pathSegments, '');
+            this.components.updateBreadcrumb(this, pathSegments, '');
             
-            // Render directory cards or images based on structure
             this.renderDirectoryStructure(structure, dirName, pathSegments);
         } catch (error) {
             console.error('[Gallery] Error loading directory structure:', error);
-            this.showToast('error', 'Error', 'Failed to load directory structure');
+            showToast(this.app, 'error', 'Error', 'Failed to load directory structure');
         }
     }
 
@@ -1425,42 +347,36 @@ class NeoGallery {
         
         const { subdirs, images, has_subdirs, image_count, total_images } = structure;
         
-        // If there are subdirectories, show them as cards (hierarchical navigation)
         if (has_subdirs && subdirs.length > 0) {
             this.renderSubdirCards(structure, dirName, pathSegments);
         } else {
-            // No more subdirs - show images with pagination
             this.renderImagesFromStructure(images, dirName, pathSegments);
         }
     }
 
-    renderSubdirCards(structure, dirName, pathSegments) {
+    async renderSubdirCards(structure, dirName, pathSegments) {
         const { subdirs, images, image_count, total_images } = structure;
         
-        // Show summary info
         const summaryEl = $el("div", {
             className: "neo-gallery-dir-summary",
             textContent: `${total_images} items in ${subdirs.length} folders`
         });
         this.accordion.appendChild(summaryEl);
         
-        // Create card grid for subdirectories (always first)
         const container = $el("div", {
             className: "neo-gallery-category-grid",
             style: { gridTemplateColumns: `repeat(auto-fill, ${this.maxThumbnailSize}px)` }
         });
         
         for (const subdir of subdirs) {
-            const card = this.createSubdirCard(subdir, dirName, [...pathSegments, subdir]);
+            const card = await this.components.createSubdirCard(this, subdir, dirName, [...pathSegments, subdir]);
             container.appendChild(card);
         }
         
-        // Append subdirectory cards first
         if (subdirs.length > 0) {
             this.accordion.appendChild(container);
         }
         
-        // If there are also images at root level, show them below the subdirectories
         if (image_count > 0) {
             const separator = $el("div", {
                 className: "neo-gallery-section-separator",
@@ -1468,10 +384,8 @@ class NeoGallery {
             });
             this.accordion.appendChild(separator);
             
-            // Show root-level images as thumbnails (not cards)
             const imageGrid = $el("div", { className: "neo-gallery-image-grid" });
             
-            // Build clean subfolder path for this level
             let currentSubfolder;
             if (pathSegments.length > 0) {
                 currentSubfolder = dirName + "/" + pathSegments.join("/");
@@ -1480,7 +394,9 @@ class NeoGallery {
             }
             
             for (let i = 0; i < Math.min(20, images.length); i++) {
-                const imgEl = this.createImageElement(images[i], currentSubfolder);
+                // Add subfolder to item so it's available when sending
+                const itemWithSubfolder = {...images[i], subfolder: currentSubfolder};
+                const imgEl = this.components.createImageElement(this, itemWithSubfolder, currentSubfolder);
                 imageGrid.appendChild(imgEl);
             }
             this.accordion.appendChild(imageGrid);
@@ -1499,147 +415,7 @@ class NeoGallery {
         }
     }
 
-    createSubdirCard(subdirName, parentDir, fullPath) {
-        // Calculate height to match image thumbnail containers (maxThumbnailSize - reservedSpace)
-        const reservedSpace = this.displayLabels ? 52 : 36;
-        const cardHeight = Math.max(this.maxThumbnailSize - reservedSpace, 40);
-        
-        const card = $el("div", {
-            className: "neo-gallery-category-card",
-            onclick: () => this.showDirectoryStructure(parentDir, fullPath),
-            style: { width: `${this.maxThumbnailSize}px`, height: `${cardHeight}px` }
-        });
-
-        // Type indicator badge (top-left corner) — will update after async fetch
-        const typeBadge = $el("div", {
-            className: "neo-gallery-card-type-badge neo-gallery-card-type-loading",
-            title: "Loading..."
-        }, ["\uD83D\uDCC1"]);
-
-        // Cover image area (will be updated with actual cover after async fetch)
-        const coverWrapper = $el("div", { 
-            className: "neo-gallery-card-cover-wrapper",
-            style: { minHeight: `${Math.max(this.maxThumbnailSize * 0.5, 80)}px`, maxHeight: `${this.maxThumbnailSize}px` }
-        });
-        
-        // Show placeholder while loading
-        coverWrapper.appendChild($el("div", {
-            className: "neo-gallery-card-cover neo-gallery-card-placeholder",
-            textContent: "\uD83D\uDCC1"
-        }));
-
-        // Card info (name + count)
-        const info = $el("div", { className: "neo-gallery-card-info" }, [
-            $el("span", { className: "neo-gallery-card-name", textContent: subdirName }),
-            $el("span", { className: "neo-gallery-card-count", textContent: "Loading..." })
-        ]);
-
-        card.appendChild(typeBadge);
-        card.appendChild(coverWrapper);
-        card.appendChild(info);
-
-        // Fetch directory structure asynchronously to get cover image and count
-        setTimeout(async () => {
-            try {
-                const resp = await api.fetchApi(`/neo_gallery/dir_structure?dir_name=${encodeURIComponent(parentDir)}&path=${encodeURIComponent(fullPath.join("/"))}`);
-                if (!resp.ok) throw new Error('Failed to fetch');
-                
-                const structure = await resp.json();
-                const countEl = card.querySelector('.neo-gallery-card-count');
-                const typeBadge = card.querySelector('.neo-gallery-card-type-badge');
-                
-                // Update count
-                if (countEl) {
-                    countEl.textContent = `${structure.total_images} items`;
-                }
-
-                // Update type badge - always show directory icon
-                if (typeBadge) {
-                    typeBadge.className = 'neo-gallery-card-type-badge neo-gallery-card-type-loading type-directory';
-                    typeBadge.title = 'Directory';
-                    typeBadge.textContent = '\uD83D\uDCC1';
-                }
-
-                // If there are images, use the first two as a split cover
-                if (structure.images && structure.images.length > 0) {
-                    let currentSubfolder;
-                    if (fullPath.length > 0) {
-                        currentSubfolder = parentDir + "/" + fullPath.join("/");
-                    } else {
-                        currentSubfolder = parentDir;
-                    }
-                    
-                    // Take up to 2 images for the split cover
-                    const coverImages = structure.images.slice(0, 2);
-                    
-                    // Replace placeholder with split image grid
-                    coverWrapper.innerHTML = '';
-                    const coverGrid = $el("div", {
-                        className: "neo-gallery-card-cover-grid"
-                    });
-                    
-                    let loadedCount = 0;
-                    coverImages.forEach((imgData, index) => {
-                        const categoryParam = imgData.category ? `&category=${encodeURIComponent(imgData.category)}` : '';
-                        const coverSrc = `${window.location.protocol}//${window.location.host}/neo_gallery/image?filename=${encodeURIComponent(imgData.filename)}&subfolder=${encodeURIComponent(currentSubfolder)}${categoryParam}`;
-                        
-                        const imgItem = $el("div", {
-                            className: "neo-gallery-card-cover-grid-item"
-                        });
-                        
-                        const img = $el("img", {
-                            src: coverSrc,
-                            alt: subdirName,
-                            loading: "lazy"
-                        });
-                        
-                        img.onload = () => {
-                            loadedCount++;
-                            // Adjust grid height after all images loaded
-                            if (loadedCount === coverImages.length) {
-                                const cardWidth = coverWrapper.clientWidth || 160;
-                                const maxCoverHeight = this.maxThumbnailSize - (this.displayLabels ? 52 : 36);
-                                const imgHeight = Math.min(Math.max(cardWidth * 0.5, 40), maxCoverHeight / 2);
-                                coverGrid.style.height = `${imgHeight * 2}px`;
-                            }
-                        };
-                        
-                        img.onerror = () => {
-                            imgItem.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#555;font-size:24px;">\uD83D\uDCC1</div>';
-                        };
-                        
-                        imgItem.appendChild(img);
-                        coverGrid.appendChild(imgItem);
-                    });
-                    
-                    coverWrapper.appendChild(coverGrid);
-                    
-                    // Fallback if no images loaded properly
-                    if (coverImages.length === 0) {
-                        coverWrapper.innerHTML = '';
-                        coverWrapper.appendChild($el("div", {
-                            className: "neo-gallery-card-cover neo-gallery-card-placeholder",
-                            textContent: "\uD83D\uDCC1"
-                        }));
-                    }
-                } else if (structure.subdirs && structure.subdirs.length > 0) {
-                    // If no images but has subdirs, show a nested folder icon
-                    coverWrapper.innerHTML = '';
-                    coverWrapper.appendChild($el("div", {
-                        className: "neo-gallery-card-cover neo-gallery-card-placeholder",
-                        textContent: "\uD83D\uDCCB"
-                    }));
-                }
-            } catch (e) {
-                console.error('[Gallery] Error fetching subdir info:', e);
-            }
-        }, 0);
-
-        return card;
-    }
-
     renderImagesFromStructure(images, dirName, pathSegments) {
-        // Build clean subfolder path without trailing slash
         let subfolder;
         if (pathSegments.length > 0) {
             subfolder = dirName + "/" + pathSegments.join("/");
@@ -1648,48 +424,36 @@ class NeoGallery {
         }
         
         if (images.length === 0) {
-            this.accordion.appendChild($el("div", {
-                className: "neo-gallery-no-files"
-            }, [
-                $el("div", { className: "neo-gallery-no-files-icon", textContent: "\uD83D\uDE14" }),
-                $el("div", { className: "neo-gallery-no-files-text", textContent: "No images found in this folder" })
-            ]));
+            showNoFilesMessage(this.accordion, "No images found in this folder");
             return;
         }
 
-        // Sort by mtime descending (newest first), fallback to name sort
-        const sortedItems = [...images].sort((a, b) => {
-            if ((b._mtime || 0) !== (a._mtime || 0)) return (b._mtime || 0) - (a._mtime || 0);
-            return a.name.localeCompare(b.name);
-        });
-
-        // For large lists, use pagination to avoid freezing the UI
-        const PAGE_SIZE = 100;
-        let displayedCount = Math.min(PAGE_SIZE, sortedItems.length);
+        const sortedItems = sortByMtime(images);
+        this._renderQueue = [...sortedItems];
+        this._renderedCount = 0;
         
-        // Image grid for expanded view
         const imageGrid = $el("div", { className: "neo-gallery-image-grid neo-gallery-expanded-images" });
         
         const renderPage = (count) => {
             for (let i = 0; i < count && this._renderQueue.length > 0; i++) {
                 const item = this._renderQueue.shift();
-                const el = this.createImageElement(item, subfolder);
-                if (!/\.(png|jpg|jpeg|gif|webp|bmp|tiff)$/i.test(item.filename)) {
+                // Use item's subfolder if available, otherwise use the current subfolder
+                const itemSubfolder = item.subfolder || subfolder;
+                // Add subfolder to item so it's available when sending
+                const itemWithSubfolder = {...item, subfolder: itemSubfolder};
+                const el = this.components.createImageElement(this, itemWithSubfolder, itemSubfolder);
+                if (!isImageFile(item.filename)) {
                     el.style.width = `${this.maxThumbnailSize}px`;
                 }
                 imageGrid.appendChild(el);
             }
+            this._renderedCount += count;
         };
 
-        // Render first page immediately using requestAnimationFrame to avoid blocking
-        this._renderQueue = [...sortedItems];
-        
-        // Append grid and load more button BEFORE rendering to ensure DOM structure is correct
         this.accordion.appendChild(imageGrid);
+        renderPage(PAGE_SIZE);
         
-        renderPage(displayedCount);
-        
-        if (displayedCount < sortedItems.length) {
+        if (this._renderQueue.length > 0) {
             const createLoadMoreBtn = () => {
                 const btn = $el("div", {
                     className: "neo-gallery-load-more-btn",
@@ -1709,16 +473,27 @@ class NeoGallery {
     }
 
     showCategoryImages(source, pathSegments, displayName) {
-        // Use hierarchical directory structure navigation instead of flat image view
         this.showDirectoryStructure(source, pathSegments || []);
     }
 
+    async showPresetCategory(rawCategory, title) {
+        this._presetRawCategory = rawCategory;
+        
+        // 直接显示该 category 下的图片，而不是跳转到目录结构
+        this.currentView.mode = 'images';
+        this.currentView.source = 'presets';
+        this.currentView.categoryPath = rawCategory ? [rawCategory] : [];
+        
+        this.components.updateBreadcrumb(this, rawCategory ? [rawCategory] : [], 'Presets');
+        
+        this.accordion.innerHTML = "";
+        this.renderExpandedImages();
+    }
+
     async showPresetDirectory(rawCategory) {
-        // Use hierarchical directory navigation for presets
         const dirName = 'presets';
         
         if (rawCategory && rawCategory !== '') {
-            // Navigate into a specific preset category subdirectory
             try {
                 const resp = await api.fetchApi(`/neo_gallery/dir_structure?dir_name=${encodeURIComponent(dirName)}&path=${encodeURIComponent(rawCategory)}`);
                 if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -1730,17 +505,14 @@ class NeoGallery {
                 this.currentView.categoryPath = [rawCategory];
                 this._currentDirStructure = structure;
                 
-                // Update breadcrumb
-                this.updateBreadcrumb([rawCategory], '');
+                this.components.updateBreadcrumb(this, [rawCategory], '');
                 
-                // Render directory cards or images based on structure
                 this.renderDirectoryStructure(structure, dirName, [rawCategory]);
             } catch (error) {
                 console.error('[Gallery] Error loading preset directory:', error);
-                this.showToast('error', 'Error', 'Failed to load preset category');
+                showToast(this.app, 'error', 'Error', 'Failed to load preset category');
             }
         } else {
-            // Show presets root level - use dir_structure API
             try {
                 const resp = await api.fetchApi(`/neo_gallery/dir_structure?dir_name=${encodeURIComponent(dirName)}`);
                 if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -1752,53 +524,49 @@ class NeoGallery {
                 this.currentView.categoryPath = [];
                 this._currentDirStructure = structure;
                 
-                // Update breadcrumb
-                this.updateBreadcrumb([], '');
+                this.components.updateBreadcrumb(this, [], '');
                 
-                // Render directory cards or images based on structure
                 this.renderDirectoryStructure(structure, dirName, []);
             } catch (error) {
                 console.error('[Gallery] Error loading presets:', error);
-                this.showToast('error', 'Error', 'Failed to load presets');
+                showToast(this.app, 'error', 'Error', 'Failed to load presets');
             }
         }
     }
 
-    showCategoryCards() {
+    async showCategoryCards() {
         this.currentView.mode = 'categories';
         this.currentView.source = null;
         this.currentView.categoryPath = [];
         
-        // Hide breadcrumb (show only home)
         const breadcrumb = document.getElementById("neo-gallery-breadcrumb");
         if (breadcrumb) {
             breadcrumb.style.display = 'none';
         }
 
-        this.sortAndDisplayImages();
+        await this.sortAndDisplayImages();
     }
 
     renderExpandedImages() {
         const { source, categoryPath } = this.currentView;
         
-        // Collect all images from the selected source/category
         let items = [];
         let subfolder = source;
 
-        console.log('[Gallery] renderExpandedImages:', { source, categoryPath, presetRawCat: this._presetRawCategory });
         if (source === 'presets') {
-            // Use _presetRawCategory for filtering (set by showPresetCategory)
             const catToMatch = this._presetRawCategory || '';
-            console.log('[Gallery] Matching presets with category:', JSON.stringify(catToMatch));
             items = this.allPresets.filter(i => i.category === catToMatch);
-            console.log('[Gallery] Found', items.length, 'presets for category');
+            // Use item's subfolder directly (backend returns relative path like "26-06-26" or "" for root)
+            if (items.length > 0) {
+                subfolder = items[0].subfolder || '';
+            } else if (categoryPath && categoryPath.length > 0) {
+                subfolder = categoryPath.join("/");
+            }
         } else {
-            // Custom directory
             const dir = this.allCustomDirs.find(d => d.name === source);
             if (dir) {
                 subfolder = source;
                 if (categoryPath.length > 0) {
-                    // Filter by category path
                     const catKey = categoryPath[0];
                     items = dir.items.filter(i => i.category === catKey || (!i.category && !catKey));
                 } else {
@@ -1808,48 +576,34 @@ class NeoGallery {
         }
 
         if (items.length === 0) {
-            this.accordion.appendChild($el("div", {
-                className: "neo-gallery-no-files"
-            }, [
-                $el("div", { className: "neo-gallery-no-files-icon", textContent: "\uD83D\uDE14" }),
-                $el("div", { className: "neo-gallery-no-files-text", textContent: "No images found in this category" })
-            ]));
+            showNoFilesMessage(this.accordion, "No images found in this category");
             return;
         }
 
-        // Sort by mtime descending (newest first), fallback to name sort
-        const sortedItems = [...items].sort((a, b) => {
-            if ((b._mtime || 0) !== (a._mtime || 0)) return (b._mtime || 0) - (a._mtime || 0);
-            return a.name.localeCompare(b.name);
-        });
-
-        // For large lists, use pagination to avoid freezing the UI
-        const PAGE_SIZE = 100;
-        let displayedCount = Math.min(PAGE_SIZE, sortedItems.length);
+        const sortedItems = sortByMtime(items);
+        this._renderQueue = [...sortedItems];
+        this._renderedCount = 0;
         
-        // Image grid for expanded view
         const imageGrid = $el("div", { className: "neo-gallery-image-grid neo-gallery-expanded-images" });
         
         const renderPage = (count) => {
             for (let i = 0; i < count && this._renderQueue.length > 0; i++) {
                 const item = this._renderQueue.shift();
-                const el = this.createImageElement(item, subfolder);
-                if (!/\.(png|jpg|jpeg|gif|webp|bmp|tiff)$/i.test(item.filename)) {
+                // Add subfolder to item so it's available when sending
+                const itemWithSubfolder = {...item, subfolder: subfolder};
+                const el = this.components.createImageElement(this, itemWithSubfolder, subfolder);
+                if (!isImageFile(item.filename)) {
                     el.style.width = `${this.maxThumbnailSize}px`;
                 }
                 imageGrid.appendChild(el);
             }
+            this._renderedCount += count;
         };
 
-        // Render first page immediately using requestAnimationFrame to avoid blocking
-        this._renderQueue = [...sortedItems];
-        
-        // Append grid and load more button BEFORE rendering to ensure DOM structure is correct
         this.accordion.appendChild(imageGrid);
+        renderPage(PAGE_SIZE);
         
-        renderPage(displayedCount);
-        
-        if (displayedCount < sortedItems.length) {
+        if (this._renderQueue.length > 0) {
             const createLoadMoreBtn = () => {
                 const btn = $el("div", {
                     className: "neo-gallery-load-more-btn",
@@ -1868,117 +622,81 @@ class NeoGallery {
         }
     }
 
-    // ====== Image Element Creation ======
+    // ====== Actions ======
 
-    createImageElement(image, subfolder) {
-        // Use preview data URI directly if available
-        const categoryParam = image.category ? `&category=${encodeURIComponent(image.category)}` : '';
-        const src = image.preview || `${window.location.protocol}//${window.location.host}/neo_gallery/image?filename=${encodeURIComponent(image.filename)}&subfolder=${encodeURIComponent(subfolder)}${categoryParam}`;
-
-        // Determine if this is an image file (has aspect ratio) or non-image
-        const isImageFile = /\.(png|jpg|jpeg|gif|webp|bmp|tiff)$/i.test(image.filename);
-
-        // Reserve space for btn bar (~32px) and label (~20px if shown) = ~52px total
-        const reservedSpace = this.displayLabels ? 52 : 36;
-        const imageHeight = Math.max(this.maxThumbnailSize - reservedSpace, 40);
-
-        // Create container - height is fixed, width will be set based on image aspect ratio
-        const container = $el("div", {
-            className: "neo-gallery-thumb-container",
-            style: {
-                height: `${this.maxThumbnailSize}px`,
-                width: `${this.maxThumbnailSize}px`
-            },
-            onclick: () => this.showLightbox(image, subfolder)
-        });
-
-        // If it's an image, load it to get aspect ratio for proper width calculation
-        if (isImageFile) {
-            const img = new Image();
-            img.onload = () => {
-                const aspectRatio = img.height / img.width;
-                container.style.width = `${Math.max(this.maxThumbnailSize * (1 / aspectRatio), 40)}px`;
-            };
-            img.src = src;
-        }
-
-        // Delete button for custom dir items - top-right corner
-        let deleteBtn = null;
-        if (!['presets'].includes(subfolder)) {
-            deleteBtn = $el("div", {
-                className: "neo-gallery-delete-btn",
-                onclick: (e) => {
-                    e.stopPropagation();
-                    this.deleteItem(image.name, subfolder);
+    async deleteItem(name, subfolder) {
+        try {
+            const response = await api.fetchApi('/neo_gallery/delete', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filename: name, subfolder })
+            });
+            const result = await response.json();
+            if (result.deleted) {
+                for (const dir of this.allCustomDirs) {
+                    dir.items = dir.items.filter(item => item.name !== name);
                 }
-            }, ["\u00D7"]);
-        }
-
-        // Image send button — shows dropdown menu for LoadImage-type node selection
-        const imgSendBtn = $el("div", {
-            className: "neo-gallery-thumb-img-send-btn",
-            onclick: (e) => {
-                e.stopPropagation();
-                this._showImgSendMenu(image, imgSendBtn);
+                this.allPresets = this.allPresets.filter(item => item.name !== name);
+                
+                if (this.isSearchActive) {
+                    await this.handleSearch(this.searchInput.value);
+                } else {
+                    await this.sortAndDisplayImages();
+                }
+                showToast(this.app, 'success', 'Deleted', `Removed: ${name}`);
+            } else {
+                showToast(this.app, 'warning', 'Delete Failed', 'Item not found or already deleted.');
             }
-        }, ["\uD83D\uDCE4"]);
-
-        // Send button — only show if image has prompt text
-        let sendBtn = null;
-        if (image.txt_content) {
-            sendBtn = $el("div", {
-                className: "neo-gallery-thumb-send-btn",
-                onclick: (e) => {
-                    e.stopPropagation();
-                    this._showSendMenu(image, sendBtn);
-                }
-            }, ["\u2708\uFE0F"]);
+        } catch (error) {
+            console.error("Error deleting item:", error);
+            showToast(this.app, 'error', 'Delete Failed', error.message);
         }
+    }
 
-        // Copy button — only show if image has prompt text
-        let copyBtn = null;
-        if (image.txt_content) {
-            copyBtn = $el("div", {
-                className: "neo-gallery-thumb-copy-btn",
-                onclick: (e) => {
-                    e.stopPropagation();
-                    this.copyToClipboard(image.name, image.txt_content, copyBtn, 'copy');
-                }
-            }, ["\u29C9"]);
+    async handleSearch(searchTerm) {
+        searchTerm = searchTerm.toLowerCase();
+        this.isSearchActive = searchTerm.length > 0;
+        
+        this.filteredCustomDirs = this.allCustomDirs.map(dir => ({
+            ...dir,
+            items: dir.items.filter(img =>
+                (img.name && img.name.toLowerCase().includes(searchTerm)) ||
+                (img.style && img.style.toLowerCase().includes(searchTerm)) ||
+                (img.content && img.content.toLowerCase().includes(searchTerm))
+            )
+        })).filter(dir => dir.items.length > 0);
+
+        this.filteredPresets = this.allPresets.filter(img =>
+            (img.name && img.name.toLowerCase().includes(searchTerm)) ||
+            (img.style && img.style.toLowerCase().includes(searchTerm)) ||
+            (img.content && img.content.toLowerCase().includes(searchTerm))
+        );
+        
+        this.currentView.mode = 'categories';
+        this.currentView.source = null;
+        this.currentView.categoryPath = [];
+        
+        await this.sortAndDisplayImages();
+    }
+
+    async updateThumbnailSize(newSize) {
+        this.maxThumbnailSize = newSize;
+        if (this.thumbnailSizeSlider) {
+            const slider = this.thumbnailSizeSlider.querySelector("input[type='range']");
+            if (slider) slider.value = newSize;
         }
-
-        const imgEl = $el("img", {
-            className: "neo-gallery-thumb-img",
-            src: src,
-            alt: image.name,
-            onerror: () => {
-                if (!image.preview) imgEl.src = this.placeholderImageUrl;
+        const grids = document.querySelectorAll('.neo-gallery-category-grid');
+        for (const grid of grids) {
+            if (grid.offsetParent !== null) {
+                grid.style.gridTemplateColumns = `repeat(auto-fill, ${newSize}px)`;
             }
-        });
+        }
+        await this.sortAndDisplayImages();
+    }
 
-        // Buttons overlay at bottom of the image (floating above image edge)
-        const btnBar = $el("div", {
-            className: "neo-gallery-thumb-btn-bar"
-        }, [sendBtn, imgSendBtn, copyBtn].filter(Boolean));
-
-        // Wrap image and floating buttons together
-        const imgWrapper = $el("div", {
-            className: "neo-gallery-thumb-img-wrapper"
-        }, [imgEl, btnBar]);
-
-        const labelEl = this.displayLabels ? $el("span", {
-            className: "neo-gallery-image-label",
-            textContent: image.name.replace(/\.\w+$/, '') // strip extension
-        }) : null;
-
-        if (deleteBtn) container.appendChild(deleteBtn);
-        container.appendChild(imgWrapper);
-        if (labelEl) container.appendChild(labelEl);
-
-        // Tooltip shows filename title on hover
-        container.title = image.name.replace(/\.\w+$/, '');
-
-        return container;
+    async updateLabelDisplay(display) {
+        this.displayLabels = display;
+        await this.sortAndDisplayImages();
     }
 
     // ====== Prompt Handling ======
@@ -2041,83 +759,6 @@ class NeoGallery {
         return existing.endsWith('.') ? existing + ' ' + newText : existing + ', ' + newText;
     }
 
-    copyToClipboard(imageName, txtContent, feedbackBtn = null, actionType = 'send') {
-        let textToCopy = String(txtContent || "").trim();
-        textToCopy = this.cleanText(textToCopy);
-
-        const selectedValue = document.getElementById("target-node-dropdown")?.value;
-
-        let targetNodeIds = [];
-        let isPromptNode = false;
-        let targetNode = null;
-        let targetWidget = null;
-
-        if (selectedValue === "selected") {
-            const selectedKeys = Object.keys(app.canvas.selected_nodes);
-            if (selectedKeys.length > 0) {
-                targetNode = app.canvas.selected_nodes[selectedKeys[0]];
-                if (targetNode && targetNode._rsPromptUIElements) {
-                    isPromptNode = true;
-                    targetNodeIds.push(parseInt(selectedKeys[0]));
-                }
-                if (!isPromptNode && targetNode) {
-                    targetWidget = targetNode.widgets?.find(w => ['string', 'text', 'customtext'].includes(w.type));
-                }
-            }
-        } else if (selectedValue) {
-            const [nodeId, , index] = selectedValue.split(':');
-            targetNode = app.graph.getNodeById(parseInt(nodeId));
-            targetWidget = targetNode?.widgets?.[parseInt(index)];
-            if (targetNode && targetNode._rsPromptUIElements) {
-                isPromptNode = true;
-                targetNodeIds.push(parseInt(nodeId));
-            }
-        }
-
-        if (targetNode && isPromptNode && targetNode._rsPromptUIElements) {
-            const { customTextarea, textWidget } = targetNode._rsPromptUIElements;
-            if (customTextarea) {
-                customTextarea.value = textToCopy;
-                customTextarea.dispatchEvent(new Event("input", { bubbles: true }));
-            }
-            if (textWidget) {
-                textWidget.value = textToCopy;
-            }
-            app.graph.setDirtyCanvas(true, true);
-            if (feedbackBtn) {
-                this.showInlineFeedback(feedbackBtn, '\u2705 Sent!', 'success');
-            } else {
-                this.showToast('success', 'Tags Sent!', `Sent to ${targetNode.title || 'Node'}`);
-            }
-        } else if (targetNode && targetWidget) {
-            targetWidget.value = textToCopy;
-            if (targetNode.onWidgetChanged) targetNode.onWidgetChanged(targetWidget.name, targetWidget.value);
-            app.graph.setDirtyCanvas(true, true);
-            if (feedbackBtn) {
-                this.showInlineFeedback(feedbackBtn, '\u2705 Sent!', 'success');
-            } else {
-                this.showToast('success', 'Tags Sent!', `Sent to ${targetNode.title} - ${targetWidget.name}`);
-            }
-        } else {
-            navigator.clipboard.writeText(textToCopy).then(() => {
-                if (feedbackBtn) {
-                    const msg = actionType === 'send' ? '\u2705 Sent!' : '\u2705 Copied!';
-                    this.showInlineFeedback(feedbackBtn, msg, 'success');
-                } else {
-                    this.showToast('success', actionType === 'send' ? 'Tags Sent!' : 'Tags Copied!', `Tags for "${imageName}" ${actionType === 'send' ? 'sent to' : 'copied to'} clipboard`);
-                }
-            }).catch(() => {
-                if (feedbackBtn) {
-                    this.showInlineFeedback(feedbackBtn, '\u274C Failed', 'error');
-                } else {
-                    this.showToast('error', actionType === 'send' ? 'Send Failed' : 'Copy Failed', `Failed to ${actionType === 'send' ? 'send' : 'copy'} tags`);
-                }
-            });
-        }
-    }
-
-
-
     // ====== Utility ======
 
     debounce(func, wait) {
@@ -2129,41 +770,11 @@ class NeoGallery {
     }
 
     showToast(severity, summary, detail) {
-        app.extensionManager.toast.add({ severity, summary, detail, life: 5000 });
+        showToast(this.app, severity, summary, detail);
     }
 
     showInlineFeedback(button, message, type) {
-        const existing = button.querySelector('.neo-gallery-feedback');
-        if (existing) existing.remove();
-
-        const feedbackClassName = type === 'success' ? 'neo-gallery-feedback neo-gallery-feedback-success' : 'neo-gallery-feedback neo-gallery-feedback-error';
-        const feedback = $el("div", {
-            className: feedbackClassName,
-            textContent: message
-        });
-
-        document.body.appendChild(feedback);
-
-        const buttonRect = button.getBoundingClientRect();
-        const top = buttonRect.top;
-        const left = buttonRect.left + buttonRect.width / 2;
-
-        feedback.style.position = 'fixed';
-        feedback.style.top = (top - 32) + 'px';
-        feedback.style.left = left + 'px';
-        feedback.style.transform = 'translateX(-50%)';
-        feedback.style.zIndex = '2147483646';
-        feedback.style.pointerEvents = 'none';
-
-        setTimeout(() => {
-            if (feedback.parentNode) {
-                feedback.style.opacity = "0";
-                feedback.style.transition = "opacity 0.3s ease";
-                setTimeout(() => {
-                    if (feedback.parentNode) feedback.remove();
-                }, 300);
-            }
-        }, 1500);
+        showInlineFeedback(button, message, type);
     }
 
     displayNoFilesMessage() {
@@ -2175,430 +786,125 @@ class NeoGallery {
         ]));
     }
 
-    // ====== Lightbox (Large Image Viewer) ======
+    // ====== Image Send ======
+
+    async sendImageToNode(image, target, button) {
+        const selectedValue = target === 'selected' ? 'selected' : target;
+        let targetNode = null;
+        let targetWidget = null;
+        if (selectedValue === 'selected') {
+            const selKeys = Object.keys(app.canvas.selected_nodes);
+            if (selKeys.length > 0) {
+                targetNode = app.canvas.selected_nodes[selKeys[0]];
+                targetWidget = targetNode?.widgets?.find(w => /image|upload/.test((w.name||'').toLowerCase()));
+            }
+        } else {
+            const [nodeId, , index] = selectedValue.split(':');
+            targetNode = app.graph.getNodeById(parseInt(nodeId));
+            targetWidget = targetNode?.widgets?.[parseInt(index)];
+        }
+        if (!targetNode || !targetWidget) {
+            showToast(this.app, 'error', 'Send Failed', 'Could not find target node/widget.');
+            return;
+        }
+        const widgetType = targetWidget.type || '';
+        
+        if (widgetType === 'combo') {
+            try {
+                const resp = await api.fetchApi('/neo_gallery/copy_to_input?filename=' + encodeURIComponent(image.filename) + (image.subfolder ? '&subfolder=' + encodeURIComponent(image.subfolder) : ''));
+                if (resp.ok) {
+                    const result = await resp.json();
+                    if (result.success) {
+                        targetWidget.value = result.skipped ? image.filename : result.filename;
+                    } else {
+                        showToast(this.app, 'error', 'Copy Failed', result.error || 'Failed to copy image to input directory');
+                        return;
+                    }
+                } else {
+                    showToast(this.app, 'error', 'Copy Failed', 'Failed to copy image');
+                    return;
+                }
+            } catch (e) {
+                console.error('[Gallery] Error copying image:', e);
+                showToast(this.app, 'error', 'Copy Failed', 'Error copying image');
+                return;
+            }
+        } else {
+            const filePath = `${image.subfolder || ''}/${image.filename}`;
+            if (widgetType === 'customtext' || widgetType === 'text') {
+                targetWidget.value = filePath;
+            } else {
+                targetWidget.value = {
+                    filename: image.filename,
+                    subfolder: image.subfolder || '',
+                    type: image.type || 'input'
+                };
+            }
+        }
+        if (widgetType === 'combo' && targetWidget.callback) {
+            targetWidget.callback(targetWidget.value);
+        } else if (targetNode.onWidgetChanged) {
+            targetNode.onWidgetChanged(targetWidget.name, targetWidget.value);
+        }
+        app.graph.setDirtyCanvas(true, true);
+        showInlineFeedback(button, '\u2705 Image Sent!', 'success');
+        showToast(this.app, 'success', 'Image Sent!', `Sent to ${targetNode.title || 'Node'} - ${targetWidget.name}`);
+    }
+
+    // ====== Lightbox (delegated to components) ======
 
     injectAnimations() {}
 
     showLightbox(image, subfolder) {
-        this.injectAnimations();
-
-        const existingLightbox = document.querySelector('.neo-gallery-lightbox');
-        if (existingLightbox && this.currentLightboxImages && this.currentLightboxImages.length > 0) {
-            const newIndex = this.currentLightboxImages.findIndex(img => img.filename === image.filename && img.subfolder === subfolder);
-            if (newIndex >= 0) {
-                this.updateLightboxContent(existingLightbox, image, subfolder, this.currentLightboxImages, newIndex);
-                return;
-            }
-        }
-
-        const existing = document.querySelector('.neo-gallery-lightbox');
-        if (existing) {
-            existing.remove();
-        }
-
-        const lightbox = $el("div", {
-            id: "neo-gallery-lightbox",
-            className: "neo-gallery-lightbox",
-            onclick: (e) => {
-                if (e.target === lightbox) {
-                    this.closeLightbox();
-                }
-            }
-        });
-
-        const container = $el("div", {
-            id: "neo-gallery-lightbox-container",
-            className: "neo-gallery-lightbox-container",
-        });
-
-        const imgWrapper = $el("div", {
-            id: "neo-gallery-lightbox-img-wrapper",
-            className: "neo-gallery-lightbox-img-wrapper",
-        });
-
-        const categoryParam = image.category ? `&category=${encodeURIComponent(image.category)}` : '';
-        const imageUrl = image.preview || `${window.location.protocol}//${window.location.host}/neo_gallery/image?filename=${encodeURIComponent(image.filename)}&subfolder=${encodeURIComponent(subfolder)}${categoryParam}`;
-        const img = $el("img", {
-            className: "neo-gallery-lightbox-image",
-            src: imageUrl,
-        });
-
-        const closeBtn = $el("div", {
-            className: "neo-gallery-lightbox-close-btn",
-            onclick: (e) => {
-                e.stopPropagation();
-                this.closeLightbox();
-            }
-        }, ["\u00D7"]);
-
-        const navBtns = $el("div", {
-            className: "neo-gallery-lightbox-nav-btns"
-        });
-
-        // Send button — only show if image has prompt text
-        let sendBtn = null;
-        if (image.txt_content) {
-            sendBtn = $el("div", {
-                className: "neo-gallery-lightbox-btn neo-gallery-lightbox-send-btn",
-                onclick: (e) => {
-                    e.stopPropagation();
-                    this._showSendMenu(image, sendBtn);
-                }
-            }, ["\u2708\uFE0F Send"]);
-        }
-
-        const copyBtn = $el("div", {
-            className: "neo-gallery-lightbox-btn neo-gallery-lightbox-copy-btn",
-            onclick: (e) => {
-                e.stopPropagation();
-                this.copyToClipboard(image.name, image.txt_content, copyBtn, 'copy');
-            }
-        }, ["\u29C9 Copy"]);
-
-        imgWrapper.appendChild(img);
-
-        // Image info (dimensions) — displayed below the image, not overlapping
-        const imageInfo = $el("div", {
-            className: "neo-gallery-lightbox-image-info"
-        });
-        img.onload = () => {
-            if (imageInfo) {
-                imageInfo.textContent = `${img.naturalWidth} × ${img.naturalHeight}`;
-            }
-        };
-        // Append imageInfo inside imgWrapper so it stacks vertically below the image
-        imgWrapper.appendChild(imageInfo);
-
-        // Build all images list for navigation based on current view context
-        const allImages = [];
-        const { source, categoryPath, mode } = this.currentView;
-        
-        if (source === 'presets') {
-            // In presets view - only include preset items in the same category
-            const catToMatch = this._presetRawCategory || '';
-            const presetItems = this.isSearchActive ? this.filteredPresets : this.allPresets;
-            for (const p of presetItems) {
-                if (p.category === catToMatch) {
-                    allImages.push({...p, subfolder: "presets"});
-                }
-            }
-        } else if (source && mode !== 'categories') {
-            // In a custom directory view - only include items from that source
-            const dir = this.allCustomDirs.find(d => d.name === source);
-            if (dir) {
-                let dirItems = [...dir.items];
-                
-                // If we're in a subdirectory, filter by category path
-                if (categoryPath && categoryPath.length > 0) {
-                    const catKey = categoryPath[0];
-                    dirItems = dirItems.filter(i => i.category === catKey || (!i.category && !catKey));
-                }
-                
-                for (const item of dirItems) {
-                    allImages.push({...item, subfolder: source});
-                }
-            }
-        } else {
-            // In categories view - include all items from all sources
-            for (const dir of this.allCustomDirs) {
-                if (!this.isSearchActive || this.filteredCustomDirs.some(d => d.name === dir.name)) {
-                    for (const item of dir.items) {
-                        allImages.push({...item, subfolder: dir.name});
-                    }
-                }
-            }
-            
-            const presetItems = this.isSearchActive ? this.filteredPresets : this.allPresets;
-            for (const p of presetItems) {
-                allImages.push({...p, subfolder: "presets"});
-            }
-        }
-        
-        // Sort by name to maintain consistent order with thumbnails
-        allImages.sort((a, b) => a.name.localeCompare(b.name));
-        const currentIndex = allImages.findIndex(img => img.filename === image.filename && img.subfolder === subfolder);
-
-        const prevBtn = $el("div", {
-            id: "neo-gallery-lightbox-prev-btn",
-            className: "neo-gallery-lightbox-nav-arrow",
-            style: {
-                cursor: currentIndex > 0 ? "pointer" : "not-allowed",
-                opacity: currentIndex > 0 ? "0.8" : "0.3"
-            },
-            onclick: (e) => {
-                if (currentIndex <= 0) return;
-                e.stopPropagation();
-                const prevItem = allImages[currentIndex - 1];
-                this.updateLightboxContent(lightbox, prevItem, prevItem.subfolder, allImages, currentIndex - 1);
-            }
-        }, ["\u2039"]);
-        imgWrapper.appendChild(prevBtn);
-
-        const nextBtn = $el("div", {
-            id: "neo-gallery-lightbox-next-btn",
-            className: "neo-gallery-lightbox-nav-arrow",
-            style: {
-                cursor: currentIndex < allImages.length - 1 ? "pointer" : "not-allowed",
-                opacity: currentIndex < allImages.length - 1 ? "0.8" : "0.3"
-            },
-            onclick: (e) => {
-                if (currentIndex >= allImages.length - 1) return;
-                e.stopPropagation();
-                const nextItem = allImages[currentIndex + 1];
-                this.updateLightboxContent(lightbox, nextItem, nextItem.subfolder, allImages, currentIndex + 1);
-            }
-        }, ["\u203A"]);
-        imgWrapper.appendChild(nextBtn);
-
-        let promptSection = null;
-        if (image.txt_content) {
-            promptSection = $el("div", {
-                id: "neo-gallery-lightbox-prompt-section",
-                className: "neo-gallery-lightbox-prompt-section"
-            });
-
-            const sections = this.parsePromptSections(image.txt_content);
-            const promptContainer = $el("div", {
-                className: "neo-gallery-lightbox-prompt-container"
-            });
-
-            if (sections.length > 0 && sections.some(s => s.label)) {
-                for (const section of sections) {
-                    if (section.label) {
-                        const sectionEl = $el("div", {
-                            className: "neo-gallery-lightbox-prompt-section-item"
-                        }, [
-                            $el("span", {
-                                className: "neo-gallery-lightbox-prompt-label",
-                                textContent: section.label + "\uff1a"
-                            }),
-                            $el("span", {
-                                className: "neo-gallery-lightbox-prompt-value",
-                                textContent: section.value
-                            })
-                        ]);
-                        promptContainer.appendChild(sectionEl);
-                    } else if (section.value) {
-                        promptContainer.appendChild($el("div", {
-                            textContent: section.value,
-                            style: { marginBottom: "3px", whiteSpace: "pre-wrap" }
-                        }));
-                    }
-                }
-            } else {
-                promptContainer.appendChild($el("div", {
-                    textContent: this.cleanText(image.txt_content),
-                    style: { whiteSpace: "pre-wrap" }
-                }));
-            }
-
-            promptSection.appendChild(promptContainer);
-            
-            const promptBtnsContainer = $el("div", {
-                className: "neo-gallery-lightbox-prompt-btns"
-            });
-            promptBtnsContainer.appendChild(sendBtn);
-            promptBtnsContainer.appendChild(copyBtn);
-            promptSection.appendChild(promptBtnsContainer);
-        }
-
-        // Append elements: imgWrapper first (already contains imageInfo), then promptSection
-        container.appendChild(imgWrapper);
-        if (promptSection) container.appendChild(promptSection);
-        container.appendChild(closeBtn);
-        lightbox.appendChild(container);
-        document.body.appendChild(lightbox);
-
-        this.currentLightbox = lightbox;
-        this.currentLightboxImages = allImages;
-        this.currentLightboxIndex = currentIndex;
-
-        const handleKeyDown = (e) => {
-            switch (e.key) {
-                case 'ArrowLeft':
-                    this.navigateLightboxImage(-1);
-                    break;
-                case 'ArrowRight':
-                    this.navigateLightboxImage(1);
-                    break;
-                case 'Escape':
-                    this.closeLightbox();
-                    break;
-            }
-        };
-        document.addEventListener('keydown', handleKeyDown);
-        this.currentLightboxKeyboardHandler = handleKeyDown;
+        this.components.showLightbox(this, image, subfolder);
     }
 
     closeLightbox() {
-        if (this.currentLightbox) {
-            this.currentLightbox.remove();
-            this.currentLightbox = null;
-        }
-        if (this.currentLightboxKeyboardHandler) {
-            document.removeEventListener('keydown', this.currentLightboxKeyboardHandler);
-            this.currentLightboxKeyboardHandler = null;
-        }
+        this.components.closeLightbox(this);
     }
 
     navigateLightboxImage(direction) {
-        if (!this.currentLightbox || !this.currentLightboxImages || this.currentLightboxImages.length === 0) return;
-        
-        const newIndex = this.currentLightboxIndex + direction;
-        if (newIndex < 0 || newIndex >= this.currentLightboxImages.length) return;
-        
-        const nextItem = this.currentLightboxImages[newIndex];
-        this.updateLightboxContent(this.currentLightbox, nextItem, nextItem.subfolder, this.currentLightboxImages, newIndex);
+        this.components.navigateLightboxImage(this, direction);
     }
 
     updateLightboxContent(lightbox, image, subfolder, allImages, currentIndex) {
-        const container = lightbox.querySelector('#neo-gallery-lightbox-container');
-        if (!container) {
-            this.closeLightbox();
-            setTimeout(() => this.showLightbox(image, subfolder), 100);
-            return;
-        }
+        this.components.updateLightboxContent(this, lightbox, image, subfolder, allImages, currentIndex);
+    }
 
-        const imgWrapper = container.querySelector('#neo-gallery-lightbox-img-wrapper');
-        if (!imgWrapper) {
-            this.closeLightbox();
-            setTimeout(() => this.showLightbox(image, subfolder), 100);
-            return;
-        }
+    // ====== Breadcrumb (delegated to components) ======
 
-        const img = imgWrapper.querySelector('img');
-        const categoryParam = image.category ? `&category=${encodeURIComponent(image.category)}` : '';
-        const newImageUrl = image.preview || `${window.location.protocol}//${window.location.host}/neo_gallery/image?filename=${encodeURIComponent(image.filename)}&subfolder=${encodeURIComponent(subfolder)}${categoryParam}`;
+    createBreadcrumbHome() {
+        return this.components.createBreadcrumbHome(this);
+    }
 
-        if (img) {
-            img.style.opacity = '0';
-            img.style.transform = 'scale(1)';
-            
-            setTimeout(() => {
-                img.src = newImageUrl;
-                img.onload = () => {
-                    img.style.opacity = '1';
-                    
-                    // Update image info overlay with dimensions
-                    const infoEl = container.querySelector('.neo-gallery-lightbox-image-info');
-                    if (infoEl) {
-                        infoEl.textContent = `${img.naturalWidth} × ${img.naturalHeight}`;
-                    }
-                };
-            }, 150);
-        }
+    updateBreadcrumb(pathSegments, sourceName) {
+        this.components.updateBreadcrumb(this, pathSegments, sourceName);
+    }
 
-        let promptSection = container.querySelector('#neo-gallery-lightbox-prompt-section');
-        
-        if (image.txt_content) {
-            if (!promptSection) {
-                promptSection = $el("div", {
-                    id: "neo-gallery-lightbox-prompt-section",
-                    className: "neo-gallery-lightbox-prompt-section"
-                });
-                container.appendChild(promptSection);
-            }
-            
-            promptSection.innerHTML = '';
-            
-            const sections = this.parsePromptSections(image.txt_content);
-            const promptContainer = $el("div", {
-                className: "neo-gallery-lightbox-prompt-container"
-            });
+    _removeSiblingDropdown() {
+        this.components._removeSiblingDropdown();
+    }
 
-            if (sections.length > 0 && sections.some(s => s.label)) {
-                for (const section of sections) {
-                    if (section.label) {
-                        const sectionEl = $el("div", {
-                            className: "neo-gallery-lightbox-prompt-section-item"
-                        }, [
-                            $el("span", {
-                                className: "neo-gallery-lightbox-prompt-label",
-                                textContent: section.label + "\uff1a"
-                            }),
-                            $el("span", {
-                                className: "neo-gallery-lightbox-prompt-value",
-                                textContent: section.value
-                            })
-                        ]);
-                        promptContainer.appendChild(sectionEl);
-                    } else if (section.value) {
-                        promptContainer.appendChild($el("div", {
-                            textContent: section.value,
-                            style: { marginBottom: "3px", whiteSpace: "pre-wrap" }
-                        }));
-                    }
-                }
-            } else {
-                promptContainer.appendChild($el("div", {
-                    textContent: this.cleanText(image.txt_content),
-                    style: { whiteSpace: "pre-wrap" }
-                }));
-            }
+    _toggleSiblingDropdown(event, rootDirName, pathSegments) {
+        this.components._toggleSiblingDropdown(this, event, rootDirName, pathSegments);
+    }
 
-            promptSection.appendChild(promptContainer);
-            
-            let promptBtnsContainer = promptSection.querySelector('.neo-gallery-lightbox-prompt-btns');
-            if (!promptBtnsContainer) {
-                promptBtnsContainer = $el("div", {
-                    className: "neo-gallery-lightbox-prompt-btns"
-                });
-                
-                const sendBtn = $el("div", {
-                    className: "neo-gallery-lightbox-btn neo-gallery-lightbox-send-btn",
-                    onclick: (e) => {
-                        e.stopPropagation();
-                        app.neoGallery._showSendMenu(image, sendBtn);
-                    }
-                }, ["\u2708\uFE0F Send"]);
-                
-                const copyBtn = $el("div", {
-                    className: "neo-gallery-lightbox-btn neo-gallery-lightbox-copy-btn",
-                    onclick: (e) => {
-                        e.stopPropagation();
-                        app.neoGallery.copyToClipboard(image.name, image.txt_content, copyBtn, 'copy');
-                    }
-                }, ["\u29C9 Copy"]);
-                
-                promptBtnsContainer.appendChild(sendBtn);
-                promptBtnsContainer.appendChild(copyBtn);
-                promptSection.appendChild(promptBtnsContainer);
-            }
-        } else if (promptSection && !image.txt_content) {
-            promptSection.remove();
-        }
+    // ====== Send Menus (delegated to components) ======
 
-        const prevBtn = imgWrapper.querySelector('#neo-gallery-lightbox-prev-btn');
-        const nextBtn = imgWrapper.querySelector('#neo-gallery-lightbox-next-btn');
-        
-        if (prevBtn) {
-            prevBtn.style.opacity = currentIndex > 0 ? "0.8" : "0.3";
-            prevBtn.style.cursor = currentIndex > 0 ? "pointer" : "not-allowed";
-            if (currentIndex > 0) {
-                prevBtn.onclick = (e) => {
-                    e.stopPropagation();
-                    const prevItem = allImages[currentIndex - 1];
-                    this.updateLightboxContent(lightbox, prevItem, prevItem.subfolder, allImages, currentIndex - 1);
-                };
-            } else {
-                prevBtn.onclick = null;
-            }
-        }
-        if (nextBtn) {
-            nextBtn.style.opacity = currentIndex < allImages.length - 1 ? "0.8" : "0.3";
-            nextBtn.style.cursor = currentIndex < allImages.length - 1 ? "pointer" : "not-allowed";
-            if (currentIndex < allImages.length - 1) {
-                nextBtn.onclick = (e) => {
-                    e.stopPropagation();
-                    const nextItem = allImages[currentIndex + 1];
-                    this.updateLightboxContent(lightbox, nextItem, nextItem.subfolder, allImages, currentIndex + 1);
-                };
-            } else {
-                nextBtn.onclick = null;
-            }
-        }
+    _removeSendMenu() {
+        this.components._removeSendMenu();
+    }
 
-        this.currentLightboxIndex = currentIndex;
+    _removeImgSendMenu() {
+        this.components._removeImgSendMenu();
+    }
+
+    _showImgSendMenu(image, button) {
+        this.components._showImgSendMenu(this, image, button);
+    }
+
+    _showSendMenu(image, button) {
+        this.components._showSendMenu(this, image, button);
     }
 
     // ====== Main init ======
@@ -2608,22 +914,15 @@ class NeoGallery {
     }
 
     async loadAndDisplay() {
-        // Show loading state immediately in accordion
         this.accordion.innerHTML = '';
-        const loadingEl = $el("div", { className: "neo-gallery-loading-overlay" }, [
-            $el("div", { className: "neo-gallery-loading-spinner" }),
-            $el("span", { className: "neo-gallery-loading-text", textContent: "Loading gallery..." })
-        ]);
-        this.accordion.appendChild(loadingEl);
-
-        // Force DOM update before async operation
+        const loadingEl = showLoadingOverlay(this.accordion);
+        
         await Promise.resolve();
         
         await this.loadGallery();
         
-        // Remove loading state and display content
         if (loadingEl.parentNode) loadingEl.remove();
-        this.sortAndDisplayImages();
+        await this.sortAndDisplayImages();
     }
 }
 
@@ -2635,7 +934,6 @@ app.registerExtension({
         app.neoGallery = gallery;
         await gallery.init();
 
-        // Settings
         app.ui.settings.addSetting({
             id: "Neo Gallery._General.maxThumbnailSize",
             name: "Neo Gallery Max Thumbnail Size",
@@ -2658,23 +956,19 @@ app.registerExtension({
             tooltip: "Neo Gallery",
             type: "custom",
             render: async (el) => {
-                // Clear any other content from previous renders first
                 el.innerHTML = "";
                 
-                // Always append to ensure it's in the current container
                 if (gallery.element.parentNode) {
                     gallery.element.parentNode.removeChild(gallery.element);
                 }
                 el.appendChild(gallery.element);
                 
-                // Load gallery data only when sidebar tab is opened
                 if (!gallery._loaded) {
                     await gallery.loadAndDisplay();
                     gallery._loaded = true;
                 } else {
-                    // Use cached data — just re-render without API call
                     gallery.accordion.innerHTML = "";
-                    gallery.sortAndDisplayImages();
+                    await gallery.sortAndDisplayImages();
                 }
             },
             });
