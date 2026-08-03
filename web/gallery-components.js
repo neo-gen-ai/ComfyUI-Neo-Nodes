@@ -995,65 +995,60 @@ export class GalleryComponents {
         const existing = document.querySelector('.neo-gallery-lightbox');
         if (existing) existing.remove();
 
-        const lightbox = $el("div", {
-            id: "neo-gallery-lightbox",
-            className: "neo-gallery-lightbox",
-            onclick: (e) => {
-                if (e.target === lightbox) {
-                    gallery.closeLightbox();
-                }
+        // 使用原生 DOM API 创建 lightbox，确保 querySelector 能正常工作
+        const lightbox = document.createElement('div');
+        lightbox.id = "neo-gallery-lightbox";
+        lightbox.className = "neo-gallery-lightbox";
+        lightbox.onclick = (e) => {
+            if (e.target === lightbox) {
+                gallery.closeLightbox();
             }
-        });
+        };
 
-        const container = $el("div", {
-            id: "neo-gallery-lightbox-container",
-            className: "neo-gallery-lightbox-container",
-        });
+        const container = document.createElement('div');
+        container.id = "neo-gallery-lightbox-container";
+        container.className = "neo-gallery-lightbox-container";
 
-        const imgWrapper = $el("div", {
-            id: "neo-gallery-lightbox-img-wrapper",
-            className: "neo-gallery-lightbox-img-wrapper",
-        });
+        const imgWrapper = document.createElement('div');
+        imgWrapper.id = "neo-gallery-lightbox-img-wrapper";
+        imgWrapper.className = "neo-gallery-lightbox-img-wrapper";
 
         const categoryParam = image.category ? `&category=${encodeURIComponent(image.category)}` : '';
         const imageUrl = image.preview || `${window.location.protocol}//${window.location.host}/neo_gallery/image?filename=${encodeURIComponent(image.filename)}&subfolder=${encodeURIComponent(subfolder)}${categoryParam}`;
-        const img = $el("img", {
-            className: "neo-gallery-lightbox-image",
-            src: imageUrl,
-        });
+        const img = document.createElement('img');
+        img.className = "neo-gallery-lightbox-image";
+        img.src = imageUrl;
 
-        const closeBtn = $el("div", {
-            className: "neo-gallery-lightbox-close-btn",
-            onclick: (e) => {
-                e.stopPropagation();
-                gallery.closeLightbox();
-            }
-        }, ["\u00D7"]);
-
-        const navBtns = $el("div", { className: "neo-gallery-lightbox-nav-btns" });
+        const closeBtn = document.createElement('div');
+        closeBtn.className = "neo-gallery-lightbox-close-btn";
+        closeBtn.textContent = "\u00D7";
+        closeBtn.onclick = (e) => {
+            e.stopPropagation();
+            gallery.closeLightbox();
+        };
 
         let sendBtn = null;
         if (image.txt_content) {
-            sendBtn = $el("div", {
-                className: "neo-gallery-lightbox-btn neo-gallery-lightbox-send-btn",
-                onclick: (e) => {
-                    e.stopPropagation();
-                    gallery._showSendMenu(image, sendBtn);
-                }
-            }, ["\u2708\uFE0F Send"]);
+            sendBtn = document.createElement('div');
+            sendBtn.className = "neo-gallery-lightbox-btn neo-gallery-lightbox-send-btn";
+            sendBtn.textContent = "\u2708\uFE0F Send";
+            sendBtn.onclick = (e) => {
+                e.stopPropagation();
+                gallery._showSendMenu(image, sendBtn);
+            };
         }
 
-        const copyBtn = $el("div", {
-            className: "neo-gallery-lightbox-btn neo-gallery-lightbox-copy-btn",
-            onclick: (e) => {
-                e.stopPropagation();
-                this.copyToClipboard(image.name, image.txt_content, copyBtn, 'copy');
-            }
-        }, ["\u29C9 Copy"]);
+        const copyBtn = document.createElement('div');
+        copyBtn.className = "neo-gallery-lightbox-btn neo-gallery-lightbox-copy-btn";
+        copyBtn.textContent = "\u29C9 Copy";
+        copyBtn.onclick = (e) => {
+            e.stopPropagation();
+            this.copyToClipboard(image.name, image.txt_content, copyBtn, 'copy');
+        };
 
         imgWrapper.appendChild(img);
 
-        const imageInfo = $el("div", { className: "neo-gallery-lightbox-image-info" });
+        const imageInfo = document.createElement('div');
         img.onload = () => {
             if (imageInfo) {
                 imageInfo.textContent = `${img.naturalWidth} \u00d7 ${img.naturalHeight}`;
@@ -1144,7 +1139,7 @@ export class GalleryComponents {
                 className: "neo-gallery-lightbox-prompt-section"
             });
 
-            const sections = gallery.parsePromptSections(image.txt_content);
+            const sections = this.gallery.parsePromptSections(image.txt_content);
             const promptContainer = $el("div", { className: "neo-gallery-lightbox-prompt-container" });
 
             if (sections.length > 0 && sections.some(s => s.label)) {
@@ -1175,6 +1170,48 @@ export class GalleryComponents {
             promptBtnsContainer.appendChild(sendBtn);
             promptBtnsContainer.appendChild(copyBtn);
             promptSection.appendChild(promptBtnsContainer);
+        } else {
+            // 反推按钮：暂时隐藏（待修复图片消失问题后重新启用）
+            const reverseBtn = $el("div", {
+                id: "neo-gallery-lightbox-reverse-btn",
+                className: "neo-gallery-lightbox-btn neo-gallery-lightbox-reverse-btn",
+                style: { display: 'none' },
+                onclick: async (e) => {
+                    e.stopPropagation();
+                    try {
+                        reverseBtn.textContent = "\u231B 反推中...";
+                        reverseBtn.style.pointerEvents = "none";
+                        const resp = await api.fetchApi('/rs_prompts/reverse_prompt', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ filename: image.filename, subfolder: subfolder })
+                        });
+                        if (resp.ok) {
+                            const result = await resp.json();
+                            console.log('[Neo Gallery] Reverse prompt API response:', result);
+                            if (result.status === "success") {
+                                image.txt_content = result.prompt || "";
+                                console.log('[Neo Gallery] Set image.txt_content to:', image.txt_content.substring(0, 100));
+                                showToast(gallery.app, "success", "\u2705 \u53CD\u63A8\u6210\u529F", "");
+                            } else {
+                                showToast(gallery.app, "error", "\u274C \u53CD\u63A8\u5931\u8D25", result.error || "");
+                                reverseBtn.textContent = "\uD83D\uDD0D 反推";
+                                reverseBtn.style.pointerEvents = "auto";
+                            }
+                        } else {
+                            const err = await resp.json().catch(() => ({}));
+                            showToast(gallery.app, "error", "\u274C \u53CD\u63A8\u5931\u8D25", err.error || "");
+                            reverseBtn.textContent = "\uD83D\uDD0D 反推";
+                            reverseBtn.style.pointerEvents = "auto";
+                        }
+                    } catch (err) {
+                        showToast(gallery.app, "error", "\u274C \u53CD\u63A8\u8BF7\u6C42\u5931\u8D25", err.message);
+                        reverseBtn.textContent = "\uD83D\uDD0D 反推";
+                        reverseBtn.style.pointerEvents = "auto";
+                    }
+                }
+            }, ["\uD83D\uDD0D 反推"]);
+            container.appendChild(reverseBtn);
         }
 
         container.appendChild(imgWrapper);
@@ -1225,18 +1262,20 @@ export class GalleryComponents {
         gallery.updateLightboxContent(gallery.currentLightbox, nextItem, nextItem.subfolder, gallery.currentLightboxImages, newIndex);
     }
 
-    updateLightboxContent(gallery, lightbox, image, subfolder, allImages, currentIndex) {
-        const container = lightbox.querySelector('#neo-gallery-lightbox-container');
+    updateLightboxContent(lightbox, image, subfolder, allImages, currentIndex) {
+        console.log('[Neo Gallery] updateLightboxContent ENTER! image.txt_content:', !!image.txt_content, 'length:', (image.txt_content || '').length);
+        // 使用 document.querySelector 而不是在 wrapped element 上调用 querySelector
+        const container = document.querySelector('#neo-gallery-lightbox-container');
         if (!container) {
-            gallery.closeLightbox();
-            setTimeout(() => gallery.showLightbox(image, subfolder), 100);
+            this.gallery.closeLightbox();
+            setTimeout(() => this.gallery.showLightbox(image, subfolder), 100);
             return;
         }
 
         const imgWrapper = container.querySelector('#neo-gallery-lightbox-img-wrapper');
         if (!imgWrapper) {
-            gallery.closeLightbox();
-            setTimeout(() => gallery.showLightbox(image, subfolder), 100);
+            this.gallery.closeLightbox();
+            setTimeout(() => this.gallery.showLightbox(image, subfolder), 100);
             return;
         }
 
@@ -1250,31 +1289,49 @@ export class GalleryComponents {
             
             setTimeout(() => {
                 img.src = newImageUrl;
-                img.onload = () => {
+
+                // Fix: cache-bust to force reload from server, avoiding stale cached image
+                if (!newImageUrl.includes('?v=')) {
+                    img.src = newImageUrl + (newImageUrl.includes('?') ? '&' : '?') + 'v=' + Date.now();
+                }
+
+                // Handle cached images - onload may not fire if already in cache
+                const showImg = () => {
                     img.style.opacity = '1';
-                    
                     const infoEl = container.querySelector('.neo-gallery-lightbox-image-info');
                     if (infoEl) {
                         infoEl.textContent = `${img.naturalWidth} \u00d7 ${img.naturalHeight}`;
                     }
                 };
+
+                if (img.complete && img.naturalWidth > 0) {
+                    showImg();
+                } else {
+                    img.onload = showImg;
+                    img.onerror = showImg;
+                }
             }, 150);
         }
 
         let promptSection = container.querySelector('#neo-gallery-lightbox-prompt-section');
         
         if (image.txt_content) {
-            if (!promptSection) {
-                promptSection = $el("div", {
-                    id: "neo-gallery-lightbox-prompt-section",
-                    className: "neo-gallery-lightbox-prompt-section"
-                });
-                container.appendChild(promptSection);
+            // 从"无提示词"变为"有提示词"时，移除旧的反推按钮
+            const oldReverseBtn = container.querySelector('#neo-gallery-lightbox-reverse-btn');
+            if (oldReverseBtn) oldReverseBtn.remove();
+            
+            // 如果 promptSection 已存在（从反推状态切换），先将其从 DOM 中移除再重建
+            if (promptSection && promptSection.parentNode) {
+                promptSection.remove();
             }
             
-            promptSection.innerHTML = '';
-            
-            const sections = gallery.parsePromptSections(image.txt_content);
+            // 创建新的 promptSection
+            const sections = this.gallery.parsePromptSections(image.txt_content);
+            promptSection = $el("div", {
+                id: "neo-gallery-lightbox-prompt-section",
+                className: "neo-gallery-lightbox-prompt-section"
+            });
+
             const promptContainer = $el("div", { className: "neo-gallery-lightbox-prompt-container" });
 
             if (sections.length > 0 && sections.some(s => s.label)) {
@@ -1294,41 +1351,86 @@ export class GalleryComponents {
                 }
             } else {
                 promptContainer.appendChild($el("div", {
-                    textContent: gallery.cleanText(image.txt_content),
+                    textContent: this.gallery.cleanText(image.txt_content),
                     style: { whiteSpace: "pre-wrap" }
                 }));
             }
 
             promptSection.appendChild(promptContainer);
             
-            let promptBtnsContainer = promptSection.querySelector('.neo-gallery-lightbox-prompt-btns');
-            if (!promptBtnsContainer) {
-                promptBtnsContainer = $el("div", { className: "neo-gallery-lightbox-prompt-btns" });
-                
-                const sendBtn = $el("div", {
-                    className: "neo-gallery-lightbox-btn neo-gallery-lightbox-send-btn",
-                    onclick: (e) => {
-                        e.stopPropagation();
-                        gallery._showSendMenu(image, sendBtn);
-                    }
-                }, ["\u2708\uFE0F Send"]);
-                
-                const copyBtn = $el("div", {
-                    className: "neo-gallery-lightbox-btn neo-gallery-lightbox-copy-btn",
-                    onclick: (e) => {
-                        e.stopPropagation();
-                        this.copyToClipboard(image.name, image.txt_content, copyBtn, 'copy');
-                    }
-                }, ["\u29C9 Copy"]);
-                
-                promptBtnsContainer.appendChild(sendBtn);
-                promptBtnsContainer.appendChild(copyBtn);
-                promptSection.appendChild(promptBtnsContainer);
+            // 始终创建按钮容器
+            const sendBtn = image.txt_content ? $el("div", {
+                className: "neo-gallery-lightbox-btn neo-gallery-lightbox-send-btn",
+                onclick: (e) => {
+                    e.stopPropagation();
+                    this.gallery._showSendMenu(image, sendBtn);
+                }
+            }, ["\u2708\uFE0F Send"]) : null;
+            
+            const copyBtn = $el("div", {
+                className: "neo-gallery-lightbox-btn neo-gallery-lightbox-copy-btn",
+                onclick: (e) => {
+                    e.stopPropagation();
+                    this.copyToClipboard(image.name, image.txt_content, copyBtn, 'copy');
+                }
+            }, ["\u29C9 Copy"]);
+            
+            const promptBtnsContainer = $el("div", { className: "neo-gallery-lightbox-prompt-btns" });
+            if (sendBtn) promptBtnsContainer.appendChild(sendBtn);
+            promptBtnsContainer.appendChild(copyBtn);
+            promptSection.appendChild(promptBtnsContainer);
+            
+            // 将新的 promptSection 追加到 container（在 imgWrapper 之后）
+            const imgWrapper = container.querySelector('#neo-gallery-lightbox-img-wrapper');
+            if (imgWrapper && imgWrapper.nextSibling) {
+                container.insertBefore(promptSection, imgWrapper.nextSibling);
+            } else {
+                container.appendChild(promptSection);
             }
-        } else if (promptSection && !image.txt_content) {
-            promptSection.remove();
+        } else {
+            // 反推按钮：暂时隐藏（待修复图片消失问题后重新启用）
+            const reverseBtn = $el("div", {
+                id: "neo-gallery-lightbox-reverse-btn",
+                className: "neo-gallery-lightbox-btn neo-gallery-lightbox-reverse-btn",
+                style: { display: 'none' },
+                onclick: async (e) => {
+                    e.stopPropagation();
+                    try {
+                        reverseBtn.textContent = "\u231B 反推中...";
+                        reverseBtn.style.pointerEvents = "none";
+                        const resp = await api.fetchApi('/rs_prompts/reverse_prompt', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ filename: image.filename, subfolder: subfolder })
+                        });
+                        if (resp.ok) {
+                            const result = await resp.json();
+                            if (result.status === "success") {
+                                image.txt_content = result.prompt || "";
+                                showToast(this.gallery.app, "success", "\u2705 \u53CD\u63A8\u6210\u529F", "");
+                            } else {
+                                showToast(gallery.app, "error", "\u274C \u53CD\u63A8\u5931\u8D25", result.error || "");
+                                reverseBtn.textContent = "\uD83D\uDD0D 反推";
+                                reverseBtn.style.pointerEvents = "auto";
+                            }
+                        } else {
+                            const err = await resp.json().catch(() => ({}));
+                            showToast(this.gallery.app, "error", "\u274C \u53CD\u63A8\u5931\u8D25", err.error || "");
+                            reverseBtn.textContent = "\uD83D\uDD0D 反推";
+                            reverseBtn.style.pointerEvents = "auto";
+                        }
+                    } catch (err) {
+                        showToast(this.gallery.app, "error", "\u274C \u53CD\u63A8\u8BF7\u6C42\u5931\u8D25", err.message);
+                        reverseBtn.textContent = "\uD83D\uDD0D 反推";
+                        reverseBtn.style.pointerEvents = "auto";
+                    }
+                }
+            }, ["\uD83D\uDD0D 反推"]);
+            container.appendChild(reverseBtn);
         }
 
+        console.log('[Neo Gallery] updateLightboxContent called, image.txt_content:', !!image.txt_content, 'txt_content length:', (image.txt_content || '').length, 'container children before:', container.children.length);
+        document.title = '[DEBUG] txt=' + (!!image.txt_content) + '|' + (image.txt_content ? image.txt_content.substring(0, 30).replace(/\n/g, '\\n') : '') + '|children:' + container.children.length;
         const prevBtn = imgWrapper.querySelector('#neo-gallery-lightbox-prev-btn');
         const nextBtn = imgWrapper.querySelector('#neo-gallery-lightbox-next-btn');
         
@@ -1339,7 +1441,7 @@ export class GalleryComponents {
                 prevBtn.onclick = (e) => {
                     e.stopPropagation();
                     const prevItem = allImages[currentIndex - 1];
-                    gallery.updateLightboxContent(lightbox, prevItem, prevItem.subfolder, allImages, currentIndex - 1);
+                    this.gallery.updateLightboxContent(lightbox, prevItem, prevItem.subfolder, allImages, currentIndex - 1);
                 };
             } else {
                 prevBtn.onclick = null;
@@ -1352,13 +1454,13 @@ export class GalleryComponents {
                 nextBtn.onclick = (e) => {
                     e.stopPropagation();
                     const nextItem = allImages[currentIndex + 1];
-                    gallery.updateLightboxContent(lightbox, nextItem, nextItem.subfolder, allImages, currentIndex + 1);
+                    this.gallery.updateLightboxContent(lightbox, nextItem, nextItem.subfolder, allImages, currentIndex + 1);
                 };
             } else {
                 nextBtn.onclick = null;
             }
         }
 
-        gallery.currentLightboxIndex = currentIndex;
+        this.gallery.currentLightboxIndex = currentIndex;
     }
 }

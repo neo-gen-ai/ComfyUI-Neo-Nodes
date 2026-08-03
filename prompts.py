@@ -1,5 +1,7 @@
-﻿# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: Apache-2.0
 # ComfyUI-Neo-Nodes - Prompts
+
+from __future__ import annotations
 
 import os
 import json
@@ -8,6 +10,7 @@ import torch
 from aiohttp import web
 import threading
 import logging
+from pathlib import Path
 from server import PromptServer
 
 logger = logging.getLogger(__name__)
@@ -44,6 +47,7 @@ from .llm import (
     get_current_mode,
     LLM_MODE_LOCAL,
     LLM_MODE_REMOTE,
+    run_llm_task,
 )
 
 
@@ -496,6 +500,111 @@ async def rs_prompts_smart_prompt(request):
         
     except Exception as e:
         logger.error(f"Error handling smart prompt: {e}")
+        logger.exception(e)
+        return web.json_response({"error": str(e)}, status=500)
+
+
+@server.PromptServer.instance.routes.post("/rs_prompts/reverse_prompt")
+async def rs_prompts_reverse_prompt(request):
+    """从图像反推提示词，结果保存为同名 .txt 文件"""
+    from aiohttp import web
+    import base64
+    from pathlib import Path
+    try:
+        data = await request.json()
+        filename = data.get("filename", "")
+        subfolder = data.get("subfolder", "presets")
+        
+        if not filename:
+            return web.json_response({"error": "filename is required"}, status=400)
+        
+        # 确定图像所在目录
+        from .gallery import PRESETS_DIR, CUSTOM_DIR, _get_user_custom_dirs, IMG_EXTENSIONS
+        base: Path | None = None
+        
+        if subfolder == "presets" or subfolder == "":
+            base = PRESETS_DIR
+        elif subfolder == "custom":
+            base = CUSTOM_DIR
+        else:
+            user_custom_dirs = _get_user_custom_dirs()
+            dir_parts = [p for p in subfolder.split("/") if p]
+            if dir_parts[0] == "presets":
+                base = PRESETS_DIR / "/".join(dir_parts[1:])
+            else:
+                for dir_path in user_custom_dirs:
+                    d_name = dir_path.name if dir_path.name else str(dir_path)
+                    if dir_parts[0] == d_name:
+                        base = dir_path / "/".join(dir_parts[1:]) if len(dir_parts) > 1 else dir_path
+                        break
+        
+        if base is None or not base.exists():
+            return web.json_response({"error": "Directory not found"}, status=404)
+        
+        # 查找图像文件
+        image_path: Path | None = None
+        for ext in IMG_EXTENSIONS:
+            candidate = base / f"{filename}{ext}"
+            if candidate.exists():
+                image_path = candidate
+                break
+        
+        if image_path is None:
+            # 尝试不带扩展名
+            candidate = base / filename
+            if candidate.exists():
+                image_path = candidate
+        
+        if image_path is None:
+            return web.json_response({"error": "Image not found"}, status=404)
+        
+        # 读取图像，如果过大则缩放到最长边 1024px
+        MAX_REVERSE_SIDE = 1024
+        image_bytes: bytes = b""
+        try:
+            from PIL import Image
+            import io
+            with Image.open(image_path) as img:
+                w, h = img.size
+                if max(w, h) > MAX_REVERSE_SIDE:
+                    ratio = MAX_REVERSE_SIDE / max(w, h)
+                    new_w = int(w * ratio)
+                    new_h = int(h * ratio)
+                    img_resized = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+                    buf = io.BytesIO()
+                    img_resized.save(buf, format=img.format or "PNG")
+                    image_bytes = buf.getvalue()
+                    logger.info(f"Reverse prompt: image={image_path.name}, resized {w}x{h} -> {new_w}x{new_h}")
+                else:
+                    with open(image_path, "rb") as f:
+                        image_bytes = f.read()
+                    logger.info(f"Reverse prompt: image={image_path.name}, size={len(image_bytes)} bytes")
+        except Exception as resize_err:
+            logger.warning(f"Failed to resize image, using original: {resize_err}")
+            with open(image_path, "rb") as f:
+                image_bytes = f.read()
+        
+        # 调用 LLM 反推
+        result_data = run_llm_task("reverse_prompt", "", images=[image_bytes])
+        
+        if "error" in result_data:
+            error_msg = result_data["error"]
+            logger.warning(f"Reverse prompt error: {error_msg}")
+            return web.json_response({"error": error_msg}, status=422)
+        
+        prompt_text = result_data.get("prompt", "")
+        if not prompt_text:
+            return web.json_response({"error": "Failed to generate prompt"}, status=500)
+        
+        # 保存为同名 .txt 文件
+        txt_path = image_path.with_suffix(".txt")
+        txt_path.write_text(prompt_text, encoding="utf-8")
+        logger.info(f"Reverse prompt saved to: {txt_path}")
+        
+        return web.json_response({"status": "success", "prompt": prompt_text, "txt_file": txt_path.name})
+        
+    except Exception as e:
+        logger.error(f"Error handling reverse prompt: {e}")
         logger.exception(e)
         return web.json_response({"error": str(e)}, status=500)
 

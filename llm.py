@@ -1163,6 +1163,20 @@ LLM_TASKS = {
         "result_key": "prompt",
         "description": "智能判断并生成/改写提示词"
     },
+    "reverse_prompt": {
+        "system": (
+            "你是一个专业的图像反推提示词助手。请仔细观察给定的图像，反推出用于生成该图像的文生图提示词。\n\n"
+            "要求：\n"
+            "1. 分析图像中的主体、场景、风格、光影、构图、材质、氛围等所有视觉元素\n"
+            "2. 使用英文生成详细的提示词，包含质量词（如：masterpiece, best quality, high resolution 等）\n"
+            "3. 提示词应适合 Stable Diffusion 等文生图模型使用\n"
+            "4. 仅返回提示词内容，不要包含任何解释、说明、前言或后缀文字\n"
+            "5. 不要说'好的'、'这是反推的提示词'等任何多余内容，直接输出提示词本身"
+        ),
+        "max_tokens": 500,
+        "result_key": "prompt",
+        "description": "从图像反推文生图提示词"
+    },
 }
 
 

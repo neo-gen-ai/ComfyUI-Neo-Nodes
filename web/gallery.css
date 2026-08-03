@@ -1356,3 +1356,16 @@ Accordion Section Buttons (Clear)
     background-color: rgba(255, 106, 0, 0.3);
     color: #FFB84D;
 }
+
+/* Reverse prompt button — LLM image-to-prompt */
+.neo-gallery-lightbox-btn.neo-gallery-lightbox-reverse-btn {
+    background-color: rgba(0, 150, 255, 0.15);
+    color: #6AB4FF;
+    border: 1px solid rgba(0, 150, 255, 0.3);
+}
+
+.neo-gallery-lightbox-btn.neo-gallery-lightbox-reverse-btn:hover {
+    background-color: rgba(0, 150, 255, 0.25);
+    color: #8AC4FF;
+    border-color: rgba(0, 150, 255, 0.5);
+}
