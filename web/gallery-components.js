@@ -452,7 +452,7 @@ export class GalleryComponents {
         const hasSelection = selKeys.length > 0;
         console.log(`[Neo Gallery] _showSendMenu: selectedNodes=${selKeys.length}, menuItems=${menuItems.length}, autoSelect=${!hasSelection && menuItems.length === 1}`);
         if (!hasSelection && menuItems.length === 1) {
-            this.copyToClipboardWithTarget(image.name, image.txt_content, button, 'send', menuItems[0].nodeId, menuItems[0].widgetIndex);
+            this.sendToTarget(image.name, image.txt_content, button, menuItems[0].nodeId, menuItems[0].widgetIndex);
             return;
         }
         
@@ -464,7 +464,7 @@ export class GalleryComponents {
                 onclick: (e) => { 
                     e.stopPropagation(); 
                     gallery._removeSendMenu(); 
-                    this.copyToClipboardWithTarget(image.name, image.txt_content, button, 'send', item.nodeId, item.widgetIndex);
+                    this.sendToTarget(image.name, image.txt_content, button, item.nodeId, item.widgetIndex);
                 },
                 textContent: label
             });
@@ -487,124 +487,35 @@ export class GalleryComponents {
         setTimeout(() => document.addEventListener('click', closeHandler), 10);
     }
 
-    /**
-     * Copy to clipboard with explicit target node/widget (bypasses UI element lookup).
-     * KEY LOG for debugging text not updating:
-     *   1. [Neo Gallery] _showSendMenu — check selectedNodes/menuItems count
-     *   2. [Neo Gallery] copyToClipboardWithTarget — check targetNode found and isPromptNode
-     *   3. [Neo Gallery] onWidgetChanged threw — if widget value set but node didn't react
-     */
-    copyToClipboardWithTarget(imageName, txtContent, feedbackBtn = null, actionType = 'send', targetNodeId, targetWidgetIndex) {
-        let textToCopy = String(txtContent || "").trim();
-        textToCopy = this.gallery.cleanText(textToCopy);
+    // ====== Internal Helpers ======
 
-        const targetNode = this.gallery.app.graph.getNodeById(parseInt(targetNodeId));
-        
-        if (!targetNode) {
-            console.error(`[Neo Gallery] Failed to get node by id ${parseInt(targetNodeId)}, falling back to clipboard`);
-            navigator.clipboard.writeText(textToCopy).then(() => {
-                if (feedbackBtn) showInlineFeedback(feedbackBtn, '\u2705 Copied!', 'success');
-                else showToast(this.gallery.app, 'success', 'Tags Copied!', `Copied to clipboard`);
-            }).catch((err) => {
-                console.error('[Neo Gallery] Clipboard write failed:', err);
-                if (feedbackBtn) showInlineFeedback(feedbackBtn, '\u274C Failed', 'error');
-            });
-            return;
-        }
+    /**
+     * Resolve target node and widget from a nodeId (used by copyToClipboard).
+     */
+    _resolveTargetFromNodeId(nodeId) {
+        const targetNode = this.gallery.app.graph.getNodeById(parseInt(nodeId));
+        if (!targetNode) return null;
 
         let isPromptNode = !!targetNode._rsPromptUIElements;
-
-        if (isPromptNode) {
-            const { customTextarea, textWidget } = targetNode._rsPromptUIElements;
-            if (customTextarea) {
-                customTextarea.value = textToCopy;
-                customTextarea.dispatchEvent(new Event("input", { bubbles: true }));
-            }
-            if (textWidget) {
-                textWidget.value = textToCopy;
-            }
-            this.gallery.app.graph.setDirtyCanvas(true, true);
-            if (feedbackBtn) showInlineFeedback(feedbackBtn, '\u2705 Sent!', 'success');
-            else showToast(this.gallery.app, 'success', 'Tags Sent!', `Sent to ${targetNode.title || 'Node'}`);
-        } else {
-            const targetWidget = targetNode.widgets?.[parseInt(targetWidgetIndex)];
-            
-            if (targetWidget) {
-                targetWidget.value = textToCopy;
-                try {
-                    if (targetNode.onWidgetChanged) {
-                        targetNode.onWidgetChanged(targetWidget.name, targetWidget.value);
-                    }
-                } catch (e) {
-                    // Some ComfyUI nodes throw in onWidgetChanged because they expect the widget object.
-                    // The value is already set, so we can safely ignore this error.
-                    console.warn(`[Neo Gallery] onWidgetChanged threw: ${e.message}`);
-                }
-                this.gallery.app.graph.setDirtyCanvas(true, true);
-                if (feedbackBtn) showInlineFeedback(feedbackBtn, '\u2705 Sent!', 'success');
-                else showToast(this.gallery.app, 'success', 'Tags Sent!', `Sent to ${targetNode.title} - ${targetWidget.name}`);
-            } else {
-                console.error(`[Neo Gallery] targetWidget[${targetWidgetIndex}] is null/undefined, falling back to clipboard`);
-                navigator.clipboard.writeText(textToCopy).then(() => {
-                    if (feedbackBtn) showInlineFeedback(feedbackBtn, '\u2705 Copied!', 'success');
-                    else showToast(this.gallery.app, 'success', 'Tags Copied!', `Copied to clipboard`);
-                });
-            }
-        }
-    }
-
-    copyToClipboard(imageName, txtContent, feedbackBtn = null, actionType = 'send') {
-        let textToCopy = String(txtContent || "").trim();
-        textToCopy = this.gallery.cleanText(textToCopy);
-
-        const useSelectedNodeEl = document.getElementById("use-selected-node");
-        const selectedValueEl = document.getElementById("target-node-dropdown");
-        const useSelectedNode = useSelectedNodeEl?.checked;
-        const selectedValue = selectedValueEl?.value;
-
-        let targetNodeIds = [];
-        let isPromptNode = false;
-        let targetNode = null;
         let targetWidget = null;
 
-        if (useSelectedNode) {
-            const selectedKeys = Object.keys(this.gallery.app.canvas.selected_nodes);
-            if (selectedKeys.length > 0) {
-                targetNode = this.gallery.app.canvas.selected_nodes[selectedKeys[0]];
-                if (targetNode && targetNode._rsPromptUIElements) {
-                    isPromptNode = true;
-                    targetNodeIds.push(parseInt(selectedKeys[0]));
-                }
-                if (!isPromptNode && targetNode) {
-                    targetWidget = targetNode.widgets?.find(w => ['string', 'text', 'customtext'].includes(w.type));
-                }
-            }
-        } else if (selectedValue && selectedValue !== "clipboard") {
-            const [nodeId, , index] = selectedValue.split(':');
-            targetNode = this.gallery.app.graph.getNodeById(parseInt(nodeId));
-            if (targetNode) {
-                targetWidget = targetNode.widgets?.[parseInt(index)];
-                if (targetNode && targetNode._rsPromptUIElements) {
-                    isPromptNode = true;
-                    targetNodeIds.push(parseInt(nodeId));
-                }
-            }
-        } else {
-            // Both UI elements missing — use selected node directly as fallback
-            const selectedKeys = Object.keys(this.gallery.app.canvas.selected_nodes);
-            if (selectedKeys.length > 0) {
-                targetNode = this.gallery.app.canvas.selected_nodes[selectedKeys[0]];
-                if (targetNode && targetNode._rsPromptUIElements) {
-                    isPromptNode = true;
-                    targetNodeIds.push(parseInt(selectedKeys[0]));
-                }
-                if (!isPromptNode && targetNode) {
-                    targetWidget = targetNode.widgets?.find(w => ['string', 'text', 'customtext'].includes(w.type));
-                }
-            }
+        if (isPromptNode) {
+            return { targetNode, isPromptNode: true, targetWidget: null };
         }
 
-        if (targetNode && isPromptNode && targetNode._rsPromptUIElements) {
+        // Find first valid text widget as fallback
+        targetWidget = targetNode.widgets?.find(w => ['string', 'text', 'customtext'].includes(w.type));
+        return { targetNode, isPromptNode: false, targetWidget };
+    }
+
+    /**
+     * Send cleaned text to a resolved target (prompt node or regular widget).
+     */
+    _sendToResolvedTarget(textToCopy, targetNode, isPromptNode, targetWidget, feedbackBtn) {
+        if (!targetNode) return;
+
+        // Branch 1: Neo Prompt node with custom textarea
+        if (isPromptNode && targetNode._rsPromptUIElements) {
             const { customTextarea, textWidget } = targetNode._rsPromptUIElements;
             if (customTextarea) {
                 customTextarea.value = textToCopy;
@@ -616,7 +527,9 @@ export class GalleryComponents {
             this.gallery.app.graph.setDirtyCanvas(true, true);
             if (feedbackBtn) showInlineFeedback(feedbackBtn, '\u2705 Sent!', 'success');
             else showToast(this.gallery.app, 'success', 'Tags Sent!', `Sent to ${targetNode.title || 'Node'}`);
-        } else if (targetNode && targetWidget) {
+        }
+        // Branch 2: Regular widget on target node
+        else if (targetWidget) {
             targetWidget.value = textToCopy;
             try {
                 if (targetNode.onWidgetChanged) {
@@ -628,15 +541,64 @@ export class GalleryComponents {
             this.gallery.app.graph.setDirtyCanvas(true, true);
             if (feedbackBtn) showInlineFeedback(feedbackBtn, '\u2705 Sent!', 'success');
             else showToast(this.gallery.app, 'success', 'Tags Sent!', `Sent to ${targetNode.title} - ${targetWidget.name}`);
-        } else {
-            navigator.clipboard.writeText(textToCopy).then(() => {
-                if (feedbackBtn) showInlineFeedback(feedbackBtn, '\u2705 Copied!', 'success');
-                else showToast(this.gallery.app, 'success', actionType === 'send' ? 'Tags Sent!' : 'Tags Copied!', `Copied to clipboard`);
-            }).catch((err) => {
-                if (feedbackBtn) showInlineFeedback(feedbackBtn, '\u274C Failed', 'error');
-                else showToast(this.gallery.app, 'error', actionType === 'send' ? 'Send Failed' : 'Copy Failed', `Failed to ${actionType === 'send' ? 'send' : 'copy'} tags`);
-            });
         }
+    }
+
+    // ====== Public API ======
+
+    /**
+     * Send text to a specific node/widget by explicit nodeId and widgetIndex.
+     * Falls back to clipboard copy if target resolution fails.
+     */
+    sendToTarget(imageName, txtContent, feedbackBtn = null, targetNodeId, targetWidgetIndex) {
+        const textToCopy = this._cleanText(txtContent);
+
+        // Resolve target node by explicit nodeId
+        const resolved = this._resolveTargetFromNodeId(targetNodeId);
+        if (!resolved || !resolved.targetNode) {
+            console.error(`[Neo Gallery] sendToTarget: Failed to get node by id ${targetNodeId}, falling back to clipboard`);
+            return this._fallbackToClipboard(textToCopy, feedbackBtn);
+        }
+
+        // For regular widgets, use the specific widget index
+        let targetWidget = resolved.targetWidget;
+        if (!resolved.isPromptNode && targetWidgetIndex != null) {
+            targetWidget = resolved.targetNode.widgets?.[parseInt(targetWidgetIndex)];
+            if (!targetWidget) {
+                console.error(`[Neo Gallery] sendToTarget: targetWidget[${targetWidgetIndex}] is null/undefined, falling back to clipboard`);
+                return this._fallbackToClipboard(textToCopy, feedbackBtn);
+            }
+        }
+
+        this._sendToResolvedTarget(textToCopy, resolved.targetNode, resolved.isPromptNode, targetWidget, feedbackBtn);
+    }
+
+    /**
+     * Copy text to system clipboard only.
+     */
+    copyToClipboard(imageName, txtContent, feedbackBtn = null) {
+        const textToCopy = this._cleanText(txtContent);
+        return this._fallbackToClipboard(textToCopy, feedbackBtn);
+    }
+
+    /**
+     * Clean text content for copying.
+     */
+    _cleanText(txtContent) {
+        return String(txtContent || "").trim();
+    }
+
+    /**
+     * Fallback: write to system clipboard.
+     */
+    _fallbackToClipboard(textToCopy, feedbackBtn = null) {
+        navigator.clipboard.writeText(textToCopy).then(() => {
+            if (feedbackBtn) showInlineFeedback(feedbackBtn, '\u2705 Copied!', 'success');
+            else showToast(this.gallery.app, 'success', 'Tags Copied!', `Copied to clipboard`);
+        }).catch((err) => {
+            console.error('[Neo Gallery] Clipboard write failed:', err);
+            if (feedbackBtn) showInlineFeedback(feedbackBtn, '\u274C Failed', 'error');
+        });
     }
 
     // ====== Card Creation ======
@@ -878,7 +840,7 @@ export class GalleryComponents {
                 className: "neo-gallery-thumb-copy-btn",
                 onclick: (e) => {
                     e.stopPropagation();
-                    this.copyToClipboard(image.name, image.txt_content, copyBtn, 'copy');
+                    this.copyToClipboard(image.name, image.txt_content, copyBtn);
                 }
             }, ["\u29C9"]);
         }
@@ -1119,7 +1081,7 @@ export class GalleryComponents {
         copyBtn.textContent = "\u29C9 Copy";
         copyBtn.onclick = (e) => {
             e.stopPropagation();
-            this.copyToClipboard(image.name, image.txt_content, copyBtn, 'copy');
+            this.copyToClipboard(image.name, image.txt_content, copyBtn);
         };
 
         imgWrapper.appendChild(img);
@@ -1447,7 +1409,7 @@ export class GalleryComponents {
                 className: "neo-gallery-lightbox-btn neo-gallery-lightbox-copy-btn",
                 onclick: (e) => {
                     e.stopPropagation();
-                    this.copyToClipboard(image.name, image.txt_content, copyBtn, 'copy');
+                    this.copyToClipboard(image.name, image.txt_content, copyBtn);
                 }
             }, ["\u29C9 Copy"]);
             
