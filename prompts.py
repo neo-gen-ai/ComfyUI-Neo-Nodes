@@ -715,7 +715,6 @@ class NeoPromptGenerator:
             },
             "hidden": {
                 "unique_id": "UNIQUE_ID",
-                "prompt_ui": ("STRING", {"default": ""}),
             }
         }
 
@@ -726,7 +725,7 @@ class NeoPromptGenerator:
     OUTPUT_NODE = True
     DESCRIPTION = "Simple prompt generator node with settings button. No clip encoder binding."
 
-    def get_prompt(self, prompt="", instance_uid=""):
+    def get_prompt(self, prompt="", instance_uid="", unique_id=None):
         """Returns the prompt text as output."""
         return {
             "ui": {"text": [prompt]},
