@@ -900,7 +900,8 @@ export class GalleryComponents {
         }
 
         let deleteBtn = null;
-        if (!['presets'].includes(subfolder)) {
+        const isPresets = subfolder.toLowerCase() === 'presets' || subfolder.toLowerCase().startsWith('presets/');
+        if (!isPresets) {
             deleteBtn = $el("div", {
                 className: "neo-gallery-delete-btn",
                 onclick: (e) => {
