@@ -351,7 +351,10 @@ class NeoGallery {
         });
         
         for (const subdir of subdirs) {
-            const card = await this.components.createSubdirCard(this, subdir, dirName, [...pathSegments, subdir]);
+            // Flatten the path: if subdir is "parent/child", split it into segments
+            const subdirParts = subdir.split("/");
+            const fullPath = [...pathSegments, ...subdirParts];
+            const card = await this.components.createSubdirCard(this, subdir, dirName, fullPath);
             container.appendChild(card);
         }
         
