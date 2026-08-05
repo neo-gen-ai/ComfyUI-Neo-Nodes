@@ -604,15 +604,20 @@ export class GalleryComponents {
     // ====== Card Creation ======
 
     async createDirCard(gallery, name, path, items, subdirs = {}) {
-        const imageItems = items.filter(i => isImageFile(i.filename));
-        const coverImages = imageItems.slice(0, 2);
-        
         const card = $el("div", {
             className: "neo-gallery-category-card",
             onclick: () => gallery.showDirectoryStructure(name, [])
         });
 
-        const coverWrapper = await buildCoverGrid(coverImages, name, gallery);
+        const coverWrapper = $el("div", {
+            className: "neo-gallery-card-cover-wrapper",
+            style: { minHeight: `${Math.max(gallery.maxThumbnailSize * 0.5, 80)}px`, maxHeight: `${gallery.maxThumbnailSize}px` }
+        });
+        
+        coverWrapper.appendChild($el("div", {
+            className: "neo-gallery-card-cover neo-gallery-card-placeholder",
+            textContent: "\uD83D\uDCC1"
+        }));
 
         const info = $el("div", { className: "neo-gallery-card-info" }, [
             $el("span", { className: "neo-gallery-card-name", textContent: name }),
@@ -637,6 +642,73 @@ export class GalleryComponents {
         card.appendChild(coverWrapper);
         card.appendChild(info);
         card.appendChild(deleteBtn);
+
+        // Fetch sample images from subdirectories asynchronously (skips empty intermediate dirs)
+        setTimeout(async () => {
+            try {
+                const resp = await api.fetchApi(`/neo_gallery/dir_structure?dir_name=${encodeURIComponent(name)}&path=&samples=2`);
+                if (!resp.ok) throw new Error('Failed to fetch');
+                
+                const structure = await resp.json();
+                const countEl = card.querySelector('.neo-gallery-card-count');
+                
+                if (countEl) {
+                    countEl.textContent = `${structure.total_images} items`;
+                }
+
+                let finalCoverImages = [];
+                
+                if (structure.sample_images && structure.sample_images.length > 0) {
+                    finalCoverImages = structure.sample_images.slice(0, 2);
+                } else if (structure.images && structure.images.length > 0) {
+                    finalCoverImages = structure.images.slice(0, 2);
+                }
+
+                if (finalCoverImages.length > 0) {
+                    coverWrapper.innerHTML = '';
+                    const coverGrid = $el("div", { className: "neo-gallery-card-cover-grid" });
+                    
+                    let loadedCount = 0;
+                    const displayImages = finalCoverImages.slice(0, 2);
+                    
+                    displayImages.forEach((imgData) => {
+                        const imgSubfolder = imgData.subfolder || "";
+                        const imgItem = $el("div", { className: "neo-gallery-card-cover-grid-item" });
+                        
+                        const img = $el("img", {
+                            src: getImageSrc(imgData, imgSubfolder),
+                            alt: name,
+                            loading: "lazy"
+                        });
+                        
+                        img.onload = () => {
+                            loadedCount++;
+                            if (loadedCount === displayImages.length) {
+                                const height = getCoverHeight(coverWrapper, gallery);
+                                coverGrid.style.height = `${height * 2}px`;
+                            }
+                        };
+                        
+                        img.onerror = () => {
+                            imgItem.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#555;font-size:24px;">\uD83D\uDCCB</div>';
+                        };
+                        
+                        imgItem.appendChild(img);
+                        coverGrid.appendChild(imgItem);
+                    });
+                    
+                    coverWrapper.appendChild(coverGrid);
+                } else {
+                    coverWrapper.innerHTML = '';
+                    coverWrapper.appendChild($el("div", {
+                        className: "neo-gallery-card-cover neo-gallery-card-placeholder",
+                        textContent: "\uD83D\uDCCB"
+                    }));
+                }
+            } catch (e) {
+                console.error('[Gallery] Error fetching dir sample images:', e);
+            }
+        }, 0);
 
         return card;
     }
