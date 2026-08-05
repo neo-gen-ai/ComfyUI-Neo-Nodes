@@ -25,12 +25,10 @@ document.head.appendChild(galleryCssLink);
 class NeoGallery {
     constructor(app) {
         this.app = app;
-        this.maxThumbnailSize = 300;
+        this.maxThumbnailSize = 320;
         this.displayLabels = true;
-        this.allCustomDirs = [];
-        this.allPresets = [];
-        this.filteredCustomDirs = [];
-        this.filteredPresets = [];
+        this.allDirectories = [];
+        this.filteredDirectories = [];
         this.sortAscending = true;
         this._renderQueue = [];
         this._renderedCount = 0;
@@ -96,7 +94,7 @@ class NeoGallery {
     static THUMBNAIL_SIZE_MIN = 150;
     static THUMBNAIL_SIZE_MAX = 500;
     static THUMBNAIL_SIZE_STEP = 25;
-    static THUMBNAIL_SIZE_DEFAULT = 300;
+    static THUMBNAIL_SIZE_DEFAULT = 320;
 
     // ====== Directory Management ======
 
@@ -138,16 +136,26 @@ class NeoGallery {
     }
 
     async removeCustomDir(dirPath) {
-        if (!confirm(`Remove directory "${dirPath}" from gallery?`)) return;
-        
-        const saveResp = await api.fetchApi('/neo_gallery/save_settings', {
+    if (!confirm(`Remove directory "${dirPath}" from gallery?`)) return;
+
+    const saveResp = await api.fetchApi('/neo_gallery/save_settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: "remove", path: dirPath })
+    });
+    const result = await saveResp.json();
+
+    if (saveResp.ok && result.success) {
+    // Clear thumbnails for this directory
+    try {
+            await api.fetchApi('/neo_gallery/clear_thumbnails', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: "remove", path: dirPath })
-        });
-        const result = await saveResp.json();
-        
-        if (saveResp.ok && result.success) {
+                headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ subfolder: dirPath })
+                });
+            } catch (e) {
+                console.warn('[Neo Gallery] Failed to clear thumbnails:', e);
+            }
             await this.loadGallery();
             await this.sortAndDisplayImages();
         } else {
@@ -198,23 +206,18 @@ class NeoGallery {
             const resp = await api.fetchApi('/neo_gallery/list');
             if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
             const data = await resp.json();
-            this.allCustomDirs = (data.custom_dirs || []).map(dir => ({
+            this.allDirectories = (data.directories || []).map(dir => ({
                 name: dir.name,
                 path: dir.path,
                 items: dir.items || [],
-                subdirs: dir.subdirs || {}
+                subdirs: dir.subdirs || {},
+                read_only: dir.read_only || false
             }));
-            this.allPresets = data.presets || [];
-            this.allPresetsSubdirs = data.presets_subdirs || {};
-            this.filteredCustomDirs = this.allCustomDirs;
-            this.filteredPresets = this.allPresets;
+            this.filteredDirectories = this.allDirectories;
         } catch (error) {
             console.error('Error loading gallery:', error);
-            this.allCustomDirs = [];
-            this.allPresets = [];
-            this.allPresetsSubdirs = {};
-            this.filteredCustomDirs = [];
-            this.filteredPresets = [];
+            this.allDirectories = [];
+            this.filteredDirectories = [];
         }
     }
 
@@ -223,8 +226,7 @@ class NeoGallery {
     async sortAndDisplayImages() {
         this.accordion.innerHTML = "";
 
-        const customDirsToDisplay = this.isSearchActive ? this.filteredCustomDirs : this.allCustomDirs;
-        const presetsToDisplay = this.isSearchActive ? this.filteredPresets : this.allPresets;
+        const dirsToDisplay = this.isSearchActive ? this.filteredDirectories : this.allDirectories;
 
         if (this.currentView.mode === 'directory' && this._currentDirStructure) {
             this.renderDirectoryStructure(this._currentDirStructure, this.currentView.source, this.currentView.categoryPath);
@@ -236,33 +238,25 @@ class NeoGallery {
             return;
         }
 
-        const totalDirs = customDirsToDisplay.filter(d => d.items.length > 0).length;
-        const totalPresets = presetsToDisplay.length;
+        const totalDirs = dirsToDisplay.filter(d => d.items.length > 0).length;
 
-        if (totalDirs === 0 && totalPresets === 0 && !this.isSearchActive) {
+        if (totalDirs === 0 && !this.isSearchActive) {
             this.displayNoFilesMessage();
             return;
         }
 
-        if (totalDirs === 0 && totalPresets === 0 && this.isSearchActive) {
+        if (totalDirs === 0 && this.isSearchActive) {
             showNoFilesMessage(this.accordion, "No matching images found");
             return;
         }
 
-        const cardContainer = await this.createCategoryCardGrid(customDirsToDisplay, presetsToDisplay);
+        const cardContainer = await this.createCategoryCardGrid(dirsToDisplay);
         if (cardContainer) {
             this.accordion.appendChild(cardContainer);
         }
     }
 
-    async createCategoryCardGrid(dirGroups, presetItems) {
-        const presetGroups = new Map();
-        presetItems.forEach(item => {
-            const cat = item.category || "";
-            if (!presetGroups.has(cat)) presetGroups.set(cat, []);
-            presetGroups.get(cat).push(item);
-        });
-
+    async createCategoryCardGrid(dirGroups) {
         const container = $el("div", {
             className: "neo-gallery-category-grid",
             style: { gridTemplateColumns: `repeat(auto-fill, ${this.maxThumbnailSize}px)` }
@@ -270,30 +264,7 @@ class NeoGallery {
 
         for (const dir of dirGroups) {
             if (dir.items.length === 0 && !dir.subdirs) continue;
-            const card = await this.components.createDirCard(this, dir.name, dir.path, dir.items, dir.subdirs);
-            container.appendChild(card);
-        }
-
-        const allCategories = [...presetGroups.keys()].sort((a, b) => {
-            if (!a) return -1;
-            if (!b) return 1;
-            return a.localeCompare(b);
-        });
-
-        // presets 显示为目录卡片（非递归）
-        for (const cat of allCategories) {
-            const groupItems = presetGroups.get(cat);
-            const title = cat ? `Presets/${cat}` : "Presets";
-            const card = await this.components.createPresetCategoryCard(this, title, groupItems, cat);
-            container.appendChild(card);
-        }
-
-        // 显示 presets 子目录卡片
-        const presetsSubdirs = this.allPresetsSubdirs || {};
-        for (const subdirName of Object.keys(presetsSubdirs).sort()) {
-            const subdirItems = presetsSubdirs[subdirName];
-            if (subdirItems.length === 0) continue;
-            const card = await this.components.createSubdirCard(this, subdirName, 'presets', [subdirName]);
+            const card = await this.components.createDirCard(this, dir.name, dir.path, dir.items, dir.subdirs, dir.read_only);
             container.appendChild(card);
         }
 
@@ -461,64 +432,6 @@ class NeoGallery {
         this.showDirectoryStructure(source, pathSegments || []);
     }
 
-    async showPresetCategory(rawCategory, title) {
-        this._presetRawCategory = rawCategory;
-        
-        // 直接显示该 category 下的图片，而不是跳转到目录结构
-        this.currentView.mode = 'images';
-        this.currentView.source = 'presets';
-        this.currentView.categoryPath = rawCategory ? [rawCategory] : [];
-        
-        this.components.updateBreadcrumb(this, rawCategory ? [rawCategory] : [], 'Presets');
-        
-        this.accordion.innerHTML = "";
-        this.renderExpandedImages();
-    }
-
-    async showPresetDirectory(rawCategory) {
-        const dirName = 'presets';
-        
-        if (rawCategory && rawCategory !== '') {
-            try {
-                const resp = await api.fetchApi(`/neo_gallery/dir_structure?dir_name=${encodeURIComponent(dirName)}&path=${encodeURIComponent(rawCategory)}`);
-                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-                
-                const structure = await resp.json();
-                
-                this.currentView.mode = 'directory';
-                this.currentView.source = dirName;
-                this.currentView.categoryPath = [rawCategory];
-                this._currentDirStructure = structure;
-                
-                this.components.updateBreadcrumb(this, [rawCategory], '');
-                
-                this.renderDirectoryStructure(structure, dirName, [rawCategory]);
-            } catch (error) {
-                console.error('[Gallery] Error loading preset directory:', error);
-                showToast(this.app, 'error', 'Error', 'Failed to load preset category');
-            }
-        } else {
-            try {
-                const resp = await api.fetchApi(`/neo_gallery/dir_structure?dir_name=${encodeURIComponent(dirName)}`);
-                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-                
-                const structure = await resp.json();
-                
-                this.currentView.mode = 'directory';
-                this.currentView.source = dirName;
-                this.currentView.categoryPath = [];
-                this._currentDirStructure = structure;
-                
-                this.components.updateBreadcrumb(this, [], '');
-                
-                this.renderDirectoryStructure(structure, dirName, []);
-            } catch (error) {
-                console.error('[Gallery] Error loading presets:', error);
-                showToast(this.app, 'error', 'Error', 'Failed to load presets');
-            }
-        }
-    }
-
     async showCategoryCards() {
         this.currentView.mode = 'categories';
         this.currentView.source = null;
@@ -538,25 +451,14 @@ class NeoGallery {
         let items = [];
         let subfolder = source;
 
-        if (source === 'presets') {
-            const catToMatch = this._presetRawCategory || '';
-            items = this.allPresets.filter(i => i.category === catToMatch);
-            // Use item's subfolder directly (backend returns relative path like "26-06-26" or "" for root)
-            if (items.length > 0) {
-                subfolder = items[0].subfolder || '';
-            } else if (categoryPath && categoryPath.length > 0) {
-                subfolder = categoryPath.join("/");
-            }
-        } else {
-            const dir = this.allCustomDirs.find(d => d.name === source);
-            if (dir) {
-                subfolder = source;
-                if (categoryPath.length > 0) {
-                    const catKey = categoryPath[0];
-                    items = dir.items.filter(i => i.category === catKey || (!i.category && !catKey));
-                } else {
-                    items = [...dir.items];
-                }
+        const dir = this.allDirectories.find(d => d.name === source);
+        if (dir) {
+            subfolder = source;
+            if (categoryPath.length > 0) {
+                const catKey = categoryPath[0];
+                items = dir.items.filter(i => i.category === catKey || (!i.category && !catKey));
+            } else {
+                items = [...dir.items];
             }
         }
 
@@ -618,10 +520,9 @@ class NeoGallery {
             });
             const result = await response.json();
             if (result.deleted) {
-                for (const dir of this.allCustomDirs) {
+                for (const dir of this.allDirectories) {
                     dir.items = dir.items.filter(item => item.name !== name);
                 }
-                this.allPresets = this.allPresets.filter(item => item.name !== name);
                 
                 if (this.isSearchActive) {
                     await this.handleSearch(this.searchInput.value);
@@ -642,7 +543,7 @@ class NeoGallery {
         searchTerm = searchTerm.toLowerCase();
         this.isSearchActive = searchTerm.length > 0;
         
-        this.filteredCustomDirs = this.allCustomDirs.map(dir => ({
+        this.filteredDirectories = this.allDirectories.map(dir => ({
             ...dir,
             items: dir.items.filter(img =>
                 (img.name && img.name.toLowerCase().includes(searchTerm)) ||
@@ -650,12 +551,6 @@ class NeoGallery {
                 (img.content && img.content.toLowerCase().includes(searchTerm))
             )
         })).filter(dir => dir.items.length > 0);
-
-        this.filteredPresets = this.allPresets.filter(img =>
-            (img.name && img.name.toLowerCase().includes(searchTerm)) ||
-            (img.style && img.style.toLowerCase().includes(searchTerm)) ||
-            (img.content && img.content.toLowerCase().includes(searchTerm))
-        );
         
         this.currentView.mode = 'categories';
         this.currentView.source = null;
@@ -922,7 +817,7 @@ app.registerExtension({
         app.ui.settings.addSetting({
             id: "Neo Gallery._General.maxThumbnailSize",
             name: "Neo Gallery Max Thumbnail Size",
-            type: "slider", attrs: { min: 150, max: 500, step: 25 }, defaultValue: 300,
+            type: "slider", attrs: { min: 150, max: 500, step: 25 }, defaultValue: 320,
             onChange: (val) => { if (app.neoGallery) app.neoGallery.updateThumbnailSize(val); }
         });
 

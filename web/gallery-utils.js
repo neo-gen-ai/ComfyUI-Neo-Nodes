@@ -12,7 +12,8 @@ export const MAX_ROOT_IMAGES = 20;
 export const THUMBNAIL_SIZE_MIN = 150;
 export const THUMBNAIL_SIZE_MAX = 500;
 export const THUMBNAIL_SIZE_STEP = 25;
-export const THUMBNAIL_SIZE_DEFAULT = 300;
+export const THUMBNAIL_SIZE_DEFAULT = 320;
+export const THUMBNAIL_CACHE_SIZE = 320; // Fixed thumbnail cache size
 
 /**
  * Get reserved space based on label display setting
@@ -59,6 +60,14 @@ export function isImageFile(filename) {
 export function getImageSrc(image, subfolder) {
     const categoryParam = image.category ? `&category=${encodeURIComponent(image.category)}` : '';
     return image.preview || `${window.location.protocol}//${window.location.host}/neo_gallery/image?filename=${encodeURIComponent(image.filename)}&subfolder=${encodeURIComponent(subfolder)}${categoryParam}`;
+}
+
+/**
+ * Get thumbnail source URL (cached, optimized for display)
+ */
+export function getThumbnailSrc(image, subfolder, size = THUMBNAIL_CACHE_SIZE) {
+    const categoryParam = image.category ? `&category=${encodeURIComponent(image.category)}` : '';
+    return `${window.location.protocol}//${window.location.host}/neo_gallery/thumbnail?filename=${encodeURIComponent(image.filename)}&subfolder=${encodeURIComponent(subfolder)}&size=${size}${categoryParam}`;
 }
 
 /**

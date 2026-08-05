@@ -17,6 +17,8 @@ CURRENT_DIR = Path(__file__).parent.resolve()
 GALLERY_DIR = CURRENT_DIR / "gallery"
 PRESETS_DIR = GALLERY_DIR / "presets"
 CUSTOM_DIR = GALLERY_DIR / "custom"
+THUMBNAIL_DIR = GALLERY_DIR / "thumbnails"
+THUMBNAIL_SIZE = 320  # Fixed thumbnail size in pixels
 
 IMG_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tiff"}
 
@@ -265,33 +267,54 @@ def _scan_gallery_entries_recursive(directory: Path) -> list[dict]:
 
 @PromptServer.instance.routes.get("/neo_gallery/list")
 async def get_gallery_list(request):
-    """Return gallery listing (custom_dirs grouped by name + presets)."""
+    """Return unified gallery listing (all directories, presets subdirs treated as read-only dirs)."""
     user_custom_dirs = _get_user_custom_dirs()
     presets_structure = _scan_gallery_entries_with_subdirs(PRESETS_DIR)
 
-    custom_dir_groups = {}
+    directories = []
+
+    # Custom dirs (writable)
     for dir_path in user_custom_dirs:
         dir_name = dir_path.name if dir_path.name else str(dir_path)
         structure = _scan_gallery_entries_with_subdirs(dir_path)
         entries = structure["root"]
         for entry in entries:
             entry["custom_source"] = dir_name
-        custom_dir_groups[dir_name] = {
+        directories.append({
             "name": dir_name,
             "path": str(dir_path),
             "items": entries,
-            "subdirs": structure["subdirs"]
-        }
+            "subdirs": structure["subdirs"],
+            "read_only": False
+        })
 
-    presets = presets_structure["root"]
+    # Presets: root items + subdirs as read-only directories
+    presets_root = presets_structure["root"]
     presets_subdirs = presets_structure["subdirs"]
 
-    return web.json_response({
-        "custom_dirs": list(custom_dir_groups.values()),
-        "presets": presets,
-        "presets_subdirs": presets_subdirs,
-        "total": sum(len(g["items"]) for g in custom_dir_groups.values()) + len(presets)
-    })
+    # Root-level presets items go into a "Presets" read-only directory
+    if presets_root:
+        directories.append({
+            "name": "Presets",
+            "path": "presets",
+            "items": presets_root,
+            "subdirs": {},
+            "read_only": True
+        })
+
+    # Each presets subdir becomes its own read-only directory
+    for subdir_name, subdir_items in sorted(presets_subdirs.items()):
+        if subdir_items:
+            directories.append({
+                "name": f"Presets/{subdir_name}",
+                "path": f"presets/{subdir_name}",
+                "items": subdir_items,
+                "subdirs": {},
+                "read_only": True
+            })
+
+    total = sum(len(d["items"]) for d in directories)
+    return web.json_response({"directories": directories, "total": total})
 
 
 CURRENT_WEB_DIR = CURRENT_DIR / "web"
@@ -607,13 +630,19 @@ async def get_directory_structure(request):
         return web.json_response({"error": "Invalid path"}, status=400)
 
     base: Path | None = None
-    if dir_name == "presets":
+    dir_name_lower = dir_name.lower()
+    if dir_name_lower == "presets":
         base = PRESETS_DIR
+    elif dir_name_lower.startswith("presets/"):
+        # e.g. "Presets/26-06-26" -> base = PRESETS_DIR, rel_path = "26-06-26"
+        base = PRESETS_DIR
+        if not rel_path:
+            rel_path = dir_name_lower[len("presets/"):]
     else:
         user_custom_dirs = _get_user_custom_dirs()
         for dir_path in user_custom_dirs:
             d_name = dir_path.name if dir_path.name else str(dir_path)
-            if d_name == dir_name:
+            if d_name.lower() == dir_name_lower:
                 base = dir_path
                 break
 
@@ -628,12 +657,11 @@ async def get_directory_structure(request):
     else:
         target_dir = base
 
-    # Build the full relative path for sample images:
-    # e.g., if target_dir = base / "child" / "grandchild", prefix should be "mygallery/child/grandchild"
+    # Build the full relative path for sample images using lowercase "presets"
     if rel_path:
-        sample_prefix = dir_name + "/" + rel_path
+        sample_prefix = "presets" if dir_name_lower == "presets" else ("presets/" + rel_path if dir_name_lower.startswith("presets/") else dir_name + "/" + rel_path)
     else:
-        sample_prefix = dir_name
+        sample_prefix = "presets" if dir_name_lower.startswith("presets") else dir_name
 
     # Pass the full relative path so sample images get correct subfolder for image URL resolution
     structure = _scan_directory_structure_flattened(target_dir, base, sample_count, sample_prefix)
@@ -643,6 +671,155 @@ async def get_directory_structure(request):
         "path": rel_path,
         **structure
     })
+
+
+# ---------------------------------------------------------------------------
+# Thumbnail Routes
+# ---------------------------------------------------------------------------
+
+
+def _generate_thumbnail(source_path: Path, cache_path: Path, size: int = THUMBNAIL_SIZE) -> bool:
+    """Generate a thumbnail image and save to cache_path.
+    
+    Returns True if successful, False otherwise.
+    """
+    try:
+        from PIL import Image
+        with Image.open(source_path) as img:
+            # Convert to RGB if necessary (handle RGBA, P mode, etc.)
+            if img.mode not in ("RGB", "L", "RGBA"):
+                img = img.convert("RGB")
+            
+            # Create thumbnail (in-place resize)
+            img.thumbnail((size, size), Image.LANCZOS)
+            
+            # Ensure directory exists
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Save as JPEG
+            if img.mode == "RGBA":
+                # Create white background for RGBA images
+                background = Image.new("RGB", img.size, (255, 255, 255))
+                background.paste(img, mask=img.split()[3])
+                img = background
+            
+            img.save(cache_path, "JPEG", quality=85)
+            return True
+    except Exception as e:
+        print(f"[Neo Gallery] Failed to generate thumbnail: {e}")
+        return False
+
+
+def _get_thumbnail_path(filename: str, subfolder: str, size: int) -> Path:
+    """Get the cache path for a thumbnail."""
+    # Sanitize subfolder for filename
+    safe_subfolder = subfolder.replace("/", "_").replace("\\", "_") if subfolder else "presets"
+    stem = Path(filename).stem
+    return THUMBNAIL_DIR / f"{stem}_{safe_subfolder}_{size}.jpg"
+
+
+def _find_source_image(filename: str, subfolder: str) -> Path | None:
+    """Find the source image file for a given filename and subfolder."""
+    user_custom_dirs = _get_user_custom_dirs()
+    source_path = None
+    
+    # Search in custom dirs
+    for dir_path in user_custom_dirs:
+        candidate = dir_path / filename
+        if candidate.exists():
+            source_path = candidate
+            break
+        # Also check subfolders
+        if subfolder:
+            dir_parts = [p for p in subfolder.split("/") if p]
+            if dir_parts[0] == dir_path.name:
+                candidate = dir_path
+                for part in dir_parts[1:]:
+                    candidate = candidate / part
+                candidate = candidate / filename
+                if candidate.exists():
+                    source_path = candidate
+                    break
+    
+    # Search in presets (including subfolders)
+    if not source_path:
+        subfolder_lower = (subfolder or "").lower()
+        if subfolder_lower.startswith("presets/"):
+            sub_path = subfolder_lower[len("presets/"):]
+            candidate = PRESETS_DIR / sub_path / filename
+            if candidate.exists():
+                source_path = candidate
+        elif subfolder_lower == "presets" or not subfolder:
+            candidate = PRESETS_DIR / filename
+            if candidate.exists():
+                source_path = candidate
+
+    # Search in custom gallery dir
+    if not source_path:
+        candidate = CUSTOM_DIR / filename
+        if candidate.exists():
+            source_path = candidate
+    
+    # Fallback: try to find by extension
+    if not source_path:
+        for ext in [".jpeg", ".jpg", ".png", ".webp", ".gif", ".bmp", ".tiff"]:
+            candidate = PRESETS_DIR / (Path(filename).stem + ext)
+            if candidate.exists():
+                source_path = candidate
+                break
+    
+    return source_path
+
+
+@PromptServer.instance.routes.get("/neo_gallery/thumbnail")
+async def get_thumbnail(request):
+    """Serve cached thumbnail for gallery images."""
+    filename = request.rel_url.query.get("filename", "")
+    subfolder = request.rel_url.query.get("subfolder", "presets")
+    size = int(request.rel_url.query.get("size", THUMBNAIL_SIZE))
+    
+    if not filename or ".." in filename or "/" in filename:
+        return web.Response(status=400)
+    
+    # Find the source image
+    source_path = _find_source_image(filename, subfolder)
+    
+    if not source_path:
+        return web.Response(status=404)
+    
+    # Get cache path
+    cache_path = _get_thumbnail_path(filename, subfolder, size)
+    
+    # Check if cache is valid (exists and is newer than source)
+    use_cache = False
+    if cache_path.exists():
+        try:
+            cache_mtime = cache_path.stat().st_mtime
+            source_mtime = source_path.stat().st_mtime
+            if cache_mtime >= source_mtime:
+                use_cache = True
+        except Exception:
+            pass
+    
+    if use_cache:
+        # Return cached thumbnail
+        with open(cache_path, "rb") as f:
+            content = f.read()
+        return web.Response(body=content, content_type="image/jpeg")
+    
+    # Generate thumbnail
+    if _generate_thumbnail(source_path, cache_path, size):
+        with open(cache_path, "rb") as f:
+            content = f.read()
+        return web.Response(body=content, content_type="image/jpeg")
+    
+    # Fallback: return original image
+    with open(source_path, "rb") as f:
+        content = f.read()
+    content_type, _ = mimetypes.guess_type(str(source_path))
+    if not content_type:
+        content_type = "image/jpeg"
+    return web.Response(body=content, content_type=content_type)
 
 
 @PromptServer.instance.routes.get("/neo_gallery/image")
@@ -665,19 +842,20 @@ async def view_image(request):
     base: Path | None = None
 
     dir_parts = [p for p in subfolder.split("/") if p]
+    subfolder_lower = subfolder.lower()
 
     def _match_dir_name(parts_list):
-        target = parts_list[0]
+        target = parts_list[0].lower()
         for dir_path in user_custom_dirs:
-            if dir_path.name == target:
+            if dir_path.name.lower() == target:
                 return dir_path
         return None
 
-    if subfolder == "presets" or subfolder == "":
+    if subfolder_lower == "presets" or subfolder_lower == "":
         base = PRESETS_DIR
-    elif subfolder == "custom":
+    elif subfolder_lower == "custom":
         base = CUSTOM_DIR
-    elif len(dir_parts) > 0 and dir_parts[0] == "presets":
+    elif len(dir_parts) > 0 and dir_parts[0].lower() == "presets":
         base = PRESETS_DIR / "/".join(dir_parts[1:])
     elif len(dir_parts) > 0 and len(dir_parts) == 1:
         candidate = PRESETS_DIR / dir_parts[0]
@@ -694,7 +872,7 @@ async def view_image(request):
     else:
         for dir_path in user_custom_dirs:
             d_name = dir_path.name if dir_path.name else str(dir_path)
-            if subfolder == d_name:
+            if subfolder_lower == d_name.lower():
                 base = dir_path
                 break
 
@@ -895,6 +1073,10 @@ async def delete_gallery_item(request):
         filename = data.get("filename", "")
         subfolder = data.get("subfolder", "presets")
 
+        # Read-only check: presets directories cannot be deleted
+        if subfolder == "presets" or subfolder.startswith("presets/"):
+            return web.json_response({"error": "Cannot delete from read-only presets directory"}, status=403)
+
         if ".." in filename or not filename:
             return web.json_response({"error": "Invalid filename"}, status=400)
 
@@ -943,6 +1125,36 @@ async def delete_gallery_item(request):
             stem_path.unlink()
             txt_deleted = True
 
+        # Delete cached thumbnails
+        stem = Path(filename).stem
+        safe_subfolder = subfolder.replace("/", "_").replace("\\", "_")
+        for thumb_file in THUMBNAIL_DIR.glob(f"{stem}_{safe_subfolder}_*.jpg"):
+            thumb_file.unlink()
+
         return web.json_response({"deleted": img_deleted or txt_deleted})
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
+
+
+@PromptServer.instance.routes.post("/neo_gallery/clear_thumbnails")
+async def clear_thumbnails(request):
+    """Clear all cached thumbnails for a given subfolder."""
+    try:
+        data = await request.json()
+        subfolder = data.get("subfolder", "")
+        
+        if not subfolder:
+            # Clear all thumbnails
+            for thumb_file in THUMBNAIL_DIR.glob("*.jpg"):
+                thumb_file.unlink()
+            return web.json_response({"success": True, "cleared": "all"})
+        
+        safe_subfolder = subfolder.replace("/", "_").replace("\\", "_")
+        count = 0
+        for thumb_file in THUMBNAIL_DIR.glob(f"*_{safe_subfolder}_*.jpg"):
+            thumb_file.unlink()
+            count += 1
+        
+        return web.json_response({"success": True, "cleared": count})
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
