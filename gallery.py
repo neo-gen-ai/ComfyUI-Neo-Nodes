@@ -108,6 +108,102 @@ def _make_entry(image_path: Path, txt_path: Path, raw_txt: str) -> dict | None:
     }
 
 
+def _scan_directory_summary(directory: Path) -> dict:
+    """Lightweight directory scan - only returns structure, no file content.
+    
+    Returns:
+        {
+            "root_count": int,
+            "subdirs": {name: {"image_count": int, "has_subdirs": bool}}
+        }
+    """
+    result = {"root_count": 0, "subdirs": {}}
+    if not directory.exists():
+        return result
+
+    # Count root-level images
+    for p in directory.iterdir():
+        if p.is_file() and p.suffix.lower() in IMG_EXTENSIONS:
+            result["root_count"] += 1
+
+    # Scan subdirectories
+    for p in directory.iterdir():
+        if not p.is_dir():
+            continue
+        subdir_count = 0
+        has_nested = False
+        for sub_p in p.iterdir():
+            if sub_p.is_file() and sub_p.suffix.lower() in IMG_EXTENSIONS:
+                subdir_count += 1
+            elif sub_p.is_dir():
+                has_nested = True
+        result["subdirs"][p.name] = {
+            "image_count": subdir_count,
+            "has_subdirs": has_nested
+        }
+
+    return result
+
+
+def _scan_directory_structure_only(directory: Path) -> dict:
+    """Scan directory and return only structure (subdirectories with counts), no image entries.
+    
+    This is the fastest possible scan, used for lazy loading.
+    Returns:
+        {
+            "root_count": int,
+            "subdirs": {name: {"image_count": int, "has_subdirs": bool, "path": str}}
+        }
+    """
+    result = {"root_count": 0, "subdirs": {}}
+    if not directory.exists():
+        return result
+
+    # Count root-level images
+    for p in directory.iterdir():
+        if p.is_file() and p.suffix.lower() in IMG_EXTENSIONS:
+            result["root_count"] += 1
+
+    # Scan subdirectories - only structure, no file content
+    for p in sorted(directory.iterdir()):
+        if not p.is_dir():
+            continue
+        subdir_count = 0
+        has_nested = False
+        for sub_p in p.iterdir():
+            if sub_p.is_file() and sub_p.suffix.lower() in IMG_EXTENSIONS:
+                subdir_count += 1
+            elif sub_p.is_dir():
+                has_nested = True
+        result["subdirs"][p.name] = {
+            "image_count": subdir_count,
+            "has_subdirs": has_nested,
+            "path": p.name
+        }
+
+    return result
+
+
+def _scan_gallery_entries_paged(directory: Path, page: int = 1, page_size: int = 50) -> dict:
+    """Scan directory with pagination support.
+    
+    Returns paginated results to avoid loading too many entries at once.
+    """
+    entries = _scan_gallery_entries(directory)
+    total = len(entries)
+    start = (page - 1) * page_size
+    end = start + page_size
+    paged_entries = entries[start:end]
+    
+    return {
+        "entries": paged_entries,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "has_more": end < total
+    }
+
+
 def _scan_gallery_entries(directory: Path) -> list[dict]:
     """Scan directory (non-recursive) and return gallery entries.
     
@@ -255,7 +351,7 @@ def _scan_gallery_entries_recursive(directory: Path) -> list[dict]:
         entry = _make_entry(image_file, txt_path, raw_txt)
         if entry:
             entry["category"] = category
-            entry["subfolder"] = subfolder
+            entry["subfolder"] = subfolder # type: ignore
             entries.append(entry)
 
     return entries
@@ -267,51 +363,106 @@ def _scan_gallery_entries_recursive(directory: Path) -> list[dict]:
 
 @PromptServer.instance.routes.get("/neo_gallery/list")
 async def get_gallery_list(request):
-    """Return unified gallery listing (all directories, presets subdirs treated as read-only dirs)."""
+    """Return unified gallery listing (all directories, presets subdirs treated as read-only dirs).
+    
+    Supports lazy loading via 'lazy' query parameter:
+    - lazy=1: Only return directory structure (fast), no image entries
+    - lazy=0 or omitted: Return full listing with image entries
+    """
+    lazy = request.rel_url.query.get("lazy", "0") == "1"
     user_custom_dirs = _get_user_custom_dirs()
-    presets_structure = _scan_gallery_entries_with_subdirs(PRESETS_DIR)
+    
+    # For lazy mode, only scan structure
+    if lazy:
+        presets_structure = _scan_directory_structure_only(PRESETS_DIR)
+    else:
+        presets_structure = _scan_gallery_entries_with_subdirs(PRESETS_DIR)
 
     directories = []
 
     # Custom dirs (writable)
     for dir_path in user_custom_dirs:
         dir_name = dir_path.name if dir_path.name else str(dir_path)
-        structure = _scan_gallery_entries_with_subdirs(dir_path)
-        entries = structure["root"]
-        for entry in entries:
-            entry["custom_source"] = dir_name
-        directories.append({
-            "name": dir_name,
-            "path": str(dir_path),
-            "items": entries,
-            "subdirs": structure["subdirs"],
-            "read_only": False
-        })
+        if lazy:
+            structure = _scan_directory_structure_only(dir_path)
+        else:
+            structure = _scan_gallery_entries_with_subdirs(dir_path)
+        
+        if lazy:
+            # Lazy mode: only return structure
+            directories.append({
+                "name": dir_name,
+                "path": str(dir_path),
+                "items": [],
+                "subdirs": structure["subdirs"],
+                "root_count": structure["root_count"],
+                "read_only": False,
+                "lazy": True
+            })
+        else:
+            entries = structure["root"]
+            for entry in entries:
+                entry["custom_source"] = dir_name
+            directories.append({
+                "name": dir_name,
+                "path": str(dir_path),
+                "items": entries,
+                "subdirs": structure["subdirs"],
+                "read_only": False
+            })
 
     # Presets: root items + subdirs as read-only directories
-    presets_root = presets_structure["root"]
-    presets_subdirs = presets_structure["subdirs"]
-
-    # Root-level presets items go into a "Presets" read-only directory
-    if presets_root:
-        directories.append({
-            "name": "Presets",
-            "path": "presets",
-            "items": presets_root,
-            "subdirs": {},
-            "read_only": True
-        })
-
-    # Each presets subdir becomes its own read-only directory
-    for subdir_name, subdir_items in sorted(presets_subdirs.items()):
-        if subdir_items:
+    if lazy:
+        # Lazy mode: only return structure
+        presets_subdirs = presets_structure.get("subdirs", {})
+        presets_root_count = presets_structure.get("root_count", 0)
+        
+        # Return root-level presets as a directory if there are items
+        if presets_root_count > 0:
+            directories.append({
+                "name": "Presets",
+                "path": "presets",
+                "items": [],
+                "subdirs": {},
+                "root_count": presets_root_count,
+                "read_only": True,
+                "lazy": True
+            })
+        
+        for subdir_name, subdir_info in sorted(presets_subdirs.items()):
             directories.append({
                 "name": f"Presets/{subdir_name}",
                 "path": f"presets/{subdir_name}",
-                "items": subdir_items,
+                "items": [],
+                "subdirs": {},
+                "root_count": subdir_info.get("image_count", 0),
+                "read_only": True,
+                "lazy": True
+            })
+    else:
+        presets_root = presets_structure["root"]
+        presets_subdirs = presets_structure["subdirs"]
+
+        # Root-level presets items go into a "Presets" read-only directory
+        if presets_root:
+            directories.append({
+                "name": "Presets",
+                "path": "presets",
+                "items": presets_root,
                 "subdirs": {},
                 "read_only": True
             })
+
+        # Each presets subdir becomes its own read-only directory
+        for subdir_name, subdir_items in sorted(presets_subdirs.items()):
+            if subdir_items:
+                directories.append({
+                    "name": f"Presets/{subdir_name}",
+                    "path": f"presets/{subdir_name}",
+                    "items": subdir_items,
+                    "subdirs": {},
+                    "read_only": True
+                })
 
     total = sum(len(d["items"]) for d in directories)
     return web.json_response({"directories": directories, "total": total})
@@ -673,6 +824,64 @@ async def get_directory_structure(request):
     })
 
 
+@PromptServer.instance.routes.get("/neo_gallery/dir_structure_lazy")
+async def get_directory_structure_lazy(request):
+    """Get lightweight directory structure for lazy loading.
+
+    Query params:
+    - dir_name: name of the custom directory or 'presets' (required)
+    - path: relative subdirectory path within that directory (optional, "/" separated)
+    
+    Returns only directory structure (subdirectory names and image counts),
+    without loading full image entries. Use this for initial fast load.
+    """
+    if "dir_name" not in request.rel_url.query:
+        return web.json_response({"error": "Missing dir_name"}, status=400)
+
+    dir_name = request.rel_url.query["dir_name"]
+    rel_path = request.rel_url.query.get("path", "")
+
+    # Security check for path traversal
+    if ".." in rel_path:
+        return web.json_response({"error": "Invalid path"}, status=400)
+
+    base: Path | None = None
+    dir_name_lower = dir_name.lower()
+    if dir_name_lower == "presets":
+        base = PRESETS_DIR
+    elif dir_name_lower.startswith("presets/"):
+        base = PRESETS_DIR
+        if not rel_path:
+            rel_path = dir_name_lower[len("presets/"):]
+    else:
+        user_custom_dirs = _get_user_custom_dirs()
+        for dir_path in user_custom_dirs:
+            d_name = dir_path.name if dir_path.name else str(dir_path)
+            if d_name.lower() == dir_name_lower:
+                base = dir_path
+                break
+
+    if base is None or not base.exists():
+        return web.json_response({"error": "Directory not found"}, status=404)
+
+    if rel_path:
+        parts = [p for p in rel_path.split("/") if p]
+        target_dir = base
+        for part in parts:
+            target_dir = target_dir / part
+    else:
+        target_dir = base
+
+    # Use lightweight structure-only scan
+    structure = _scan_directory_structure_only(target_dir)
+
+    return web.json_response({
+        "dir_name": dir_name,
+        "path": rel_path,
+        **structure
+    })
+
+
 # ---------------------------------------------------------------------------
 # Thumbnail Routes
 # ---------------------------------------------------------------------------
@@ -691,7 +900,7 @@ def _generate_thumbnail(source_path: Path, cache_path: Path, size: int = THUMBNA
                 img = img.convert("RGB")
             
             # Create thumbnail (in-place resize)
-            img.thumbnail((size, size), Image.LANCZOS)
+            img.thumbnail((size, size), Image.Resampling.LANCZOS)
             
             # Ensure directory exists
             cache_path.parent.mkdir(parents=True, exist_ok=True)

@@ -205,7 +205,8 @@ class NeoGallery {
 
     async loadGallery() {
         try {
-            const resp = await api.fetchApi('/neo_gallery/list');
+            // Use lazy loading for faster initial load
+            const resp = await api.fetchApi('/neo_gallery/list?lazy=1');
             if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
             const data = await resp.json();
             this.allDirectories = (data.directories || []).map(dir => ({
@@ -213,7 +214,9 @@ class NeoGallery {
                 path: dir.path,
                 items: dir.items || [],
                 subdirs: dir.subdirs || {},
-                read_only: dir.read_only || false
+                read_only: dir.read_only || false,
+                lazy: dir.lazy || false,
+                root_count: dir.root_count || 0
             }));
             this.filteredDirectories = this.allDirectories;
         } catch (error) {
@@ -240,7 +243,10 @@ class NeoGallery {
             return;
         }
 
-        const totalDirs = dirsToDisplay.filter(d => d.items.length > 0).length;
+        // In lazy mode, count dirs with subdirs or items
+        const totalDirs = dirsToDisplay.filter(d => 
+            d.items.length > 0 || (d.subdirs && Object.keys(d.subdirs).length > 0)
+        ).length;
 
         if (totalDirs === 0 && !this.isSearchActive) {
             this.displayNoFilesMessage();
@@ -265,7 +271,11 @@ class NeoGallery {
         });
 
         for (const dir of dirGroups) {
-            if (dir.items.length === 0 && !dir.subdirs) continue;
+            // In lazy mode, show cards if there are items, subdirs, or root_count
+            const hasContent = dir.items.length > 0 || 
+                               (dir.subdirs && Object.keys(dir.subdirs).length > 0) ||
+                               (dir.root_count && dir.root_count > 0);
+            if (!hasContent) continue;
             const card = await this.components.createDirCard(this, dir.name, dir.path, dir.items, dir.subdirs, dir.read_only);
             container.appendChild(card);
         }
@@ -278,10 +288,37 @@ class NeoGallery {
         const relPath = pathSegments.join("/");
         
         try {
-            const resp = await api.fetchApi(`/neo_gallery/dir_structure?dir_name=${encodeURIComponent(dirName)}&path=${encodeURIComponent(relPath)}`);
+            // Use lazy loading for faster initial load
+            const resp = await api.fetchApi(`/neo_gallery/dir_structure_lazy?dir_name=${encodeURIComponent(dirName)}&path=${encodeURIComponent(relPath)}`);
             if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
             
             const structure = await resp.json();
+            
+            // Also fetch image entries for the current directory
+            if (pathSegments.length > 0) {
+                // Subdirectory: use dir_structure endpoint for accurate per-path results
+                const structResp = await api.fetchApi(`/neo_gallery/dir_structure?dir_name=${encodeURIComponent(dirName)}&path=${encodeURIComponent(relPath)}`);
+                if (structResp.ok) {
+                    const structData = await structResp.json();
+                    if (structData.images && structData.images.length > 0) {
+                        structure.images = structData.images;
+                        structure.image_count = structData.image_count;
+                    }
+                }
+            } else {
+                // Root level: use the already-loaded list
+                const listResp = await api.fetchApi(`/neo_gallery/list`);
+                if (listResp.ok) {
+                    const listData = await listResp.json();
+                    const dir = listData.directories?.find(d => 
+                        d.path === structure.path || d.name === structure.dir_name
+                    );
+                    if (dir && dir.items && dir.items.length > 0) {
+                        structure.images = dir.items;
+                        structure.image_count = dir.items.length;
+                    }
+                }
+            }
             
             this.currentView.mode = 'directory';
             this.currentView.source = dirName;
@@ -307,47 +344,70 @@ class NeoGallery {
     renderDirectoryStructure(structure, dirName, pathSegments) {
         this.accordion.innerHTML = "";
         
-        const { subdirs, images, has_subdirs, image_count, total_images } = structure;
+        const { subdirs, images, has_subdirs, image_count, total_images, root_count } = structure;
         
-        if (has_subdirs && subdirs.length > 0) {
+        // Handle lazy-loaded structure (images may be undefined, has_subdirs may be undefined)
+        const imageArray = images || [];
+        const subdirArray = Array.isArray(subdirs) ? subdirs : Object.values(subdirs || {});
+        
+        // For lazy-loaded: has_subdirs may be undefined, but subdirs has content
+        // For normal: has_subdirs is boolean, subdirs is array of strings
+        const hasSubdirs = has_subdirs || subdirArray.length > 0;
+        
+        if (hasSubdirs) {
             this.renderSubdirCards(structure, dirName, pathSegments);
+        } else if (imageArray.length > 0) {
+            this.renderImagesFromStructure(imageArray, dirName, pathSegments);
         } else {
-            this.renderImagesFromStructure(images, dirName, pathSegments);
+            showNoFilesMessage(this.accordion, "No images found in this folder");
         }
     }
 
     async renderSubdirCards(structure, dirName, pathSegments) {
-        const { subdirs, images, image_count, total_images } = structure;
+        const { subdirs, images, image_count, total_images, root_count } = structure;
         
-        const summaryEl = $el("div", {
-            className: "neo-gallery-dir-summary",
-            textContent: `${total_images} items in ${subdirs.length} folders`
-        });
-        this.accordion.appendChild(summaryEl);
+        // Handle lazy-loaded structure (only has root_count and subdirs)
+        const displayTotal = total_images || root_count || 0;
+        const displaySubdirs = Array.isArray(subdirs) ? subdirs : Object.keys(subdirs || {});
+        
+        // For lazy-loaded, subdirArray is object values; for normal, it's string array
+        const subdirArray = Array.isArray(subdirs) ? subdirs : Object.values(subdirs || {});
         
         const container = $el("div", {
             className: "neo-gallery-category-grid",
             style: { gridTemplateColumns: `repeat(auto-fill, ${this.maxThumbnailSize}px)` }
         });
         
-        for (const subdir of subdirs) {
-            // Flatten the path: if subdir is "parent/child", split it into segments
-            const subdirParts = subdir.split("/");
+        const subdirList = Array.isArray(subdirs) ? subdirs : Object.values(subdirs || {});
+        for (const subdir of subdirList) {
+            // Handle both string (old format) and object (new lazy format)
+            const subdirName = typeof subdir === 'string' ? subdir : subdir.path || subdir.name;
+            const subdirParts = subdirName.split("/");
             const fullPath = [...pathSegments, ...subdirParts];
-            const card = await this.components.createSubdirCard(this, subdir, dirName, fullPath);
+            
+            // Check if subdir has content before creating card
+            const subdirResp = await api.fetchApi(`/neo_gallery/dir_structure_lazy?dir_name=${encodeURIComponent(dirName)}&path=${encodeURIComponent(fullPath.join('/'))}`);
+            if (subdirResp.ok) {
+                const subdirData = await subdirResp.json();
+                const subdirCount = subdirData.root_count || 0;
+                const subdirSubdirs = subdirData.subdirs || {};
+                
+                // Skip empty directories
+                if (subdirCount === 0 && Object.keys(subdirSubdirs).length === 0) {
+                    continue;
+                }
+            }
+            
+            const card = await this.components.createSubdirCard(this, subdirName, dirName, fullPath);
             container.appendChild(card);
         }
         
-        if (subdirs.length > 0) {
+        if (subdirArray.length > 0) {
             this.accordion.appendChild(container);
         }
         
-        if (image_count > 0) {
-            const separator = $el("div", {
-                className: "neo-gallery-section-separator",
-                textContent: `Files in this folder (${image_count})`
-            });
-            this.accordion.appendChild(separator);
+        // Only show images section if we have actual image data (not lazy-loaded)
+        if (images && images.length > 0) {
             
             const imageGrid = $el("div", { className: "neo-gallery-image-grid" });
             
