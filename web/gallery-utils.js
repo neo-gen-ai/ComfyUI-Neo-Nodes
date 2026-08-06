@@ -55,6 +55,20 @@ export function isImageFile(filename) {
 }
 
 /**
+ * Check if filename is a video
+ */
+export function isVideoFile(filename) {
+    return /\.(mp4|webm|mov|avi|mkv|flv|wmv)$/i.test(filename);
+}
+
+/**
+ * Get video source URL
+ */
+export function getVideoSrc(video, subfolder) {
+    return `${window.location.protocol}//${window.location.host}/neo_gallery/video?filename=${encodeURIComponent(video.filename)}&subfolder=${encodeURIComponent(subfolder)}`;
+}
+
+/**
  * Get image source URL
  */
 export function getImageSrc(image, subfolder) {

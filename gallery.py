@@ -21,6 +21,8 @@ THUMBNAIL_DIR = GALLERY_DIR / "thumbnails"
 THUMBNAIL_SIZE = 320  # Fixed thumbnail size in pixels
 
 IMG_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tiff"}
+VIDEO_EXTENSIONS = {".mp4", ".webm", ".mov", ".avi", ".mkv", ".flv", ".wmv"}
+ALL_MEDIA_EXTENSIONS = IMG_EXTENSIONS | VIDEO_EXTENSIONS
 
 
 def _get_user_custom_dirs():
@@ -204,40 +206,59 @@ def _scan_gallery_entries_paged(directory: Path, page: int = 1, page_size: int =
     }
 
 
-def _scan_gallery_entries(directory: Path) -> list[dict]:
+def _scan_gallery_entries(directory: Path, subfolder: str = "") -> list[dict]:
     """Scan directory (non-recursive) and return gallery entries.
     
-    Only returns entries where an actual image file exists.
-    The 'filename' field always contains the image filename, not .txt.
+    Supports both image and video files, paired with .txt by same stem.
+    The 'filename' field always contains the media filename, not .txt.
+    Video entries have 'type': 'video', image entries have 'type': 'image'.
+    
+    Args:
+        directory: The directory to scan.
+        subfolder: Optional relative path from the custom directory root.
+            Used to set the 'subfolder' field for correct thumbnail URL resolution.
     """
     entries: list[dict] = []
     if not directory.exists():
         return entries
+
+    # Determine category and subfolder from the subfolder parameter
+    category = ""
+    if subfolder:
+        parts = [p for p in subfolder.split("/") if p]
+        if parts:
+            category = parts[0]
 
     stems: dict[str, list[Path]] = {}
     for p in directory.iterdir():
         if not p.is_file():
             continue
         lower = p.suffix.lower()
-        # Only track image files and .txt files by stem
-        if lower not in IMG_EXTENSIONS and lower != ".txt":
+        # Track media files and .txt files by stem
+        if lower not in ALL_MEDIA_EXTENSIONS and lower != ".txt":
             continue
         stems.setdefault(p.stem, []).append(p)
 
     for stem, files in sorted(stems.items()):
-        image_file = None
+        media_file = None
         txt_file = None
+        media_type = None
         for f in files:
-            if f.suffix.lower() in IMG_EXTENSIONS:
-                image_file = f
+            if f.suffix.lower() in VIDEO_EXTENSIONS:
+                media_file = f
+                media_type = "video"
+            elif f.suffix.lower() in IMG_EXTENSIONS:
+                if media_file is None:
+                    media_file = f
+                    media_type = "image"
             elif f.suffix.lower() == ".txt":
                 txt_file = f
 
-        # Only create entry if we found an actual image file
-        if not image_file:
+        # Only create entry if we found a media file
+        if not media_file:
             continue
 
-        txt_path = txt_file if txt_file else (image_file.with_suffix(".txt"))
+        txt_path = txt_file if txt_file else (media_file.with_suffix(".txt"))
         raw_txt = ""
         if txt_path.exists():
             try:
@@ -245,19 +266,21 @@ def _scan_gallery_entries(directory: Path) -> list[dict]:
             except Exception:
                 raw_txt = ""
 
-        entry = _make_entry(image_file, txt_path, raw_txt)
+        entry = _make_entry(media_file, txt_path, raw_txt)
         if entry:
-            # Ensure filename is always the image file, never .txt
-            assert image_file.suffix.lower() in IMG_EXTENSIONS, f"Expected image file but got: {image_file.name}"
-            entry["category"] = ""
-            entry["subfolder"] = ""
+            entry["type"] = media_type
+            entry["category"] = category
+            entry["subfolder"] = subfolder
             entries.append(entry)
 
     return entries
 
 
 def _scan_gallery_entries_with_subdirs(directory: Path) -> dict:
-    """Scan directory and return entries grouped by subdirectory."""
+    """Scan directory and return entries grouped by subdirectory.
+    
+    Supports both image and video files.
+    """
     result = {"root": [], "subdirs": {}}
     if not directory.exists():
         return result
@@ -266,22 +289,28 @@ def _scan_gallery_entries_with_subdirs(directory: Path) -> dict:
     for p in directory.iterdir():
         if p.is_file():
             lower = p.suffix.lower()
-            if lower in IMG_EXTENSIONS or lower == ".txt":
+            if lower in ALL_MEDIA_EXTENSIONS or lower == ".txt":
                 root_stems.setdefault(p.stem, []).append(p)
 
     for stem, files in sorted(root_stems.items()):
-        image_file = None
+        media_file = None
         txt_file = None
+        media_type = None
         for f in files:
-            if f.suffix.lower() in IMG_EXTENSIONS:
-                image_file = f
+            if f.suffix.lower() in VIDEO_EXTENSIONS:
+                media_file = f
+                media_type = "video"
+            elif f.suffix.lower() in IMG_EXTENSIONS:
+                if media_file is None:
+                    media_file = f
+                    media_type = "image"
             elif f.suffix.lower() == ".txt":
                 txt_file = f
 
-        if not image_file:
+        if not media_file:
             continue
 
-        txt_path = txt_file if txt_file else (image_file.with_suffix(".txt"))
+        txt_path = txt_file if txt_file else (media_file.with_suffix(".txt"))
         raw_txt = ""
         if txt_path.exists():
             try:
@@ -289,15 +318,16 @@ def _scan_gallery_entries_with_subdirs(directory: Path) -> dict:
             except Exception:
                 raw_txt = ""
 
-        entry = _make_entry(image_file, txt_path, raw_txt)
+        entry = _make_entry(media_file, txt_path, raw_txt)
         if entry:
+            entry["type"] = media_type
             entry["category"] = ""
             entry["subfolder"] = ""
             result["root"].append(entry)
 
     for p in directory.iterdir():
         if p.is_dir():
-            subdir_entries = _scan_gallery_entries(p)
+            subdir_entries = _scan_gallery_entries(p, p.name)
             if subdir_entries:
                 result["subdirs"][p.name] = subdir_entries
 
@@ -305,7 +335,10 @@ def _scan_gallery_entries_with_subdirs(directory: Path) -> dict:
 
 
 def _scan_gallery_entries_recursive(directory: Path) -> list[dict]:
-    """Walk directory recursively and return gallery entries."""
+    """Walk directory recursively and return gallery entries.
+    
+    Supports both image and video files.
+    """
     entries: list[dict] = []
     if not directory.exists():
         return entries
@@ -315,7 +348,7 @@ def _scan_gallery_entries_recursive(directory: Path) -> list[dict]:
         if not p.is_file():
             continue
         lower = p.suffix.lower()
-        if lower not in IMG_EXTENSIONS and lower != ".txt":
+        if lower not in ALL_MEDIA_EXTENSIONS and lower != ".txt":
             continue
 
         rel = p.relative_to(directory)
@@ -329,18 +362,24 @@ def _scan_gallery_entries_recursive(directory: Path) -> list[dict]:
         stems.setdefault((category, p.stem), []).append(p)
 
     for (category, stem), files in sorted(stems.items()):
-        image_file = None
+        media_file = None
         txt_file = None
+        media_type = None
         for f in files:
-            if f.suffix.lower() in IMG_EXTENSIONS:
-                image_file = f
+            if f.suffix.lower() in VIDEO_EXTENSIONS:
+                media_file = f
+                media_type = "video"
+            elif f.suffix.lower() in IMG_EXTENSIONS:
+                if media_file is None:
+                    media_file = f
+                    media_type = "image"
             elif f.suffix.lower() == ".txt":
                 txt_file = f
 
-        if not image_file:
+        if not media_file:
             continue
 
-        txt_path = txt_file if txt_file else (image_file.with_suffix(".txt"))
+        txt_path = txt_file if txt_file else (media_file.with_suffix(".txt"))
         raw_txt = ""
         if txt_path.exists():
             try:
@@ -348,10 +387,11 @@ def _scan_gallery_entries_recursive(directory: Path) -> list[dict]:
             except Exception:
                 raw_txt = ""
 
-        entry = _make_entry(image_file, txt_path, raw_txt)
+        entry = _make_entry(media_file, txt_path, raw_txt)
         if entry:
+            entry["type"] = media_type
             entry["category"] = category
-            entry["subfolder"] = subfolder # type: ignore
+            entry["subfolder"] = subfolder or ""
             entries.append(entry)
 
     return entries
@@ -615,6 +655,14 @@ async def resolve_comfyui_path(request):
         }, status=500)
 
 
+def _has_media_in_dir(dir_path: Path) -> bool:
+    """Check if a directory contains any media files (image or video) directly."""
+    for p in dir_path.iterdir():
+        if p.is_file() and p.suffix.lower() in ALL_MEDIA_EXTENSIONS:
+            return True
+    return False
+
+
 def _has_images_in_dir(dir_path: Path) -> bool:
     """Check if a directory contains any image files directly."""
     for p in dir_path.iterdir():
@@ -726,7 +774,22 @@ def _scan_directory_structure_flattened(directory: Path, base_dir: Path, sample_
     if not directory.exists():
         return {"subdirs": [], "images": [], "sample_images": []}
 
-    all_entries = _scan_gallery_entries(directory)
+    # Compute the subfolder for this directory level
+    # dir_name is the root (e.g. "mygallery" or "presets"), dir_path is the target
+    dir_path = directory
+    # Build subfolder from dir_name + any relative path within it
+    # The caller passes dir_name which is the root directory name
+    # We need to figure out the subfolder relative to the base
+    # For now, use dir_name as the base and compute from there
+    # The caller is responsible for passing the correct dir_name
+    # We compute subfolder by comparing directory to base_dir
+    try:
+        rel = dir_path.relative_to(base_dir)
+        subfolder = str(rel)
+    except ValueError:
+        subfolder = ""
+
+    all_entries = _scan_gallery_entries(directory, subfolder)
 
     subdir_map = {}
     immediate_subdirs_with_images = []
@@ -890,9 +953,14 @@ async def get_directory_structure_lazy(request):
 def _generate_thumbnail(source_path: Path, cache_path: Path, size: int = THUMBNAIL_SIZE) -> bool:
     """Generate a thumbnail image and save to cache_path.
     
+    For video files, extracts first frame using ffmpeg.
     Returns True if successful, False otherwise.
     """
     try:
+        # Check if source is a video file
+        if source_path.suffix.lower() in VIDEO_EXTENSIONS:
+            return _generate_video_thumbnail(source_path, cache_path, size)
+        
         from PIL import Image
         with Image.open(source_path) as img:
             # Convert to RGB if necessary (handle RGBA, P mode, etc.)
@@ -919,6 +987,53 @@ def _generate_thumbnail(source_path: Path, cache_path: Path, size: int = THUMBNA
         return False
 
 
+def _generate_video_thumbnail(source_path: Path, cache_path: Path, size: int = THUMBNAIL_SIZE) -> bool:
+    """Generate a thumbnail from a video file using ffmpeg.
+    
+    Extracts the first frame and saves as JPEG thumbnail.
+    """
+    try:
+        import subprocess
+        import shutil
+        
+        # Check if ffmpeg is available
+        ffmpeg_path = shutil.which("ffmpeg")
+        if not ffmpeg_path:
+            print("[Neo Gallery] ffmpeg not found, skipping video thumbnail generation")
+            return False
+        
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Extract first frame using ffmpeg
+        cmd = [
+            ffmpeg_path,
+            "-i", str(source_path),
+            "-vframes", "1",
+            "-ss", "00:00:00.500",
+            "-y",
+            str(cache_path)
+        ]
+        
+        result = subprocess.run(cmd, capture_output=True, timeout=30)
+        if result.returncode != 0:
+            # Try without -ss for first frame
+            cmd = [
+                ffmpeg_path,
+                "-i", str(source_path),
+                "-vframes", "1",
+                "-y",
+                str(cache_path)
+            ]
+            result = subprocess.run(cmd, capture_output=True, timeout=30)
+            if result.returncode != 0:
+                return False
+        
+        return True
+    except Exception as e:
+        print(f"[Neo Gallery] Failed to generate video thumbnail: {e}")
+        return False
+
+
 def _get_thumbnail_path(filename: str, subfolder: str, size: int) -> Path:
     """Get the cache path for a thumbnail."""
     # Sanitize subfolder for filename
@@ -927,8 +1042,8 @@ def _get_thumbnail_path(filename: str, subfolder: str, size: int) -> Path:
     return THUMBNAIL_DIR / f"{stem}_{safe_subfolder}_{size}.jpg"
 
 
-def _find_source_image(filename: str, subfolder: str) -> Path | None:
-    """Find the source image file for a given filename and subfolder."""
+def _find_source_media(filename: str, subfolder: str) -> Path | None:
+    """Find the source media file (image or video) for a given filename and subfolder."""
     user_custom_dirs = _get_user_custom_dirs()
     source_path = None
     
@@ -969,15 +1084,21 @@ def _find_source_image(filename: str, subfolder: str) -> Path | None:
         if candidate.exists():
             source_path = candidate
     
-    # Fallback: try to find by extension
+    # Fallback: try to find by extension (both image and video)
     if not source_path:
-        for ext in [".jpeg", ".jpg", ".png", ".webp", ".gif", ".bmp", ".tiff"]:
+        for ext in [".jpeg", ".jpg", ".png", ".webp", ".gif", ".bmp", ".tiff",
+                    ".mp4", ".webm", ".mov", ".avi", ".mkv", ".flv", ".wmv"]:
             candidate = PRESETS_DIR / (Path(filename).stem + ext)
             if candidate.exists():
                 source_path = candidate
                 break
     
     return source_path
+
+
+def _find_source_image(filename: str, subfolder: str) -> Path | None:
+    """Find the source image file for a given filename and subfolder."""
+    return _find_source_media(filename, subfolder)
 
 
 @PromptServer.instance.routes.get("/neo_gallery/thumbnail")
@@ -1029,6 +1150,37 @@ async def get_thumbnail(request):
     if not content_type:
         content_type = "image/jpeg"
     return web.Response(body=content, content_type=content_type)
+
+
+@PromptServer.instance.routes.get("/neo_gallery/video")
+async def view_video(request):
+    """Serve gallery videos by filename."""
+    if "filename" not in request.rel_url.query:
+        return web.Response(status=400)
+
+    filename = request.rel_url.query["filename"]
+    subfolder = request.rel_url.query.get("subfolder", "presets")
+
+    if ".." in filename or ".." in subfolder:
+        return web.Response(status=400)
+
+    source_path = _find_source_media(filename, subfolder)
+    if not source_path:
+        return web.Response(status=404)
+
+    if source_path.suffix.lower() not in VIDEO_EXTENSIONS:
+        return web.Response(status=400)
+
+    with open(source_path, "rb") as f:
+        content = f.read()
+    content_type, _ = mimetypes.guess_type(str(source_path))
+    if not content_type:
+        content_type = "video/mp4"
+    return web.Response(
+        body=content,
+        content_type=content_type,
+        headers={"Content-Disposition": f'inline; filename="{source_path.name}"'},
+    )
 
 
 @PromptServer.instance.routes.get("/neo_gallery/image")
@@ -1318,7 +1470,7 @@ async def delete_gallery_item(request):
         img_deleted = False
         txt_deleted = False
 
-        for ext in IMG_EXTENSIONS:
+        for ext in ALL_MEDIA_EXTENSIONS:
             p = target_dir / f"{filename}{ext}"
             if p.exists():
                 p.unlink()

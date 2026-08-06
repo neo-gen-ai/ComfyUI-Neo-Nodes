@@ -10,7 +10,9 @@ import {
     getCardHeight,
     getCoverHeight,
     isImageFile,
+    isVideoFile,
     getImageSrc,
+    getVideoSrc,
     getThumbnailSrc,
     buildCoverGrid,
     createBreadcrumbItem,
@@ -335,9 +337,92 @@ export class GalleryComponents {
         if (existing) existing.remove();
     }
 
+    async _showVideoSendMenu(gallery, image, button) {
+        this._removeVideoSendMenu();
+        if (!isVideoFile(image.filename)) {
+            showToast(gallery.app, 'warning', 'Not a Video', 'This file is not a video.');
+            return;
+        }
+        const menuItems = [];
+        gallery.app.graph._nodes.forEach(node => {
+            if (!node.widgets) return;
+            node.widgets.forEach((widget, index) => {
+                const wn = (widget.name || '').toLowerCase();
+                const isLoadVideo = /load.?video/i.test(node.comfyClass || '') || /load.?video/i.test(node.title || '');
+                const isVideoWidget = /video/.test(wn);
+                if (isLoadVideo && widget.type === 'combo' && /video/.test(wn)) {
+                    menuItems.push({ nodeId: node.id, widgetIndex: index, label: `\u25B8 ${node.title || 'Node'} \u2192 ${widget.name}`, isLoadVideo, isText: false });
+                } else if ((isLoadVideo || isVideoWidget) && widget.inputEl) {
+                    menuItems.push({ nodeId: node.id, widgetIndex: index, label: `\u25B8 ${node.title || 'Node'} \u2192 ${widget.name}`, isLoadVideo, isText: widget.type === 'customtext' || widget.type === 'text' });
+                }
+            });
+        });
+
+        const selKeys = Object.keys(gallery.app.canvas.selected_nodes);
+        let selectedNodeId = null;
+        if (selKeys.length > 0) {
+            const sn = gallery.app.canvas.selected_nodes[selKeys[0]];
+            const isLoadVideo = /load.?video/i.test(sn.comfyClass || '') || /load.?video/i.test(sn.title || '');
+            const hasVideoWidget = sn.widgets && sn.widgets.some(w => /video/.test((w.name || '').toLowerCase()));
+            if (isLoadVideo && hasVideoWidget) {
+                selectedNodeId = sn.id;
+            }
+        }
+        if (menuItems.length === 0 && !selectedNodeId) {
+            showToast(gallery.app, 'warning', 'No Target', 'No LoadVideo-type nodes found.');
+            return;
+        }
+
+        menuItems.forEach(item => {
+            item.isSelected = item.nodeId === selectedNodeId;
+        });
+        menuItems.sort((a, b) => {
+            if (a.isSelected !== b.isSelected) return a.isSelected ? -1 : 1;
+            if (a.isLoadImage !== b.isLoadImage) return a.isLoadImage ? -1 : 1;
+            return 0;
+        });
+
+        if (menuItems.length === 1 && !selectedNodeId) {
+            const item = menuItems[0];
+            gallery.sendVideoToNode(image, `${item.nodeId}:widget:${item.widgetIndex}`, button);
+            return;
+        }
+
+        const dropdown = $el("div", { id: "neo-gallery-video-send-menu", className: "neo-gallery-send-menu" });
+        for (const item of menuItems) {
+            const label = item.isSelected ? `${item.label} \u2713` : item.label;
+            const el = $el("div", {
+                className: "neo-gallery-send-menu-item" + (item.isSelected ? " neo-gallery-send-menu-selected" : ""),
+                onclick: (e) => { e.stopPropagation(); this._removeVideoSendMenu(); gallery.sendVideoToNode(image, `${item.nodeId}:widget:${item.widgetIndex}`, button); },
+                textContent: label
+            });
+            dropdown.appendChild(el);
+        }
+        const rect = button.getBoundingClientRect();
+        dropdown.style.position = 'fixed';
+        dropdown.style.left = Math.min(rect.left, window.innerWidth - 250) + 'px';
+        dropdown.style.zIndex = '10001';
+        document.body.appendChild(dropdown);
+        requestAnimationFrame(() => {
+            dropdown.style.top = (rect.top - dropdown.offsetHeight - 8) + 'px';
+        });
+        const closeHandler = (e) => {
+            if (!dropdown.contains(e.target) && e.target !== button) {
+                this._removeVideoSendMenu();
+                document.removeEventListener('click', closeHandler);
+            }
+        };
+        setTimeout(() => document.addEventListener('click', closeHandler), 10);
+    }
+
+    _removeVideoSendMenu() {
+        const existing = document.getElementById('neo-gallery-video-send-menu');
+        if (existing) existing.remove();
+    }
+
     async _showImgSendMenu(gallery, image, button) {
         gallery._removeImgSendMenu();
-        if (!/\.(png|jpg|jpeg|gif|webp|bmp|tiff)$/i.test(image.filename)) {
+        if (!/\.(png|jpg|jpeg|gif|webp|bmp|tiff|mp4|webm|mov|avi)$/i.test(image.filename)) {
             showToast(gallery.app, 'warning', 'Not an Image', 'This file is not an image.');
             return;
         }
@@ -876,8 +961,8 @@ export class GalleryComponents {
     // ====== Image Element ======
 
     createImageElement(gallery, image, subfolder) {
-        const src = getThumbnailSrc(image, subfolder);
         const isImageFileResult = isImageFile(image.filename);
+        const isVideoFileResult = isVideoFile(image.filename);
         const reservedSpace = getReservedSpace(gallery.displayLabels);
         const imageHeight = getImageHeight(gallery.maxThumbnailSize, gallery.displayLabels);
 
@@ -889,15 +974,6 @@ export class GalleryComponents {
             },
             onclick: () => gallery.showLightbox(image, subfolder)
         });
-
-        if (isImageFileResult) {
-            const img = new Image();
-            img.onload = () => {
-                const aspectRatio = img.height / img.width;
-                container.style.width = `${Math.max(gallery.maxThumbnailSize * (1 / aspectRatio), 40)}px`;
-            };
-            img.src = src;
-        }
 
         let deleteBtn = null;
         const isPresets = subfolder.toLowerCase() === 'presets' || subfolder.toLowerCase().startsWith('presets/');
@@ -911,13 +987,16 @@ export class GalleryComponents {
             }, ["\u00D7"]);
         }
 
-        const imgSendBtn = $el("div", {
-            className: "neo-gallery-thumb-img-send-btn",
-            onclick: (e) => {
-                e.stopPropagation();
-                gallery._showImgSendMenu(image, imgSendBtn);
-            }
-        }, ["\uD83D\uDCE4"]);
+        let imgSendBtn = null;
+        if (!isVideoFileResult) {
+            imgSendBtn = $el("div", {
+                className: "neo-gallery-thumb-img-send-btn",
+                onclick: (e) => {
+                    e.stopPropagation();
+                    gallery._showImgSendMenu(image, imgSendBtn);
+                }
+            }, ["\uD83D\uDCE4"]);
+        }
 
         let sendBtn = null;
         if (image.txt_content) {
@@ -928,6 +1007,17 @@ export class GalleryComponents {
                     gallery._showSendMenu(image, sendBtn);
                 }
             }, ["\u2708\uFE0F"]);
+        }
+
+        let videoSendBtn = null;
+        if (isVideoFileResult) {
+            videoSendBtn = $el("div", {
+                className: "neo-gallery-thumb-video-send-btn",
+                onclick: (e) => {
+                    e.stopPropagation();
+                    gallery._showVideoSendMenu(image, videoSendBtn);
+                }
+            }, ["\uD83D\uDCE5"]);
         }
 
         let copyBtn = null;
@@ -941,18 +1031,46 @@ export class GalleryComponents {
             }, ["\u29C9"]);
         }
 
-        const imgEl = $el("img", {
-            className: "neo-gallery-thumb-img",
-            src: src,
-            alt: image.name,
-            onerror: () => {
-                if (!image.preview) imgEl.src = gallery.placeholderImageUrl;
-            }
-        });
+        let mediaEl;
+        if (isVideoFileResult) {
+            // Video thumbnail
+            const videoSrc = getThumbnailSrc(image, subfolder);
+            mediaEl = $el("img", {
+                className: "neo-gallery-thumb-img",
+                src: videoSrc,
+                alt: image.name,
+                onerror: () => {
+                    mediaEl.src = gallery.placeholderImageUrl;
+                }
+            });
+        } else if (isImageFileResult) {
+            // Image thumbnail
+            const src = getThumbnailSrc(image, subfolder);
+            const img = new Image();
+            img.onload = () => {
+                const aspectRatio = img.height / img.width;
+                container.style.width = `${Math.max(gallery.maxThumbnailSize * (1 / aspectRatio), 40)}px`;
+            };
+            img.src = src;
+            mediaEl = $el("img", {
+                className: "neo-gallery-thumb-img",
+                src: src,
+                alt: image.name,
+                onerror: () => {
+                    if (!image.preview) mediaEl.src = gallery.placeholderImageUrl;
+                }
+            });
+        } else {
+            // Unknown type - show placeholder
+            mediaEl = $el("div", {
+                className: "neo-gallery-thumb-img neo-gallery-thumb-placeholder",
+                textContent: "\uD83D\uDCCB"
+            });
+        }
 
-        const btnBar = $el("div", { className: "neo-gallery-thumb-btn-bar" }, [sendBtn, imgSendBtn, copyBtn].filter(Boolean));
+        const btnBar = $el("div", { className: "neo-gallery-thumb-btn-bar" }, [videoSendBtn, sendBtn, imgSendBtn, copyBtn].filter(Boolean));
 
-        const imgWrapper = $el("div", { className: "neo-gallery-thumb-img-wrapper" }, [imgEl, btnBar]);
+        const imgWrapper = $el("div", { className: "neo-gallery-thumb-img-wrapper" }, [mediaEl, btnBar]);
 
         const labelEl = gallery.displayLabels ? $el("span", {
             className: "neo-gallery-image-label",
@@ -1152,10 +1270,25 @@ export class GalleryComponents {
         imgWrapper.className = "neo-gallery-lightbox-img-wrapper";
 
         const categoryParam = image.category ? `&category=${encodeURIComponent(image.category)}` : '';
-        const imageUrl = image.preview || `${window.location.protocol}//${window.location.host}/neo_gallery/image?filename=${encodeURIComponent(image.filename)}&subfolder=${encodeURIComponent(subfolder)}${categoryParam}`;
-        const img = document.createElement('img');
-        img.className = "neo-gallery-lightbox-image";
-        img.src = imageUrl;
+        const isVideo = isVideoFile(image.filename);
+        const mediaUrl = image.preview || `${window.location.protocol}//${window.location.host}/neo_gallery/image?filename=${encodeURIComponent(image.filename)}&subfolder=${encodeURIComponent(subfolder)}${categoryParam}`;
+        const videoUrl = `${window.location.protocol}//${window.location.host}/neo_gallery/video?filename=${encodeURIComponent(image.filename)}&subfolder=${encodeURIComponent(subfolder)}`;
+
+        let mediaEl;
+        if (isVideo) {
+            mediaEl = document.createElement('video');
+            mediaEl.className = "neo-gallery-lightbox-image neo-gallery-lightbox-video";
+            mediaEl.src = videoUrl;
+            mediaEl.controls = true;
+            mediaEl.autoplay = true;
+            mediaEl.loop = true;
+            mediaEl.style.maxWidth = '100%';
+            mediaEl.style.maxHeight = '80vh';
+        } else {
+            mediaEl = document.createElement('img');
+            mediaEl.className = "neo-gallery-lightbox-image";
+            mediaEl.src = mediaUrl;
+        }
 
         const closeBtn = document.createElement('div');
         closeBtn.className = "neo-gallery-lightbox-close-btn";
@@ -1176,6 +1309,17 @@ export class GalleryComponents {
             };
         }
 
+        let videoSendBtn = null;
+        if (isVideo) {
+            videoSendBtn = document.createElement('div');
+            videoSendBtn.className = "neo-gallery-lightbox-btn neo-gallery-lightbox-video-send-btn";
+            videoSendBtn.textContent = "\uD83D\uDCE5 Video";
+            videoSendBtn.onclick = (e) => {
+                e.stopPropagation();
+                gallery._showVideoSendMenu(image, videoSendBtn);
+            };
+        }
+
         const copyBtn = document.createElement('div');
         copyBtn.className = "neo-gallery-lightbox-btn neo-gallery-lightbox-copy-btn";
         copyBtn.textContent = "\u29C9 Copy";
@@ -1184,14 +1328,22 @@ export class GalleryComponents {
             this.copyToClipboard(image.name, image.txt_content, copyBtn);
         };
 
-        imgWrapper.appendChild(img);
+        imgWrapper.appendChild(mediaEl);
 
         const imageInfo = document.createElement('div');
-        img.onload = () => {
-            if (imageInfo) {
-                imageInfo.textContent = `${img.naturalWidth} \u00d7 ${img.naturalHeight}`;
-            }
-        };
+        if (!isVideo) {
+            mediaEl.onload = () => {
+                if (imageInfo) {
+                    imageInfo.textContent = `${mediaEl.naturalWidth} \u00d7 ${mediaEl.naturalHeight}`;
+                }
+            };
+        } else {
+            mediaEl.onloadedmetadata = () => {
+                if (imageInfo) {
+                    imageInfo.textContent = `${mediaEl.videoWidth} \u00d7 ${mediaEl.videoHeight}`;
+                }
+            };
+        }
         imgWrapper.appendChild(imageInfo);
 
         // Build all images list for navigation
@@ -1298,7 +1450,8 @@ export class GalleryComponents {
             promptSection.appendChild(promptContainer);
 
             const promptBtnsContainer = $el("div", { className: "neo-gallery-lightbox-prompt-btns" });
-            promptBtnsContainer.appendChild(sendBtn);
+            if (sendBtn) promptBtnsContainer.appendChild(sendBtn);
+            if (videoSendBtn) promptBtnsContainer.appendChild(videoSendBtn);
             promptBtnsContainer.appendChild(copyBtn);
             promptSection.appendChild(promptBtnsContainer);
         } else {
@@ -1409,38 +1562,53 @@ export class GalleryComponents {
             return;
         }
 
-        const img = imgWrapper.querySelector('img');
+        const isVideo = isVideoFile(image.filename);
         const categoryParam = image.category ? `&category=${encodeURIComponent(image.category)}` : '';
-        const newImageUrl = image.preview || `${window.location.protocol}//${window.location.host}/neo_gallery/image?filename=${encodeURIComponent(image.filename)}&subfolder=${encodeURIComponent(subfolder)}${categoryParam}`;
+        const newMediaUrl = image.preview || `${window.location.protocol}//${window.location.host}/neo_gallery/image?filename=${encodeURIComponent(image.filename)}&subfolder=${encodeURIComponent(subfolder)}${categoryParam}`;
+        const newVideoUrl = `${window.location.protocol}//${window.location.host}/neo_gallery/video?filename=${encodeURIComponent(image.filename)}&subfolder=${encodeURIComponent(subfolder)}`;
 
-        if (img) {
-            img.style.opacity = '0';
-            img.style.transform = 'scale(1)';
+        const existingMedia = imgWrapper.querySelector('video, img');
 
-            setTimeout(() => {
-                img.src = newImageUrl;
+        if (existingMedia) {
+            // Stop any playing video
+            if (existingMedia.tagName === 'VIDEO') {
+                existingMedia.pause();
+                existingMedia.remove();
+            }
 
-                // Fix: cache-bust to force reload from server, avoiding stale cached image
-                if (!newImageUrl.includes('?v=')) {
-                    img.src = newImageUrl + (newImageUrl.includes('?') ? '&' : '?') + 'v=' + Date.now();
-                }
+            // Create new media element
+            let newMediaEl;
+            if (isVideo) {
+                newMediaEl = document.createElement('video');
+                newMediaEl.className = "neo-gallery-lightbox-image neo-gallery-lightbox-video";
+                newMediaEl.src = newVideoUrl;
+                newMediaEl.controls = true;
+                newMediaEl.autoplay = true;
+                newMediaEl.loop = true;
+                newMediaEl.style.maxWidth = '100%';
+                newMediaEl.style.maxHeight = '80vh';
+            } else {
+                newMediaEl = document.createElement('img');
+                newMediaEl.className = "neo-gallery-lightbox-image";
+                newMediaEl.src = newMediaUrl + (newMediaUrl.includes('?') ? '&' : '?') + 'v=' + Date.now();
+            }
 
-                // Handle cached images - onload may not fire if already in cache
-                const showImg = () => {
-                    img.style.opacity = '1';
-                    const infoEl = container.querySelector('.neo-gallery-lightbox-image-info');
-                    if (infoEl) {
-                        infoEl.textContent = `${img.naturalWidth} \u00d7 ${img.naturalHeight}`;
-                    }
-                };
+            // Replace old element
+            imgWrapper.replaceChild(newMediaEl, existingMedia);
 
-                if (img.complete && img.naturalWidth > 0) {
-                    showImg();
+            // Update image info
+            const infoEl = container.querySelector('.neo-gallery-lightbox-image-info');
+            if (infoEl) {
+                if (isVideo) {
+                    newMediaEl.onloadedmetadata = () => {
+                        infoEl.textContent = `${newMediaEl.videoWidth} \u00d7 ${newMediaEl.videoHeight}`;
+                    };
                 } else {
-                    img.onload = showImg;
-                    img.onerror = showImg;
+                    newMediaEl.onload = () => {
+                        infoEl.textContent = `${newMediaEl.naturalWidth} \u00d7 ${newMediaEl.naturalHeight}`;
+                    };
                 }
-            }, 150);
+            }
         }
 
         let promptSection = container.querySelector('#neo-gallery-lightbox-prompt-section');
@@ -1507,6 +1675,16 @@ export class GalleryComponents {
 
             const promptBtnsContainer = $el("div", { className: "neo-gallery-lightbox-prompt-btns" });
             if (sendBtn) promptBtnsContainer.appendChild(sendBtn);
+            if (isVideo) {
+                const vSendBtn = $el("div", {
+                    className: "neo-gallery-lightbox-btn neo-gallery-lightbox-video-send-btn",
+                    onclick: (e) => {
+                        e.stopPropagation();
+                        this.gallery._showVideoSendMenu(this.gallery, image, vSendBtn);
+                    }
+                }, ["\uD83D\uDCE5 Video"]);
+                promptBtnsContainer.appendChild(vSendBtn);
+            }
             promptBtnsContainer.appendChild(copyBtn);
             promptSection.appendChild(promptBtnsContainer);
 

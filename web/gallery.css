@@ -448,6 +448,15 @@
     transition: opacity 0.3s ease, transform 0.3s ease;
 }
 
+/* Lightbox Video */
+.neo-gallery-lightbox-video {
+    max-width: calc(100vw - 500px);
+    max-height: calc(90vh - 60px);
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.1);
+    background-color: #000;
+}
+
 /* Lightbox image info — displayed below the image */
 .neo-gallery-lightbox-image-info {
     display: block;
@@ -923,10 +932,11 @@ Accordion Section Buttons (Clear)
     opacity: 1 !important;
 }
 
-/* Thumbnail action buttons (Send, Copy, Image Send) */
+/* Thumbnail action buttons (Send, Copy, Image Send, Video Send) */
 .neo-gallery-thumb-send-btn,
 .neo-gallery-thumb-img-send-btn,
-.neo-gallery-thumb-copy-btn {
+.neo-gallery-thumb-copy-btn,
+.neo-gallery-thumb-video-send-btn {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -945,7 +955,8 @@ Accordion Section Buttons (Clear)
 
 .neo-gallery-thumb-send-btn:hover,
 .neo-gallery-thumb-img-send-btn:hover,
-.neo-gallery-thumb-copy-btn:hover {
+.neo-gallery-thumb-copy-btn:hover,
+.neo-gallery-thumb-video-send-btn:hover {
     background-color: rgba(0, 0, 0, 0.8);
     transform: scale(1.1);
 }
@@ -953,7 +964,8 @@ Accordion Section Buttons (Clear)
 /* Feedback positioning - fixed to viewport, will be set dynamically by JS */
 .neo-gallery-thumb-send-btn .neo-gallery-feedback,
 .neo-gallery-thumb-img-send-btn .neo-gallery-feedback,
-.neo-gallery-thumb-copy-btn .neo-gallery-feedback {
+.neo-gallery-thumb-copy-btn .neo-gallery-feedback,
+.neo-gallery-thumb-video-send-btn .neo-gallery-feedback {
     position: fixed;
     transform: translate(-50%, -100%);
     margin: 8px;
@@ -1368,4 +1380,13 @@ Accordion Section Buttons (Clear)
     background-color: rgba(0, 150, 255, 0.25);
     color: #8AC4FF;
     border-color: rgba(0, 150, 255, 0.5);
+}
+
+/* 视频发送按钮 */
+.neo-gallery-lightbox-btn.neo-gallery-lightbox-video-send-btn {
+    background-color: rgba(33, 150, 243, 0.9);
+}
+
+.neo-gallery-lightbox-btn.neo-gallery-lightbox-video-send-btn:hover {
+    background-color: rgba(33, 150, 243, 1);
 }

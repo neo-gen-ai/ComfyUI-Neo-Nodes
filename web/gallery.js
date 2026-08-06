@@ -419,13 +419,13 @@ class NeoGallery {
             }
             
             for (let i = 0; i < Math.min(20, images.length); i++) {
-                // Add subfolder to item so it's available when sending
-                const itemWithSubfolder = {...images[i], subfolder: currentSubfolder};
-                const imgEl = this.components.createImageElement(this, itemWithSubfolder, currentSubfolder);
+                // Use item's own subfolder if available (from backend), otherwise use current directory path
+                const itemSubfolder = images[i].subfolder || currentSubfolder;
+                const itemWithSubfolder = {...images[i], subfolder: itemSubfolder};
+                const imgEl = this.components.createImageElement(this, itemWithSubfolder, itemSubfolder);
                 imageGrid.appendChild(imgEl);
             }
             this.accordion.appendChild(imageGrid);
-            
             if (image_count > 20) {
                 const loadMoreBtn = $el("div", {
                     className: "neo-gallery-load-more-btn",
@@ -805,6 +805,71 @@ class NeoGallery {
         showToast(this.app, 'success', 'Image Sent!', `Sent to ${targetNode.title || 'Node'} - ${targetWidget.name}`);
     }
 
+    // ====== Video Send ======
+
+    async sendVideoToNode(image, target, button) {
+        const selectedValue = target === 'selected' ? 'selected' : target;
+        let targetNode = null;
+        let targetWidget = null;
+        if (selectedValue === 'selected') {
+            const selKeys = Object.keys(app.canvas.selected_nodes);
+            if (selKeys.length > 0) {
+                targetNode = app.canvas.selected_nodes[selKeys[0]];
+                targetWidget = targetNode?.widgets?.find(w => /video/.test((w.name||'').toLowerCase()));
+            }
+        } else {
+            const [nodeId, , index] = selectedValue.split(':');
+            targetNode = app.graph.getNodeById(parseInt(nodeId));
+            targetWidget = targetNode?.widgets?.[parseInt(index)];
+        }
+        if (!targetNode || !targetWidget) {
+            showToast(this.app, 'error', 'Send Failed', 'Could not find target node/widget.');
+            return;
+        }
+        const widgetType = targetWidget.type || '';
+        
+        if (widgetType === 'combo') {
+            try {
+                const resp = await api.fetchApi('/neo_gallery/copy_to_input?filename=' + encodeURIComponent(image.filename) + (image.subfolder ? '&subfolder=' + encodeURIComponent(image.subfolder) : ''));
+                if (resp.ok) {
+                    const result = await resp.json();
+                    if (result.success) {
+                        targetWidget.value = result.skipped ? image.filename : result.filename;
+                    } else {
+                        showToast(this.app, 'error', 'Copy Failed', result.error || 'Failed to copy video to input directory');
+                        return;
+                    }
+                } else {
+                    showToast(this.app, 'error', 'Copy Failed', 'Failed to copy video');
+                    return;
+                }
+            } catch (e) {
+                console.error('[Gallery] Error copying video:', e);
+                showToast(this.app, 'error', 'Copy Failed', 'Error copying video');
+                return;
+            }
+        } else {
+            const filePath = `${image.subfolder || ''}/${image.filename}`;
+            if (widgetType === 'customtext' || widgetType === 'text') {
+                targetWidget.value = filePath;
+            } else {
+                targetWidget.value = {
+                    filename: image.filename,
+                    subfolder: image.subfolder || '',
+                    type: image.type || 'input'
+                };
+            }
+        }
+        if (widgetType === 'combo' && targetWidget.callback) {
+            targetWidget.callback(targetWidget.value);
+        } else if (targetNode.onWidgetChanged) {
+            targetNode.onWidgetChanged(targetWidget.name, targetWidget.value);
+        }
+        app.graph.setDirtyCanvas(true, true);
+        showInlineFeedback(button, '\u2705 Video Sent!', 'success');
+        showToast(this.app, 'success', 'Video Sent!', `Sent to ${targetNode.title || 'Node'} - ${targetWidget.name}`);
+    }
+
     // ====== Lightbox (delegated to components) ======
 
     injectAnimations() {}
@@ -859,6 +924,10 @@ class NeoGallery {
 
     _showSendMenu(image, button) {
         this.components._showSendMenu(this, image, button);
+    }
+
+    _showVideoSendMenu(image, button) {
+        this.components._showVideoSendMenu(this, image, button);
     }
 
     // ====== Main init ======
