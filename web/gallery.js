@@ -292,9 +292,11 @@ class NeoGallery {
             
             this.renderDirectoryStructure(structure, dirName, pathSegments);
             
-            // Push state to history for back button support
+            // Push state to history for back button support (use query param to avoid conflict with workflow hash)
             const stateKey = `gallery_${dirName}_${pathSegments.join('/')}`;
-            history.pushState({ galleryState: stateKey }, '', `#${stateKey}`);
+            const currentUrl = new URL(window.location.href);
+            currentUrl.searchParams.set('gallery', stateKey);
+            history.pushState({ galleryState: stateKey }, '', currentUrl.toString());
 
         } catch (error) {
             console.error('[Gallery] Error loading directory structure:', error);
@@ -449,10 +451,10 @@ class NeoGallery {
             breadcrumb.style.display = 'none';
         }
 
-        // Remove hash from URL when going back to categories
-        if (window.location.hash) {
-            history.replaceState(null, '', window.location.pathname);
-        }
+        // Remove gallery query param when going back to categories
+        const currentUrl = new URL(window.location.href);
+        currentUrl.searchParams.delete('gallery');
+        history.replaceState(null, '', currentUrl.toString());
 
         await this.sortAndDisplayImages();
     }
@@ -803,6 +805,24 @@ class NeoGallery {
 
     async init() {
         await this.loadPluginData();
+        
+        // Restore gallery state from URL query param on page load
+        const params = new URLSearchParams(window.location.search);
+        const galleryParam = params.get('gallery');
+        if (galleryParam) {
+            const match = galleryParam.match(/^gallery_(.+?)_(.*)$/);
+            if (match) {
+                const dirName = match[1];
+                const pathStr = match[2];
+                const pathSegments = pathStr ? pathStr.split('/') : [];
+                this.currentView.mode = 'directory';
+                this.currentView.source = dirName;
+                this.currentView.categoryPath = pathSegments;
+                // Load the directory structure
+                await this.showDirectoryStructure(dirName, pathSegments);
+                return; // skip normal init
+            }
+        }
 
         // Intercept browser back button when gallery is visible
         window.addEventListener('popstate', (e) => {

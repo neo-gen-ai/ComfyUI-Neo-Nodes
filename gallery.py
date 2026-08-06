@@ -51,7 +51,7 @@ def _get_presets_dir():
 
 
 def _ensure_dirs() -> None:
-    for d in (GALLERY_DIR, PRESETS_DIR, CUSTOM_DIR):
+    for d in (GALLERY_DIR, PRESETS_DIR, CUSTOM_DIR, THUMBNAIL_DIR):
         d.mkdir(parents=True, exist_ok=True)
 
 
@@ -1158,3 +1158,6 @@ async def clear_thumbnails(request):
         return web.json_response({"success": True, "cleared": count})
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
+
+# Ensure gallery directories exist on module load
+_ensure_dirs()
