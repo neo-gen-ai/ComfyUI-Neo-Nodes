@@ -32,6 +32,8 @@ class NeoGallery {
         this.sortAscending = true;
         this._renderQueue = [];
         this._renderedCount = 0;
+        this.isFocused = false;
+        this.isVisible = false;
         
         // UI components
         this.components = new GalleryComponents(this);
@@ -289,6 +291,11 @@ class NeoGallery {
             this.components.updateBreadcrumb(this, pathSegments, '');
             
             this.renderDirectoryStructure(structure, dirName, pathSegments);
+            
+            // Push state to history for back button support
+            const stateKey = `gallery_${dirName}_${pathSegments.join('/')}`;
+            history.pushState({ galleryState: stateKey }, '', `#${stateKey}`);
+
         } catch (error) {
             console.error('[Gallery] Error loading directory structure:', error);
             showToast(this.app, 'error', 'Error', 'Failed to load directory structure');
@@ -440,6 +447,11 @@ class NeoGallery {
         const breadcrumb = document.getElementById("neo-gallery-breadcrumb");
         if (breadcrumb) {
             breadcrumb.style.display = 'none';
+        }
+
+        // Remove hash from URL when going back to categories
+        if (window.location.hash) {
+            history.replaceState(null, '', window.location.pathname);
         }
 
         await this.sortAndDisplayImages();
@@ -791,6 +803,44 @@ class NeoGallery {
 
     async init() {
         await this.loadPluginData();
+
+        // Intercept browser back button when gallery is visible
+        window.addEventListener('popstate', (e) => {
+            if (!this.isVisible) return;
+            if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') return;
+            if (this.currentView.mode === 'directory' && this.currentView.categoryPath.length > 0) {
+                const parentPath = this.currentView.categoryPath.slice(0, -1);
+                this.showDirectoryStructure(this.currentView.source, parentPath);
+            } else {
+                this.showCategoryCards();
+            }
+        });
+
+        // Intercept keyboard back navigation (Alt+Left, Backspace) - use capture to beat ComfyUI
+        window.addEventListener('keydown', (e) => {
+            if (!this.isVisible) return;
+            if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') return;
+            
+            if ((e.altKey && e.key === 'ArrowLeft') || (e.ctrlKey && e.key === 'ArrowLeft')) {
+                e.preventDefault();
+                e.stopPropagation();
+                if (this.currentView.mode === 'directory' && this.currentView.categoryPath.length > 0) {
+                    const parentPath = this.currentView.categoryPath.slice(0, -1);
+                    this.showDirectoryStructure(this.currentView.source, parentPath);
+                } else {
+                    this.showCategoryCards();
+                }
+            } else if (e.key === 'Backspace') {
+                e.preventDefault();
+                e.stopPropagation();
+                if (this.currentView.mode === 'directory' && this.currentView.categoryPath.length > 0) {
+                    const parentPath = this.currentView.categoryPath.slice(0, -1);
+                    this.showDirectoryStructure(this.currentView.source, parentPath);
+                } else {
+                    this.showCategoryCards();
+                }
+            }
+        }, true);
     }
 
     async loadAndDisplay() {
@@ -850,6 +900,8 @@ app.registerExtension({
                     gallery.accordion.innerHTML = "";
                     await gallery.sortAndDisplayImages();
                 }
+                gallery.isVisible = true;
+
             },
             });
         }
