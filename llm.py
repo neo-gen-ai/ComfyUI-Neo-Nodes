@@ -8,10 +8,11 @@ import os
 import re
 import json
 import logging
+import asyncio
 import base64
 import io
 import hashlib
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Generator
 from pathlib import Path
 import folder_paths
 from collections import OrderedDict
@@ -840,8 +841,8 @@ class LLMSingleton:
         self.has_mmproj = mmproj_path is not None
         logger.info(f"LLM model loaded successfully, has_mmproj={self.has_mmproj}")
 
-    def create_chat_completion(self, messages, max_tokens, image_bytes_list=None):
-        """创建聊天补全请求，支持图像输入"""
+    def create_chat_completion(self, messages, max_tokens, image_bytes_list=None, stream=False):
+        """创建聊天补全请求，支持图像输入和流式输出"""
         if self.model is None:
             raise RuntimeError("LLM Model not loaded")
 
@@ -868,6 +869,7 @@ class LLMSingleton:
         return self.model.create_chat_completion(
             messages=messages,
             max_tokens=max_tokens,
+            stream=stream,
         )
 
 
@@ -881,7 +883,8 @@ def get_llm_instance():
 # ==========================================
 
 def _run_llm_inference(system_prompt: str, user_text: str, max_tokens: int,
-                       images: Optional[Any] = None, use_remote: bool = False) -> Optional[str]:
+                       images: Optional[Any] = None, use_remote: bool = False,
+                       stream: bool = False):
     """
     执行 LLM 推理，支持本地和远程模式
 
@@ -891,18 +894,19 @@ def _run_llm_inference(system_prompt: str, user_text: str, max_tokens: int,
         max_tokens: 最大 token 数
         images: PIL Image 对象列表或字节数据列表（仅本地模式支持）
         use_remote: 是否使用远程 API
+        stream: 是否流式输出
 
     Returns:
-        LLM 响应文本
+        非流式：LLM 响应文本；流式：返回生成器
     """
     if use_remote:
-        return _run_remote_inference(system_prompt, user_text, max_tokens, images)
+        return _run_remote_inference(system_prompt, user_text, max_tokens, images, stream=stream)
     else:
-        return _run_local_inference(system_prompt, user_text, max_tokens, images)
+        return _run_local_inference(system_prompt, user_text, max_tokens, images, stream=stream)
 
 
 def _run_local_inference(system_prompt: str, user_text: str, max_tokens: int,
-                         images: Optional[Any] = None) -> Optional[str]:
+                         images: Optional[Any] = None, stream: bool = False):
     """执行本地 LLM 推理"""
     llm = get_llm_instance()
     messages = [
@@ -928,7 +932,11 @@ def _run_local_inference(system_prompt: str, user_text: str, max_tokens: int,
             messages=messages,
             max_tokens=max_tokens,
             image_bytes_list=image_bytes_list,
+            stream=stream,
         )
+
+        if stream:
+            return output  # 返回生成器
 
         if not isinstance(output, dict):
             logger.warning(f"LLM returned non-dict output: {type(output)}")
@@ -953,7 +961,7 @@ def _run_local_inference(system_prompt: str, user_text: str, max_tokens: int,
 
 
 def _run_remote_inference(system_prompt: str, user_text: str, max_tokens: int,
-                          images: Optional[Any] = None) -> Optional[str]:
+                          images: Optional[Any] = None, stream: bool = False):
     """执行远程 LLM 推理"""
     config = _load_remote_config()
 
@@ -988,8 +996,12 @@ def _run_remote_inference(system_prompt: str, user_text: str, max_tokens: int,
         response = client.chat_completion(
             messages=messages,
             max_tokens=max_tokens,
-            image_bytes_list=image_bytes_list
+            image_bytes_list=image_bytes_list,
+            stream=stream,
         )
+
+        if stream:
+            return response  # 返回生成器
 
         logger.info(f"Remote LLM response received")
         choices = response.get("choices", [])
@@ -1182,6 +1194,65 @@ def run_llm_task(task_name: str, text: str, extra_system_prompt: Optional[str] =
     return {"status": "success", result_key: result}
 
 
+def run_llm_task_stream(task_name: str, text: str, extra_system_prompt: Optional[str] = None,
+                        images: Optional[Any] = None) -> Generator[str, None, None]:
+    """
+    流式执行 LLM 任务，返回生成器
+
+    Args:
+        task_name: 任务名称，必须在 LLM_TASKS 中定义
+        text: 输入文本
+        extra_system_prompt: 额外的系统提示词（可选）
+        images: 图像数据列表（可选，用于多模态任务）
+
+    Yields:
+        str: 生成的文本块
+    """
+    if task_name not in LLM_TASKS:
+        yield f"[ERROR] Invalid task: {task_name}"
+        return
+
+    task_config = LLM_TASKS[task_name]
+    system_prompt = task_config["system"]
+    max_tokens = task_config["max_tokens"]
+
+    use_remote = get_current_mode() == LLM_MODE_REMOTE
+
+    if task_name == "translate_prompt":
+        source_lang = _detect_language(text)
+        if source_lang == 'Chinese':
+            target_lang = 'English'
+        else:
+            target_lang = 'Chinese'
+        system_prompt += f"\nTranslation Direction: {source_lang} to {target_lang}"
+
+    if extra_system_prompt:
+        system_prompt = system_prompt + extra_system_prompt
+
+    try:
+        result_gen = _run_llm_inference(system_prompt, text, max_tokens, images=images,
+                                        use_remote=use_remote, stream=True)
+        if hasattr(result_gen, '__iter__') and not isinstance(result_gen, str):
+            for chunk in result_gen:
+                # 提取 chunk 中的文本内容并逐字 yield
+                if isinstance(chunk, dict):
+                    choices = chunk.get("choices", [])
+                    if choices and len(choices) > 0:
+                        delta = choices[0].get("delta", {})
+                        content = delta.get("content", "")
+                        # 逐字 yield，实现打字效果
+                        for char in content:
+                            yield char
+                elif isinstance(chunk, str):
+                    for char in chunk:
+                        yield char
+        else:
+            yield result_gen or ""
+    except Exception as e:
+        logger.error(f"Failed to execute stream task {task_name}: {e}")
+        yield f"[ERROR] {str(e)}"
+
+
 # ==========================================
 # API Handler Functions
 # ==========================================
@@ -1238,13 +1309,66 @@ async def handle_llm_api_request(task_name, request):
         return web.json_response({"error": str(e)}, status=500)
 
 
+async def handle_llm_api_stream(task_name, request):
+    """
+    处理流式 LLM API 请求（SSE）
+
+    Args:
+        task_name: 任务名称
+        request: 请求对象
+
+    Returns:
+        web.Response: SSE 流式响应
+    """
+    from aiohttp import web
+
+    if task_name not in LLM_TASKS:
+        return web.Response(text="data: [ERROR] Invalid task\n\n", content_type="text/event-stream")
+
+    try:
+        data = await request.json()
+        text = data.get("text", "")
+
+        logger.info(f"LLM API stream request: task={task_name}, text='{text[:100]}...'")
+
+        if not text or not text.strip():
+            return web.Response(text="data: [ERROR] text content is empty\n\n", content_type="text/event-stream")
+
+        async def event_stream():
+            try:
+                import asyncio
+                for chunk in run_llm_task_stream(task_name, text):
+                    yield (f"data: {chunk}\n\n").encode()
+                    await asyncio.sleep(0.01)  # 10ms 延迟，让浏览器逐字显示
+                yield b"data: [DONE]\n\n"
+            except Exception as e:
+                logger.error(f"Stream error for task {task_name}: {e}")
+                yield (f"data: [ERROR] {str(e)}\n\n").encode()
+                yield b"data: [DONE]\n\n"
+
+        return web.Response(
+            body=event_stream(),
+            content_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+        )
+    except Exception as e:
+        logger.error(f"Error handling stream LLM task {task_name}: {e}")
+        logger.exception(e)
+        return web.Response(
+            text=f"data: [ERROR] {str(e)}\n\ndata: [DONE]\n\n",
+            content_type="text/event-stream"
+        )
+
+
 # ==========================================
 # Module Exports
 # ==========================================
 
 __all__ = [
     "handle_llm_api_request",
+    "handle_llm_api_stream",
     "run_llm_task",
+    "run_llm_task_stream",
     "get_remote_llm_config",
     "set_remote_llm_config",
     "get_current_mode",

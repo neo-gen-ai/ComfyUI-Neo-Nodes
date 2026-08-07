@@ -12,9 +12,6 @@ import {
     getAvailableModels, checkAllModels, checkModel, setCurrentModel
 } from "./prompt-service.js";
 
-// 导入 promptService（从 prompt-service.js）
-import promptService from "./prompt-service.js";
-
 // 导入 NodeBehaviors
 import NodeBehaviors from "./node-behavior.js";
 
@@ -260,17 +257,17 @@ app.registerExtension({
                 customTextarea, textWidget, node, graph: node.graph, downloadModal, statusBar: null 
             };
             
-            enhanceBtn.addEventListener("click", NodeBehaviors.createEnhanceHandler(promptUIRef, promptService));
-            translateBtn.addEventListener("click", NodeBehaviors.createTranslateHandler(promptUIRef, promptService));
+            enhanceBtn.addEventListener("click", NodeBehaviors.createEnhanceHandler(promptUIRef));
+            translateBtn.addEventListener("click", NodeBehaviors.createTranslateHandler(promptUIRef));
             
             const handleGeneratePrompt = NodeBehaviors.createGenerateHandler(
-                { ...promptUIRef, quickInput }, promptService);
+                { ...promptUIRef, quickInput });
             generateBtn.addEventListener("click", handleGeneratePrompt);
             quickInput.addEventListener("keydown", (e) => {
                 if (e.key === "Enter") { e.preventDefault(); handleGeneratePrompt(); }
             });
 
-            randomBtn.addEventListener("click", NodeBehaviors.createRandomHandler(promptUIRef, promptService));
+            randomBtn.addEventListener("click", NodeBehaviors.createRandomHandler(promptUIRef));
 
             // ==========================================
             // Use shared event listeners
@@ -652,17 +649,17 @@ app.registerExtension({
                 customTextarea, textWidget, node, graph: node.graph, downloadModal, statusBar
             };
 
-            enhanceBtn.addEventListener("click", NodeBehaviors.createEnhanceHandler(promptUIRef, promptService));
-            translateBtn.addEventListener("click", NodeBehaviors.createTranslateHandler(promptUIRef, promptService));
+            enhanceBtn.addEventListener("click", NodeBehaviors.createEnhanceHandler(promptUIRef));
+            translateBtn.addEventListener("click", NodeBehaviors.createTranslateHandler(promptUIRef));
 
             const handleGeneratePrompt = NodeBehaviors.createGenerateHandler(
-                { ...promptUIRef, quickInput }, promptService);
+                { ...promptUIRef, quickInput });
             generateBtn.addEventListener("click", handleGeneratePrompt);
             quickInput.addEventListener("keydown", (e) => {
                 if (e.key === "Enter") { e.preventDefault(); handleGeneratePrompt(); }
             });
 
-            randomBtn.addEventListener("click", NodeBehaviors.createRandomHandler(promptUIRef, promptService));
+            randomBtn.addEventListener("click", NodeBehaviors.createRandomHandler(promptUIRef));
 
             // ==========================================
             // Use shared event listeners

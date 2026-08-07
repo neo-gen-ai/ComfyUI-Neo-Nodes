@@ -3,7 +3,7 @@
  * 共享的节点行为逻辑 - 消除 NeoPromptSimple 和 NeoPrompts 之间的代码重复
  */
 
-import { checkModelAndPrompt } from "./prompt-service.js";
+import { checkModelAndPrompt, enhancePromptStream, translatePromptStream, smartPromptStream, randomPrompt } from "./prompt-service.js";
 
 // ==========================================
 // 工具函数
@@ -105,7 +105,7 @@ function createBasicNodeInitializer(node) {
 /**
  * 创建增强提示词的处理函数
  */
-function createEnhanceHandler(promptUI, promptService) {
+function createEnhanceHandler(promptUI) {
     return async () => {
         const { enhanceBtn, customTextarea, textWidget, node, graph, downloadModal, statusBar } = promptUI;
         
@@ -120,23 +120,44 @@ function createEnhanceHandler(promptUI, promptService) {
 
         enhanceBtn.disabled = true;
         enhanceBtn.textContent = "⏳ Enhancing...";
+        customTextarea.classList.add("rs-textarea-streaming");
 
+        let rafId = null;
         try {
-            const data = await promptService.enhance(currentText);
-            if (data.status === "success") {
-                setTextAndTrigger(customTextarea, data.enhanced);
-                saveTextToStorage(node, textWidget, customTextarea);
-                if (graph) graph.setDirtyCanvas(true, true);
-            } else {
-                console.error("Enhance failed:", data);
-                alert("Failed to enhance prompt: " + (data.error || "Unknown error"));
-            }
+            let accumulated = "";
+            await enhancePromptStream(currentText, {
+                onChunk: (chunk) => {
+                    if (chunk.text) {
+                        accumulated += chunk.text;
+                        if (!rafId) {
+                            rafId = requestAnimationFrame(() => {
+                                customTextarea.value = accumulated;
+                                customTextarea.scrollTop = customTextarea.scrollHeight;
+                                rafId = null;
+                            });
+                        }
+                    }
+                },
+                onDone: () => {
+                    if (rafId) cancelAnimationFrame(rafId);
+                    if (textWidget) textWidget.value = accumulated;
+                    saveTextToStorage(node, textWidget, customTextarea);
+                    customTextarea.classList.remove("rs-textarea-streaming");
+                },
+                onError: (err) => {
+                    console.error("Enhance stream error:", err);
+                    alert("Failed to enhance prompt: " + err);
+                    customTextarea.classList.remove("rs-textarea-streaming");
+                }
+            });
         } catch (e) {
             console.error("Network Error:", e);
             alert("Network error during enhancement.");
+            customTextarea.classList.remove("rs-textarea-streaming");
         } finally {
             enhanceBtn.disabled = false;
             enhanceBtn.textContent = "✨ Enhance";
+            customTextarea.classList.remove("rs-textarea-streaming");
         }
     };
 }
@@ -144,7 +165,7 @@ function createEnhanceHandler(promptUI, promptService) {
 /**
  * 创建翻译提示词的处理函数
  */
-function createTranslateHandler(promptUI, promptService) {
+function createTranslateHandler(promptUI) {
     return async () => {
         const { translateBtn, customTextarea, textWidget, node, graph, downloadModal, statusBar } = promptUI;
         
@@ -159,23 +180,44 @@ function createTranslateHandler(promptUI, promptService) {
 
         translateBtn.disabled = true;
         translateBtn.textContent = "⏳ Translating...";
+        customTextarea.classList.add("rs-textarea-streaming");
 
+        let rafId = null;
         try {
-            const data = await promptService.translate(currentText);
-            if (data.status === "success") {
-                setTextAndTrigger(customTextarea, data.translated);
-                saveTextToStorage(node, textWidget, customTextarea);
-                if (graph) graph.setDirtyCanvas(true, true);
-            } else {
-                console.error("Translate failed:", data);
-                alert("Failed to translate prompt: " + (data.error || "Unknown error"));
-            }
+            let accumulated = "";
+            await translatePromptStream(currentText, {
+                onChunk: (chunk) => {
+                    if (chunk.text) {
+                        accumulated += chunk.text;
+                        if (!rafId) {
+                            rafId = requestAnimationFrame(() => {
+                                customTextarea.value = accumulated;
+                                customTextarea.scrollTop = customTextarea.scrollHeight;
+                                rafId = null;
+                            });
+                        }
+                    }
+                },
+                onDone: () => {
+                    if (rafId) cancelAnimationFrame(rafId);
+                    if (textWidget) textWidget.value = accumulated;
+                    saveTextToStorage(node, textWidget, customTextarea);
+                    customTextarea.classList.remove("rs-textarea-streaming");
+                },
+                onError: (err) => {
+                    console.error("Translate stream error:", err);
+                    alert("Failed to translate prompt: " + err);
+                    customTextarea.classList.remove("rs-textarea-streaming");
+                }
+            });
         } catch (e) {
             console.error("Network Error:", e);
             alert("Network error during translation.");
+            customTextarea.classList.remove("rs-textarea-streaming");
         } finally {
             translateBtn.disabled = false;
             translateBtn.textContent = "🌐 Translate";
+            customTextarea.classList.remove("rs-textarea-streaming");
         }
     };
 }
@@ -183,7 +225,7 @@ function createTranslateHandler(promptUI, promptService) {
 /**
  * 创建生成提示词的处理函数 - 使用 LLM 智能判断
  */
-function createGenerateHandler(promptUI, promptService) {
+function createGenerateHandler(promptUI) {
     return async () => {
         const { generateBtn, quickInput, customTextarea, textWidget, node, graph, downloadModal, statusBar } = promptUI;
         
@@ -202,19 +244,34 @@ function createGenerateHandler(promptUI, promptService) {
         generateBtn.disabled = true;
         generateBtn.textContent = "⏳";
 
+        let rafId = null;
         try {
-            // 使用 LLM 智能判断：LLM 直接判断用户意图并生成/改写
+            // 使用 LLM 智能判断（流式）：LLM 直接判断用户意图并生成/改写
             generateBtn.textContent = "🤖 Processing...";
-            const data = await promptService.smart(currentPrompt, quickText);
-            
-            if (data.status === "success") {
-                setTextAndTrigger(customTextarea, data.prompt);
-                saveTextToStorage(node, textWidget, customTextarea);
-                if (graph) graph.setDirtyCanvas(true, true);
-            } else {
-                console.error("Smart prompt failed:", data);
-                alert("Failed to process prompt: " + (data.error || "Unknown error"));
-            }
+            let accumulated = "";
+            await smartPromptStream(currentPrompt, quickText, {
+                onChunk: (chunk) => {
+                    if (chunk.text) {
+                        accumulated += chunk.text;
+                        if (!rafId) {
+                            rafId = requestAnimationFrame(() => {
+                                customTextarea.value = accumulated;
+                                customTextarea.scrollTop = customTextarea.scrollHeight;
+                                rafId = null;
+                            });
+                        }
+                    }
+                },
+                onDone: () => {
+                    if (rafId) cancelAnimationFrame(rafId);
+                    if (textWidget) textWidget.value = accumulated;
+                    saveTextToStorage(node, textWidget, customTextarea);
+                },
+                onError: (err) => {
+                    console.error("Smart prompt stream error:", err);
+                    alert("Failed to process prompt: " + err);
+                }
+            });
         } catch (e) {
             console.error("Network Error:", e);
             alert("Network error during processing.");
@@ -228,7 +285,7 @@ function createGenerateHandler(promptUI, promptService) {
 /**
  * 创建随机生成提示词的处理函数（纯本地操作，不需要大模型）
  */
-function createRandomHandler(promptUI, promptService) {
+function createRandomHandler(promptUI) {
     return async () => {
         const { randomBtn, customTextarea, textWidget, node, graph } = promptUI;
 
@@ -236,7 +293,7 @@ function createRandomHandler(promptUI, promptService) {
         randomBtn.textContent = "⏳";
 
         try {
-            const data = await promptService.random();
+            const data = await randomPrompt();
             if (data.status === "success") {
                 setTextAndTrigger(customTextarea, data.prompt);
                 saveTextToStorage(node, textWidget, customTextarea);

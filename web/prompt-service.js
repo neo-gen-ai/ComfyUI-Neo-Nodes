@@ -408,7 +408,7 @@ function monitorDownloadProgress(downloadModal = null, statusBar = null) {
 // ==========================================
 
 /**
- * 增强提示词
+ * 增强提示词（非流式）
  * @param {string} text - 原始提示词
  * @returns {Promise<{status: string, enhanced: string, error?: string}>}
  */
@@ -422,7 +422,60 @@ async function enhancePrompt(text) {
 }
 
 /**
- * 翻译提示词
+ * 通用 SSE 流式请求
+ * @param {string} url - 请求 URL
+ * @param {Object} options - 回调选项
+ * @param {Function} options.onChunk - 收到数据块时回调
+ * @param {Function} options.onDone - 完成时回调
+ * @param {Function} options.onError - 错误时回调
+ * @param {Object} body - 请求体（可选）
+ * @returns {Promise<void>}
+ */
+async function sseStream(url, options = {}, body = null) {
+    const { onChunk, onDone, onError } = options;
+    try {
+        const resp = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: body ? JSON.stringify(body) : undefined
+        });
+        if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            onError?.(err.error || "Request failed");
+            return;
+        }
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n");
+            buffer = lines.pop() || "";
+            for (const line of lines) {
+                if (!line.startsWith("data: ")) continue;
+                const data = line.slice(6);
+                if (data === "[DONE]") {
+                    onDone?.();
+                    return;
+                }
+                try {
+                    const parsed = JSON.parse(data);
+                    onChunk?.(parsed);
+                } catch {
+                    onChunk?.({ text: data });
+                }
+            }
+        }
+        onDone?.();
+    } catch (e) {
+        onError?.(e.message);
+    }
+}
+
+/**
+ * 翻译提示词（非流式）
  * @param {string} text - 原始提示词
  * @returns {Promise<{status: string, translated: string, error?: string}>}
  */
@@ -433,6 +486,20 @@ async function translatePrompt(text) {
         body: JSON.stringify({ text })
     });
     return await res.json();
+}
+
+/**
+ * 增强提示词（流式）
+ */
+async function enhancePromptStream(text, options = {}) {
+    return sseStream("/rs_prompts/stream_enhance_prompt", options, { text });
+}
+
+/**
+ * 翻译提示词（流式）
+ */
+async function translatePromptStream(text, options = {}) {
+    return sseStream("/rs_prompts/stream_translate_prompt", options, { text });
 }
 
 /**
@@ -490,7 +557,7 @@ async function deletePrompt(name) {
 }
 
 /**
- * 提取标题
+ * 提取标题（非流式）
  * @param {string} text - 提示词内容
  * @returns {Promise<{status: string, title: string, error?: string}>}
  */
@@ -504,7 +571,7 @@ async function extractTitle(text) {
 }
 
 /**
- * 提取分类
+ * 提取分类（非流式）
  * @param {string} text - 提示词内容
  * @returns {Promise<{status: string, classify: string, error?: string}>}
  */
@@ -518,7 +585,7 @@ async function extractClassify(text) {
 }
 
 /**
- * 智能提示词 - LLM 直接判断用户意图并生成/改写
+ * 智能提示词 - LLM 直接判断用户意图并生成/改写（非流式）
  * @param {string} text - 原始提示词（可选，为空则从头生成）
  * @param {string} description - 用户描述
  * @returns {Promise<{status: string, prompt: string, error?: string}>}
@@ -530,6 +597,13 @@ async function smartPrompt(text, description) {
         body: JSON.stringify({ text: text || "", description })
     });
     return await res.json();
+}
+
+/**
+ * 智能提示词 - 流式
+ */
+async function smartPromptStream(text, description, options = {}) {
+    return sseStream("/rs_prompts/stream_smart_prompt", options, { text: text || "", description });
 }
 
 /**
@@ -618,24 +692,45 @@ async function setCurrentModel(modelKey) {
 function createPromptService() {
     return {
         /**
-         * 增强提示词
+         * 增强提示词（非流式）
          */
         async enhance(text) {
             return await enhancePrompt(text);
         },
-        
+
         /**
-         * 翻译提示词
+         * 增强提示词（流式）
+         */
+        async enhanceStream(text, options) {
+            return await enhancePromptStream(text, options);
+        },
+
+        /**
+         * 翻译提示词（非流式）
          */
         async translate(text) {
             return await translatePrompt(text);
         },
-        
+
         /**
-         * 智能提示词 - LLM 直接判断用户意图并生成/改写
+         * 翻译提示词（流式）
+         */
+        async translateStream(text, options) {
+            return await translatePromptStream(text, options);
+        },
+
+        /**
+         * 智能提示词 - LLM 直接判断用户意图并生成/改写（非流式）
          */
         async smart(text, description) {
             return await smartPrompt(text, description);
+        },
+
+        /**
+         * 智能提示词 - 流式
+         */
+        async smartStream(text, description, options) {
+            return await smartPromptStream(text, description, options);
         },
 
         /**
@@ -663,7 +758,9 @@ export {
     showDownloadModal,
     monitorDownloadProgress,
     enhancePrompt,
+    enhancePromptStream,
     translatePrompt,
+    translatePromptStream,
     savePrompt,
     loadPrompt,
     listPrompts,
@@ -671,6 +768,8 @@ export {
     extractTitle,
     extractClassify,
     randomPrompt,
+    smartPrompt,
+    smartPromptStream,
     getAvailableModels,
     setCurrentModel,
     createPromptService,

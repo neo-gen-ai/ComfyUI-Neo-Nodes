@@ -37,6 +37,7 @@ _tags_lock = threading.Lock()
 # 从 llm 模块导入 LLM 相关功能
 from .llm import (
     handle_llm_api_request,
+    handle_llm_api_stream,
     check_model_status,
     check_all_models_status,
     start_download,
@@ -607,6 +608,17 @@ async def rs_prompts_reverse_prompt(request):
         logger.error(f"Error handling reverse prompt: {e}")
         logger.exception(e)
         return web.json_response({"error": str(e)}, status=500)
+
+
+# ==========================================
+# Stream LLM API Routes (SSE)
+# ==========================================
+
+@server.PromptServer.instance.routes.post("/rs_prompts/stream_{task_name}")
+async def rs_prompts_stream_llm_api_request(request):
+    """流式 LLM API 请求（SSE）"""
+    task_name = request.match_info["task_name"]
+    return await handle_llm_api_stream(task_name, request)
 
 
 @server.PromptServer.instance.routes.post("/rs_prompts/random_prompt")
