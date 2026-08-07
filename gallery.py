@@ -576,6 +576,14 @@ async def copy_to_input(request):
                     source_path = candidate
                     break
 
+        # Fallback: try subfolder as relative path under any custom dir
+        if not source_path and subfolder:
+            for dir_path in user_custom_dirs:
+                candidate = dir_path / subfolder / filename
+                if candidate.exists():
+                    source_path = candidate
+                    break
+
         if not source_path:
             candidate = PRESETS_DIR / filename
             if candidate.exists():
@@ -593,6 +601,34 @@ async def copy_to_input(request):
         resolved_source = source_path.resolve()
         if resolved_source.parent == input_dir:
             return web.json_response({"success": True, "filename": filename, "skipped": True})
+
+        # Content dedup: check if input dir already has same content
+        import hashlib
+        source_size = source_path.stat().st_size
+        source_hash = hashlib.md5()
+        with open(source_path, "rb") as f:
+            for chunk in iter(lambda: f.read(8192), b""):
+                source_hash.update(chunk)
+        source_md5 = source_hash.hexdigest()
+
+        found_existing = None
+        for f in input_dir.iterdir():
+            if not f.is_file():
+                continue
+            if f.suffix.lower() not in IMG_EXTENSIONS and f.suffix.lower() not in VIDEO_EXTENSIONS:
+                continue
+            if f.stat().st_size != source_size:
+                continue
+            h = hashlib.md5()
+            with open(f, "rb") as fh:
+                for chunk in iter(lambda: fh.read(8192), b""):
+                    h.update(chunk)
+            if h.hexdigest() == source_md5:
+                found_existing = f
+                break
+
+        if found_existing:
+            return web.json_response({"success": True, "filename": found_existing.name, "skipped": True})
 
         dest_path = input_dir / filename
         if dest_path.exists():
@@ -1312,30 +1348,6 @@ async def view_image(request):
             headers={"Content-Disposition": f'inline; filename="{fullpath.name}"'},
         )
     return web.Response(status=404)
-
-
-@PromptServer.instance.routes.post("/neo_gallery/upload")
-async def upload_image(request):
-    """Upload custom gallery images to gallery/custom/."""
-    try:
-        post = await request.post()
-        image = post.get("image")
-        if not image or not image.file:
-            return web.json_response({"error": "No image file provided"}, status=400)
-
-        filename = image.filename or "upload.jpg"
-        filename = os.path.basename(filename)
-        if ".." in filename or "/" in filename:
-            return web.json_response({"error": "Invalid filename"}, status=400)
-
-        dest = CUSTOM_DIR / filename
-        with open(dest, "wb") as f:
-            import shutil
-            shutil.copyfileobj(image.file, f)
-
-        return web.json_response({"name": filename, "success": True})
-    except Exception as e:
-        return web.json_response({"error": str(e)}, status=500)
 
 
 # ---------------------------------------------------------------------------
