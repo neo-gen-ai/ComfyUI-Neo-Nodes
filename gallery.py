@@ -431,7 +431,6 @@ async def get_gallery_list(request):
             directories.append({
                 "name": dir_name,
                 "path": str(dir_path),
-                "items": [],
                 "subdirs": structure["subdirs"],
                 "root_count": structure["root_count"],
                 "read_only": False,
@@ -460,7 +459,6 @@ async def get_gallery_list(request):
             directories.append({
                 "name": "Presets",
                 "path": "presets",
-                "items": [],
                 "subdirs": {},
                 "root_count": presets_root_count,
                 "read_only": True,
@@ -471,7 +469,6 @@ async def get_gallery_list(request):
             directories.append({
                 "name": f"Presets/{subdir_name}",
                 "path": f"presets/{subdir_name}",
-                "items": [],
                 "subdirs": {},
                 "root_count": subdir_info.get("image_count", 0),
                 "read_only": True,
@@ -502,7 +499,7 @@ async def get_gallery_list(request):
                     "read_only": True
                 })
 
-    total = sum(len(d["items"]) for d in directories)
+    total = sum(d.get("root_count", 0) for d in directories)
     return web.json_response({"directories": directories, "total": total})
 
 

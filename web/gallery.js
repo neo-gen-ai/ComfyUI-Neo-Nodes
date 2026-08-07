@@ -52,6 +52,9 @@ class NeoGallery {
         this.isSearchActive = false;
         this.elementId = "neo-gallery-panel-root";
         
+        // Store current directory images for lightbox navigation (used in lazy mode)
+        this._currentDirImages = [];
+        
         // Custom dir input
         this.customDirInput = $el("input", {
             type: "text",
@@ -212,7 +215,6 @@ class NeoGallery {
             this.allDirectories = (data.directories || []).map(dir => ({
                 name: dir.name,
                 path: dir.path,
-                items: dir.items || [],
                 subdirs: dir.subdirs || {},
                 read_only: dir.read_only || false,
                 lazy: dir.lazy || false,
@@ -243,9 +245,9 @@ class NeoGallery {
             return;
         }
 
-        // In lazy mode, count dirs with subdirs or items
+        // In lazy mode, count dirs with subdirs or root_count
         const totalDirs = dirsToDisplay.filter(d => 
-            d.items.length > 0 || (d.subdirs && Object.keys(d.subdirs).length > 0)
+            (d.subdirs && Object.keys(d.subdirs).length > 0) || (d.root_count && d.root_count > 0)
         ).length;
 
         if (totalDirs === 0 && !this.isSearchActive) {
@@ -271,9 +273,8 @@ class NeoGallery {
         });
 
         for (const dir of dirGroups) {
-            // In lazy mode, show cards if there are items, subdirs, or root_count
-            const hasContent = dir.items.length > 0 || 
-                               (dir.subdirs && Object.keys(dir.subdirs).length > 0) ||
+            // Show cards if there are subdirs or root_count
+            const hasContent = (dir.subdirs && Object.keys(dir.subdirs).length > 0) ||
                                (dir.root_count && dir.root_count > 0);
             if (!hasContent) continue;
             const card = await this.components.createDirCard(this, dir.name, dir.path, dir.items, dir.subdirs, dir.read_only);
@@ -438,6 +439,9 @@ class NeoGallery {
                 };
                 this.accordion.appendChild(loadMoreBtn);
             }
+            
+            // Save images for lightbox navigation (lazy mode fallback)
+            this._currentDirImages = [...images];
         }
     }
 
@@ -479,6 +483,9 @@ class NeoGallery {
 
         this.accordion.appendChild(imageGrid);
         renderPage(PAGE_SIZE);
+        
+        // Save images for lightbox navigation (lazy mode fallback)
+        this._currentDirImages = [...sortedItems];
         
         if (this._renderQueue.length > 0) {
             const createLoadMoreBtn = () => {
@@ -532,7 +539,7 @@ class NeoGallery {
             subfolder = source;
             if (categoryPath.length > 0) {
                 const catKey = categoryPath[0];
-                items = dir.items.filter(i => i.category === catKey || (!i.category && !catKey));
+                items = dir.items.filter(i => i.category === catKey || !i.category);
             } else {
                 items = [...dir.items];
             }
@@ -565,6 +572,9 @@ class NeoGallery {
 
         this.accordion.appendChild(imageGrid);
         renderPage(PAGE_SIZE);
+        
+        // Save images for lightbox navigation (lazy mode fallback)
+        this._currentDirImages = [...sortedItems];
         
         if (this._renderQueue.length > 0) {
             const createLoadMoreBtn = () => {
@@ -637,14 +647,40 @@ class NeoGallery {
         searchTerm = searchTerm.toLowerCase();
         this.isSearchActive = searchTerm.length > 0;
         
-        this.filteredDirectories = this.allDirectories.map(dir => ({
-            ...dir,
-            items: dir.items.filter(img =>
-                (img.name && img.name.toLowerCase().includes(searchTerm)) ||
-                (img.style && img.style.toLowerCase().includes(searchTerm)) ||
-                (img.content && img.content.toLowerCase().includes(searchTerm))
-            )
-        })).filter(dir => dir.items.length > 0);
+        // In lazy mode, load items for directories that match
+        const dirsToSearch = this.allDirectories.filter(d => d.lazy);
+        if (dirsToSearch.length > 0) {
+            const promises = dirsToSearch.map(async (dir) => {
+                try {
+                    const resp = await api.fetchApi(`/neo_gallery/dir_structure?dir_name=${encodeURIComponent(dir.name)}&path=&samples=0`);
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        return { dir, items: data.images || [] };
+                    }
+                } catch(e) {}
+                return { dir, items: [] };
+            });
+            const results = await Promise.all(promises);
+            this.filteredDirectories = results
+                .map(({dir, items}) => ({
+                    ...dir,
+                    items: items.filter(img =>
+                        (img.name && img.name.toLowerCase().includes(searchTerm)) ||
+                        (img.style && img.style.toLowerCase().includes(searchTerm)) ||
+                        (img.content && img.content.toLowerCase().includes(searchTerm))
+                    )
+                }))
+                .filter(d => d.items.length > 0);
+        } else {
+            this.filteredDirectories = this.allDirectories.map(dir => ({
+                ...dir,
+                items: dir.items.filter(img =>
+                    (img.name && img.name.toLowerCase().includes(searchTerm)) ||
+                    (img.style && img.style.toLowerCase().includes(searchTerm)) ||
+                    (img.content && img.content.toLowerCase().includes(searchTerm))
+                )
+            })).filter(dir => dir.items.length > 0);
+        }
         
         this.currentView.mode = 'categories';
         this.currentView.source = null;
@@ -907,7 +943,7 @@ class NeoGallery {
     }
 
     updateLightboxContent(lightbox, image, subfolder, allImages, currentIndex) {
-        this.components.updateLightboxContent(this, lightbox, image, subfolder, allImages, currentIndex);
+        this.components.updateLightboxContent(lightbox, image, subfolder, allImages, currentIndex);
     }
 
     // ====== Breadcrumb (delegated to components) ======

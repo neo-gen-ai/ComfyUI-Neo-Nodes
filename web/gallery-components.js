@@ -707,7 +707,7 @@ export class GalleryComponents {
 
         const info = $el("div", { className: "neo-gallery-card-info" }, [
             $el("span", { className: "neo-gallery-card-name", textContent: name }),
-            $el("span", { className: "neo-gallery-card-count", textContent: `${items.length} items` })
+            $el("span", { className: "neo-gallery-card-count", textContent: `${(items || []).length} items` })
         ]);
 
         const typeBadge = $el("div", {
@@ -1351,10 +1351,13 @@ export class GalleryComponents {
         const allImages = [];
         const { source, categoryPath, mode } = gallery.currentView;
 
+        // In lazy mode, dir.items may be empty - use saved _currentDirImages if available
         if (mode === 'categories') {
             for (const dir of gallery.allDirectories) {
                 if (!gallery.isSearchActive || gallery.filteredDirectories.some(d => d.name === dir.name)) {
-                    for (const item of dir.items) {
+                    // Use saved images if dir.items is empty (lazy mode)
+                    const items = (dir.items && dir.items.length > 0) ? dir.items : [];
+                    for (const item of items) {
                         allImages.push({ ...item, subfolder: dir.name });
                     }
                 }
@@ -1362,19 +1365,29 @@ export class GalleryComponents {
         } else if (source && mode !== 'categories') {
             const dir = gallery.allDirectories.find(d => d.name === source);
             if (dir) {
-                let dirItems = [...dir.items];
+                // Directly use _currentDirImages when dir.items is undefined (lazy mode)
+                let dirItems = [];
+                if (dir.items && dir.items.length > 0) {
+                    dirItems = [...dir.items];
+                } else if (gallery._currentDirImages && gallery._currentDirImages.length > 0) {
+                    dirItems = [...gallery._currentDirImages];
+                }
                 if (categoryPath && categoryPath.length > 0) {
                     const catKey = categoryPath[0];
-                    dirItems = dirItems.filter(i => i.category === catKey || (!i.category && !catKey));
+                    dirItems = dirItems.filter(i => {
+                        const match = i.category === catKey || !i.category;
+                        return match;
+                    });
                 }
                 for (const item of dirItems) {
-                    allImages.push({ ...item, subfolder: source });
+                    allImages.push({ ...item, subfolder: item.subfolder || source });
                 }
             }
         } else {
             for (const dir of gallery.allDirectories) {
                 if (!gallery.isSearchActive || gallery.filteredDirectories.some(d => d.name === dir.name)) {
-                    for (const item of dir.items) {
+                    const items = (dir.items && dir.items.length > 0) ? dir.items : [];
+                    for (const item of items) {
                         allImages.push({ ...item, subfolder: dir.name });
                     }
                 }
@@ -1738,7 +1751,6 @@ export class GalleryComponents {
             container.appendChild(reverseBtn);
         }
 
-        console.log('[Neo Gallery] updateLightboxContent called, image.txt_content:', !!image.txt_content, 'txt_content length:', (image.txt_content || '').length, 'container children before:', container.children.length);
         const prevBtn = imgWrapper.querySelector('#neo-gallery-lightbox-prev-btn');
         const nextBtn = imgWrapper.querySelector('#neo-gallery-lightbox-next-btn');
 
