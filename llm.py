@@ -12,6 +12,7 @@ import asyncio
 import base64
 import io
 import hashlib
+import socket
 from typing import Any, Dict, List, Optional, Generator
 from pathlib import Path
 import folder_paths
@@ -24,7 +25,24 @@ from collections import OrderedDict
 hf_endpoint = os.environ.get("HF_ENDPOINT", "https://huggingface.co")
 os.environ["HF_ENDPOINT"] = hf_endpoint
 
+# ==========================================
+# LiteLLM Configuration
+# ==========================================
+# Use local model cost map to avoid network requests
+os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
+# Use local tiktoken cache to avoid network requests
+tiktoken_cache_dir = os.path.join(os.path.dirname(__file__), ".tiktoken_cache")
+os.makedirs(tiktoken_cache_dir, exist_ok=True)
+os.environ.setdefault("TIKTOKEN_CACHE_DIR", tiktoken_cache_dir)
+
 logger = logging.getLogger(__name__)
+
+# Pre-load tiktoken to avoid network requests (skip if network unavailable)
+try:
+    import tiktoken
+    tiktoken.get_encoding("cl100k_base")
+except Exception as e:
+    logger.warning(f"Failed to pre-load tiktoken (network unavailable): {e}")
 
 # ==========================================
 # LLM Configuration & Management
@@ -621,11 +639,11 @@ def _download_from_huggingface(model_dir, filename, file_type, hf_repo_id):
 
 
 # ==========================================
-# Remote API LLM Client (litellm)
+# Remote API LLM Client (requests)
 # ==========================================
 
-class LiteLLMClient:
-    """基于 litellm 的远程 LLM 客户端，统一支持多种提供商"""
+class RemoteLLMClient:
+    """基于 requests 的远程 LLM 客户端，直接调用 OpenAI 兼容 API"""
 
     def __init__(self, config: Dict[str, Any]):
         self.config = config
@@ -636,21 +654,6 @@ class LiteLLMClient:
         self.max_tokens = config.get("max_tokens", 500)
         self.temperature = config.get("temperature", 0.0)
         self.timeout = config.get("timeout", 60)
-
-    def _build_model_string(self) -> str:
-        """构建 litellm 格式的 model 字符串"""
-        provider_map = {
-            "openai": "openai/",
-            "anthropic": "anthropic/",
-            "ollama": "ollama/",
-            "lmstudio": "openai/",
-            "llamacpp": "openai/",
-            "vllm": "openai/",
-            "zhipu": "zhipu/",
-            "doubao": "openai/",
-        }
-        prefix = provider_map.get(self.provider, "openai/")
-        return f"{prefix}{self.model}"
 
     def _add_images_to_messages(self, messages: List[Dict[str, Any]],
                                  image_bytes_list: List[bytes]) -> List[Dict[str, Any]]:
@@ -690,65 +693,97 @@ class LiteLLMClient:
         Returns:
             非流式：返回响应字典；流式：返回生成器
         """
-        import litellm
+        import requests
 
-        model = self._build_model_string()
         effective_max_tokens = max_tokens or self.max_tokens
 
         # 处理图片
         if image_bytes_list:
             messages = self._add_images_to_messages(messages, image_bytes_list)
 
-        # 构建 litellm 参数
-        completion_kwargs = {
-            "model": model,
+        # 构建请求 URL
+        if self.base_url:
+            url = f"{self.base_url.rstrip('/')}/chat/completions"
+        else:
+            url = "https://api.openai.com/v1/chat/completions"
+
+        # 构建请求头
+        headers = {
+            "Content-Type": "application/json",
+        }
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+
+        # 构建请求体
+        payload = {
+            "model": self.model,
             "messages": messages,
             "max_tokens": effective_max_tokens,
             "temperature": self.temperature,
-            "timeout": self.timeout,
             "stream": stream,
         }
 
-        # 仅在有 API key 时传递
-        if self.api_key:
-            completion_kwargs["api_key"] = self.api_key
-
-        # 仅在有 base_url 时传递
-        if self.base_url:
-            completion_kwargs["api_base"] = self.base_url
-
-        logger.info(f"Sending request to litellm: model={model}, stream={stream}")
+        logger.info(f"Sending request to remote LLM: url={url}, stream={stream}")
 
         try:
-            response = litellm.completion(**completion_kwargs)
-
             if stream:
-                return self._stream_response_generator(response)
-
-            return self._parse_response(response)
+                return self._stream_response_generator(url, headers, payload)
+            else:
+                response = requests.post(url, headers=headers, json=payload, timeout=self.timeout)
+                response.raise_for_status()
+                return self._parse_response(response.json())
+        except requests.exceptions.ConnectionError as e:
+            logger.warning(f"Remote LLM connection error: {e}")
+            raise RuntimeError(f"Remote LLM network error: {e}")
+        except requests.exceptions.Timeout as e:
+            logger.warning(f"Remote LLM timeout: {e}")
+            raise RuntimeError(f"Remote LLM timeout: {e}")
+        except requests.exceptions.HTTPError as e:
+            logger.error(f"Remote LLM HTTP error: {e}")
+            raise RuntimeError(f"Remote LLM HTTP error: {e}")
         except Exception as e:
-            logger.error(f"litellm completion failed: {e}")
+            logger.error(f"Remote LLM completion failed: {e}")
             raise
 
-    def _parse_response(self, response) -> Dict[str, Any]:
-        """解析非流式响应为统一格式"""
-        message = response.choices[0].message
-        content = message.content if hasattr(message, 'content') else ""
+    def _parse_response(self, response_data: Dict[str, Any]) -> Dict[str, Any]:
+        """解析响应为统一格式"""
+        choices = response_data.get("choices", [])
+        if not choices:
+            return {"choices": []}
+        
+        message = choices[0].get("message", {})
+        content = message.get("content", "")
         return {
             "choices": [{
-                "message": {"role": message.role, "content": content}
+                "message": {"role": message.get("role", "assistant"), "content": content}
             }]
         }
 
-    def _stream_response_generator(self, response):
+    def _stream_response_generator(self, url: str, headers: Dict[str, str], payload: Dict[str, Any]):
         """流式响应生成器"""
-        full_content = []
-        for chunk in response:
-            if hasattr(chunk, 'choices') and chunk.choices:
-                delta = chunk.choices[0].delta
-                if hasattr(delta, 'content') and delta.content:
-                    full_content.append(delta.content)
-                    yield delta.content
+        import requests
+
+        with requests.post(url, headers=headers, json=payload, stream=True, timeout=self.timeout) as response:
+            response.raise_for_status()
+            full_content = []
+            for line in response.iter_lines():
+                if line:
+                    line = line.decode('utf-8')
+                    if line.startswith('data: '):
+                        data = line[6:]
+                        if data == '[DONE]':
+                            break
+                        try:
+                            chunk = json.loads(data)
+                            choices = chunk.get("choices", [])
+                            if choices:
+                                delta = choices[0].get("delta", {})
+                                content = delta.get("content", "")
+                                if content:
+                                    full_content.append(content)
+                                    yield content
+                        except json.JSONDecodeError:
+                            pass
         return "".join(full_content)
 
     def is_available(self) -> bool:
@@ -900,7 +935,11 @@ def _run_llm_inference(system_prompt: str, user_text: str, max_tokens: int,
         非流式：LLM 响应文本；流式：返回生成器
     """
     if use_remote:
-        return _run_remote_inference(system_prompt, user_text, max_tokens, images, stream=stream)
+        result = _run_remote_inference(system_prompt, user_text, max_tokens, images, stream=stream)
+        if result is not None:
+            return result
+        logger.warning("Remote LLM failed, falling back to local mode")
+        return _run_local_inference(system_prompt, user_text, max_tokens, images, stream=stream)
     else:
         return _run_local_inference(system_prompt, user_text, max_tokens, images, stream=stream)
 
@@ -968,7 +1007,7 @@ def _run_remote_inference(system_prompt: str, user_text: str, max_tokens: int,
     if not config.get("enabled", False):
         raise RuntimeError("Remote LLM is not enabled. Please configure remote_llm_config.json")
 
-    client = LiteLLMClient(config)
+    client = RemoteLLMClient(config)
 
     if not client.is_available():
         raise RuntimeError("Remote LLM client is not available (missing API key or provider)")
@@ -1013,6 +1052,10 @@ def _run_remote_inference(system_prompt: str, user_text: str, max_tokens: int,
         content = message.get("content", "")
 
         return content.strip() if content else ""
+    except (RuntimeError, OSError, socket.gaierror) as e:
+        # 网络相关错误已在上层捕获，直接返回
+        logger.warning(f"Remote LLM inference failed (network): {e}")
+        return None
     except Exception as e:
         logger.exception(f"Error during remote LLM inference: {e}")
         return None
@@ -1374,7 +1417,7 @@ __all__ = [
     "get_current_mode",
     "LLM_MODE_LOCAL",
     "LLM_MODE_REMOTE",
-    "LiteLLMClient",
+    "RemoteLLMClient",
     "check_model_status",
     "check_all_models_status",
     "start_download",
