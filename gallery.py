@@ -223,11 +223,9 @@ def _scan_gallery_entries(directory: Path, subfolder: str = "") -> list[dict]:
         return entries
 
     # Determine category and subfolder from the subfolder parameter
+    # When subfolder is provided, we're scanning a specific subdirectory,
+    # so don't use subfolder name as category (that would group all entries under it)
     category = ""
-    if subfolder:
-        parts = [p for p in subfolder.split("/") if p]
-        if parts:
-            category = parts[0]
 
     stems: dict[str, list[Path]] = {}
     for p in directory.iterdir():
@@ -1056,9 +1054,19 @@ def _find_source_media(filename: str, subfolder: str) -> Path | None:
         # Also check subfolders
         if subfolder:
             dir_parts = [p for p in subfolder.split("/") if p]
+            # Match if subfolder starts with dir name, OR try as relative path under dir
             if dir_parts[0] == dir_path.name:
                 candidate = dir_path
                 for part in dir_parts[1:]:
+                    candidate = candidate / part
+                candidate = candidate / filename
+                if candidate.exists():
+                    source_path = candidate
+                    break
+            else:
+                # Try subfolder as relative path under this custom dir
+                candidate = dir_path
+                for part in dir_parts:
                     candidate = candidate / part
                 candidate = candidate / filename
                 if candidate.exists():
@@ -1075,6 +1083,11 @@ def _find_source_media(filename: str, subfolder: str) -> Path | None:
                 source_path = candidate
         elif subfolder_lower == "presets" or not subfolder:
             candidate = PRESETS_DIR / filename
+            if candidate.exists():
+                source_path = candidate
+        else:
+            # Fallback: treat subfolder as a direct subdirectory name under presets
+            candidate = PRESETS_DIR / subfolder / filename
             if candidate.exists():
                 source_path = candidate
 
@@ -1226,6 +1239,13 @@ async def view_image(request):
             matched_dir = _match_dir_name(dir_parts)
             if matched_dir:
                 base = matched_dir
+            else:
+                # Try as subdirectory under any custom dir
+                for dir_path in user_custom_dirs:
+                    candidate = dir_path / dir_parts[0]
+                    if candidate.exists():
+                        base = candidate
+                        break
     elif len(dir_parts) > 1:
         matched_dir = _match_dir_name(dir_parts)
         if matched_dir:

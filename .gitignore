@@ -3,5 +3,6 @@ __pycache__/
 .DS_Store
 remote_llm_config.json
 gallery_settings.json
+model_config.json
 prompts/custom/
 gallery/thumbnails/
