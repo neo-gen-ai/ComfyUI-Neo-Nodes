@@ -620,253 +620,142 @@ def _download_from_huggingface(model_dir, filename, file_type, hf_repo_id):
 
 
 # ==========================================
-# Remote API LLM Client
+# Remote API LLM Client (litellm)
 # ==========================================
 
-class RemoteLLMClient:
-    """远程 LLM API 客户端，支持多种提供商"""
-
-    PROVIDER_OPENAI = "openai"
-    PROVIDER_ANTHROPIC = "anthropic"
-    PROVIDER_OLLAMA = "ollama"
-    PROVIDER_LM_STUDIO = "lmstudio"
-    PROVIDER_LLAMACPP = "llamacpp"
-    PROVIDER_VLLM = "vllm"
-    PROVIDER_ZHIPU = "zhipu"
-    PROVIDER_DOUBAO = "doubao"
-
-    SUPPORTED_PROVIDERS = [PROVIDER_OPENAI, PROVIDER_ANTHROPIC, PROVIDER_OLLAMA,
-                           PROVIDER_LM_STUDIO, PROVIDER_LLAMACPP, PROVIDER_VLLM, PROVIDER_ZHIPU, PROVIDER_DOUBAO]
+class LiteLLMClient:
+    """基于 litellm 的远程 LLM 客户端，统一支持多种提供商"""
 
     def __init__(self, config: Dict[str, Any]):
         self.config = config
-        self.provider = config.get("provider", self.PROVIDER_OPENAI)
+        self.provider = config.get("provider", "openai")
         self.api_key = config.get("api_key", "")
-        self.base_url = config.get("base_url", "").rstrip("/")
+        self.base_url = config.get("base_url", "")
         self.model = config.get("model", "gpt-4o-mini")
         self.max_tokens = config.get("max_tokens", 500)
         self.temperature = config.get("temperature", 0.0)
         self.timeout = config.get("timeout", 60)
 
-    def chat_completion(self, messages: List[Dict[str, Any]],
-                       max_tokens: Optional[int] = None,
-                       image_bytes_list: Optional[List[bytes]] = None) -> Dict[str, Any]:
-        local_providers = (self.PROVIDER_LM_STUDIO, self.PROVIDER_OLLAMA, self.PROVIDER_LLAMACPP, self.PROVIDER_VLLM)
-        if self.provider not in local_providers and not self.api_key:
-            raise ValueError("API Key is not configured")
+    def _build_model_string(self) -> str:
+        """构建 litellm 格式的 model 字符串"""
+        provider_map = {
+            "openai": "openai/",
+            "anthropic": "anthropic/",
+            "ollama": "ollama/",
+            "lmstudio": "openai/",
+            "llamacpp": "openai/",
+            "vllm": "openai/",
+            "zhipu": "zhipu/",
+            "doubao": "openai/",
+        }
+        prefix = provider_map.get(self.provider, "openai/")
+        return f"{prefix}{self.model}"
 
-        effective_max_tokens = max_tokens or self.max_tokens
-
-        if self.provider in (self.PROVIDER_OPENAI, self.PROVIDER_LLAMACPP, self.PROVIDER_VLLM,
-                              self.PROVIDER_ZHIPU, self.PROVIDER_DOUBAO, self.PROVIDER_LM_STUDIO):
-            return self._openai_format_request(messages, effective_max_tokens, image_bytes_list)
-        elif self.provider == self.PROVIDER_ANTHROPIC:
-            return self._anthropic_format_request(messages, effective_max_tokens, image_bytes_list)
-        elif self.provider in (self.PROVIDER_OLLAMA,):
-            return self._ollama_format_request(messages, effective_max_tokens, image_bytes_list)
-        else:
-            raise ValueError(f"Unsupported provider: {self.provider}")
-
-    def _openai_format_request(self, messages: List[Dict[str, Any]],
-                                max_tokens: int,
-                                image_bytes_list: Optional[List[bytes]] = None) -> Dict[str, Any]:
-        import requests
-
-        request_messages = []
+    def _add_images_to_messages(self, messages: List[Dict[str, Any]],
+                                 image_bytes_list: List[bytes]) -> List[Dict[str, Any]]:
+        """将图片添加到 user message 中"""
+        result = []
         for msg in messages:
             role = msg.get("role", "user")
             content = msg.get("content", "")
 
             if image_bytes_list and isinstance(content, str) and role == "user":
-                content = self._text_with_images_to_content(content, image_bytes_list)
+                content_parts = []
+                for img_bytes in image_bytes_list:
+                    b64 = base64.b64encode(img_bytes).decode('utf-8')
+                    content_parts.append({
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/png;base64,{b64}"}
+                    })
+                content_parts.append({"type": "text", "text": content})
+                content = content_parts
 
-            request_messages.append({"role": role, "content": content})
+            result.append({"role": role, "content": content})
+        return result
 
-        url = self._build_url()
+    def chat_completion(self, messages: List[Dict[str, Any]],
+                        max_tokens: Optional[int] = None,
+                        image_bytes_list: Optional[List[bytes]] = None,
+                        stream: bool = False) -> Any:
+        """
+        发送聊天补全请求
 
-        payload = {
-            "model": self.model,
-            "messages": request_messages,
-            "max_tokens": max_tokens,
-            "top_p":0.8,
-            "presence_penalty":1.5,
-            "temperature": self.temperature,
-            "extra_body": {"chat_template_kwargs": {"enable_thinking": False},},
-        }
+        Args:
+            messages: 消息列表
+            max_tokens: 最大 token 数
+            image_bytes_list: 图片字节列表
+            stream: 是否流式输出
 
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.api_key}"
-        }
+        Returns:
+            非流式：返回响应字典；流式：返回生成器
+        """
+        import litellm
 
-        if self.provider == self.PROVIDER_ZHIPU:
-            headers["Authorization"] = f"api_key={self.api_key}"
-        elif self.provider == self.PROVIDER_DOUBAO:
-            pass
-        elif self.provider == self.PROVIDER_LM_STUDIO:
-            if not self.api_key:
-                headers.pop("Authorization", None)
+        model = self._build_model_string()
+        effective_max_tokens = max_tokens or self.max_tokens
 
-        response = requests.post(url, json=payload, headers=headers, timeout=self.timeout)
-        response.raise_for_status()
-
-        result = response.json()
-
-        if "choices" in result and isinstance(result["choices"], list) and len(result["choices"]) > 0:
-            message = result["choices"][0].get("message", {})
-            content = message.get("content", "")
-        elif "text" in result:
-            content = result["text"]
-        else:
-            logger.warning(f"LM Studio returned unexpected format: {result}")
-            return {"choices": []}
-
-        return {
-            "choices": [{
-                "message": {"role": "assistant", "content": content}
-            }]
-        }
-
-    def _build_url(self) -> str:
-        if not self.base_url:
-            return "https://api.openai.com/v1/chat/completions"
-
-        url = self.base_url.rstrip("/")
-
-        if not url.endswith("/v1"):
-            url = f"{url}/v1"
-
-        if "/chat/completions" not in url:
-            url = f"{url}/chat/completions"
-
-        return url
-
-    def _anthropic_format_request(self, messages: List[Dict[str, Any]],
-                                  max_tokens: int,
-                                  image_bytes_list: Optional[List[bytes]] = None) -> Dict[str, Any]:
-        import requests
-
-        url = f"{self.base_url or 'https://api.anthropic.com'}/v1/messages"
-
-        system_prompt = ""
-        user_messages = []
-        for msg in messages:
-            if msg.get("role") == "system":
-                system_prompt = msg.get("content", "")
-            elif msg.get("role") == "user":
-                user_messages.append(msg.get("content", ""))
-
-        user_content = "\n\n".join(user_messages)
-
+        # 处理图片
         if image_bytes_list:
-            content_parts: list[dict[str, Any]] = [{"type": "text", "text": user_content}]
-            for img_bytes in image_bytes_list:
-                b64 = base64.b64encode(img_bytes).decode('utf-8')
-                content_parts.append({
-                    "type": "image",
-                    "source": {
-                        "type": "base64",
-                        "media_type": "image/png",
-                        "data": b64
-                    }
-                })
-            content = content_parts
-        else:
-            content = user_content
+            messages = self._add_images_to_messages(messages, image_bytes_list)
 
-        payload = {
-            "model": self.model,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": content
-                }
-            ],
-            "max_tokens": max_tokens,
-            "temperature": self.temperature,
-        }
-
-        if system_prompt:
-            payload["system"] = system_prompt
-
-        headers = {
-            "Content-Type": "application/json",
-            "x-api-key": self.api_key,
-            "anthropic-version": "2023-06-01"
-        }
-
-        response = requests.post(url, json=payload, headers=headers, timeout=self.timeout)
-        response.raise_for_status()
-
-        result = response.json()
-
-        content_blocks = result.get("content", [])
-        assistant_content = ""
-        for block in content_blocks:
-            if isinstance(block, dict) and block.get("type") == "text":
-                assistant_content += block.get("text", "")
-
-        return {
-            "choices": [{
-                "message": {"role": "assistant", "content": assistant_content.strip()}
-            }]
-        }
-
-    def _ollama_format_request(self, messages: List[Dict[str, Any]],
-                                max_tokens: int,
-                                image_bytes_list: Optional[List[bytes]] = None) -> Dict[str, Any]:
-        import requests
-
-        url = f"{self.base_url or 'http://localhost:11430'}/api/chat"
-
-        payload = {
-            "model": self.model,
+        # 构建 litellm 参数
+        completion_kwargs = {
+            "model": model,
             "messages": messages,
-            "stream": False,
-            "options": {
-                "num_predict": max_tokens,
-                "temperature": self.temperature
-            }
+            "max_tokens": effective_max_tokens,
+            "temperature": self.temperature,
+            "timeout": self.timeout,
+            "stream": stream,
         }
 
-        headers = {"Content-Type": "application/json"}
+        # 仅在有 API key 时传递
+        if self.api_key:
+            completion_kwargs["api_key"] = self.api_key
 
-        response = requests.post(url, json=payload, headers=headers, timeout=self.timeout)
-        response.raise_for_status()
+        # 仅在有 base_url 时传递
+        if self.base_url:
+            completion_kwargs["api_base"] = self.base_url
 
-        result = response.json()
+        logger.info(f"Sending request to litellm: model={model}, stream={stream}")
 
-        message = result.get("message", {})
-        content = message.get("content", "")
+        try:
+            response = litellm.completion(**completion_kwargs)
 
+            if stream:
+                return self._stream_response_generator(response)
+
+            return self._parse_response(response)
+        except Exception as e:
+            logger.error(f"litellm completion failed: {e}")
+            raise
+
+    def _parse_response(self, response) -> Dict[str, Any]:
+        """解析非流式响应为统一格式"""
+        message = response.choices[0].message
+        content = message.content if hasattr(message, 'content') else ""
         return {
             "choices": [{
-                "message": {"role": "assistant", "content": content}
+                "message": {"role": message.role, "content": content}
             }]
         }
 
-    def _text_with_images_to_content(self, text: str, image_bytes_list: List[bytes]) -> List[dict]:
-        content = []
-
-        for img_bytes in image_bytes_list:
-            b64 = base64.b64encode(img_bytes).decode('utf-8')
-            data_uri = f"data:image/png;base64,{b64}"
-            content.append({
-                "type": "image_url",
-                "image_url": {"url": data_uri}
-            })
-
-        content.append({
-            "type": "text",
-            "text": text
-        })
-
-        return content
+    def _stream_response_generator(self, response):
+        """流式响应生成器"""
+        full_content = []
+        for chunk in response:
+            if hasattr(chunk, 'choices') and chunk.choices:
+                delta = chunk.choices[0].delta
+                if hasattr(delta, 'content') and delta.content:
+                    full_content.append(delta.content)
+                    yield delta.content
+        return "".join(full_content)
 
     def is_available(self) -> bool:
+        """检查客户端是否可用"""
         if not self.provider:
             return False
-        local_providers = (self.PROVIDER_LM_STUDIO, self.PROVIDER_OLLAMA, self.PROVIDER_LLAMACPP, self.PROVIDER_VLLM)
+        # 本地提供商（ollama, lmstudio, llamacpp, vllm）不需要 API key
+        local_providers = {"ollama", "lmstudio", "llamacpp", "vllm"}
         if self.provider not in local_providers and not self.api_key:
             return False
         return True
@@ -1039,7 +928,6 @@ def _run_local_inference(system_prompt: str, user_text: str, max_tokens: int,
             messages=messages,
             max_tokens=max_tokens,
             image_bytes_list=image_bytes_list,
-            chat_template_kwargs={"enable_thinking": False}
         )
 
         if not isinstance(output, dict):
@@ -1072,7 +960,7 @@ def _run_remote_inference(system_prompt: str, user_text: str, max_tokens: int,
     if not config.get("enabled", False):
         raise RuntimeError("Remote LLM is not enabled. Please configure remote_llm_config.json")
 
-    client = RemoteLLMClient(config)
+    client = LiteLLMClient(config)
 
     if not client.is_available():
         raise RuntimeError("Remote LLM client is not available (missing API key or provider)")
@@ -1096,14 +984,14 @@ def _run_remote_inference(system_prompt: str, user_text: str, max_tokens: int,
                 elif hasattr(img, 'read'):
                     image_bytes_list.append(img.read())
 
-        logger.info(f"Sending request to remote LLM: provider={client.provider}, model={client.model}, url={client._build_url()}")
+        logger.info(f"Sending request to remote LLM: provider={client.provider}, model={client.model}")
         response = client.chat_completion(
             messages=messages,
             max_tokens=max_tokens,
             image_bytes_list=image_bytes_list
         )
 
-        logger.info(f"Remote LLM response: {response}")
+        logger.info(f"Remote LLM response received")
         choices = response.get("choices", [])
         if not choices:
             logger.warning("Remote LLM response 'choices' is empty.")
@@ -1362,7 +1250,7 @@ __all__ = [
     "get_current_mode",
     "LLM_MODE_LOCAL",
     "LLM_MODE_REMOTE",
-    "RemoteLLMClient",
+    "LiteLLMClient",
     "check_model_status",
     "check_all_models_status",
     "start_download",
