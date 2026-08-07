@@ -81,7 +81,7 @@ export function getImageSrc(image, subfolder) {
  */
 export function getThumbnailSrc(image, subfolder, size = THUMBNAIL_CACHE_SIZE) {
     const categoryParam = image.category ? `&category=${encodeURIComponent(image.category)}` : '';
-    return `${window.location.protocol}//${window.location.host}/neo_gallery/thumbnail?filename=${encodeURIComponent(image.filename)}&subfolder=${encodeURIComponent(subfolder)}&size=${size}${categoryParam}`;
+    return `${window.location.protocol}//${window.location.host}/neo_gallery/thumbnail?filename=${encodeURIComponent(image.filename)}&subfolder=${encodeURIComponent(subfolder)}&size=${size}&t=${Date.now()}${categoryParam}`;
 }
 
 /**

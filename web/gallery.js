@@ -594,6 +594,15 @@ class NeoGallery {
             });
             const result = await response.json();
             if (result.deleted) {
+                // Clear thumbnail cache for this item
+                try {
+                    await api.fetchApi('/neo_gallery/clear_thumbnails', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ subfolder })
+                    });
+                } catch (e) { console.warn('[Gallery] Failed to clear thumbnails:', e); }
+                
                 for (const dir of this.allDirectories) {
                     dir.items = dir.items.filter(item => item.name !== name);
                 }
@@ -602,6 +611,15 @@ class NeoGallery {
                     await this.handleSearch(this.searchInput.value);
                 } else {
                     await this.sortAndDisplayImages();
+                }
+                
+                // Remove DOM element after re-render
+                const thumbContainers = document.querySelectorAll('.neo-gallery-thumb-container');
+                for (const container of thumbContainers) {
+                    if (container.dataset.filename === name && container.dataset.subfolder === subfolder) {
+                        container.remove();
+                        break;
+                    }
                 }
                 showToast(this.app, 'success', 'Deleted', `Removed: ${name}`);
             } else {
@@ -947,7 +965,8 @@ class NeoGallery {
                 this.currentView.mode = 'directory';
                 this.currentView.source = dirName;
                 this.currentView.categoryPath = pathSegments;
-                // Load the directory structure
+                // Load gallery data first so breadcrumb can initialize properly
+                await this.loadGallery();
                 await this.showDirectoryStructure(dirName, pathSegments);
                 return; // skip normal init
             }
@@ -1048,6 +1067,12 @@ app.registerExtension({
                 } else {
                     gallery.accordion.innerHTML = "";
                     await gallery.sortAndDisplayImages();
+                }
+                // Re-initialize breadcrumb if URL has gallery param (panel was mounted after init)
+                const params = new URLSearchParams(window.location.search);
+                const galleryParam = params.get('gallery');
+                if (galleryParam && gallery.currentView.mode === 'directory') {
+                    gallery.components.updateBreadcrumb(gallery, gallery.currentView.categoryPath, '');
                 }
                 gallery.isVisible = true;
 

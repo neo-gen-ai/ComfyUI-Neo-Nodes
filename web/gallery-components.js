@@ -972,7 +972,8 @@ export class GalleryComponents {
                 height: `${gallery.maxThumbnailSize}px`,
                 width: `${gallery.maxThumbnailSize}px`
             },
-            onclick: () => gallery.showLightbox(image, subfolder)
+            onclick: () => gallery.showLightbox(image, subfolder),
+            dataset: { filename: image.filename, subfolder: subfolder }
         });
 
         let deleteBtn = null;
@@ -1057,7 +1058,7 @@ export class GalleryComponents {
                 src: src,
                 alt: image.name,
                 onerror: () => {
-                    if (!image.preview) mediaEl.src = gallery.placeholderImageUrl;
+                    mediaEl.src = gallery.placeholderImageUrl;
                 }
             });
         } else {

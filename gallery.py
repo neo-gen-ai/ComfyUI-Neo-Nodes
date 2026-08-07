@@ -1521,10 +1521,22 @@ async def delete_gallery_item(request):
         # Delete cached thumbnails
         stem = Path(filename).stem
         safe_subfolder = subfolder.replace("/", "_").replace("\\", "_")
+        thumb_count = 0
         for thumb_file in THUMBNAIL_DIR.glob(f"{stem}_{safe_subfolder}_*.jpg"):
-            thumb_file.unlink()
+            try:
+                thumb_file.unlink()
+                thumb_count += 1
+            except Exception:
+                pass
+        # Also delete any matching thumbnails without subfolder
+        for thumb_file in THUMBNAIL_DIR.glob(f"{stem}_*.jpg"):
+            try:
+                thumb_file.unlink()
+                thumb_count += 1
+            except Exception:
+                pass
 
-        return web.json_response({"deleted": img_deleted or txt_deleted})
+        return web.json_response({"deleted": img_deleted or txt_deleted, "thumbnails_cleared": thumb_count})
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
 
