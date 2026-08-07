@@ -365,6 +365,7 @@ class NeoGallery {
 
     async renderSubdirCards(structure, dirName, pathSegments) {
         const { subdirs, images, image_count, total_images, root_count } = structure;
+        const dir = this.allDirectories.find(d => d.name === dirName);
         
         // Handle lazy-loaded structure (only has root_count and subdirs)
         const displayTotal = total_images || root_count || 0;
@@ -422,7 +423,7 @@ class NeoGallery {
                 // Use item's own subfolder if available (from backend), otherwise use current directory path
                 const itemSubfolder = images[i].subfolder || currentSubfolder;
                 const itemWithSubfolder = {...images[i], subfolder: itemSubfolder};
-                const imgEl = this.components.createImageElement(this, itemWithSubfolder, itemSubfolder);
+                const imgEl = this.components.createImageElement(this, itemWithSubfolder, itemSubfolder, (dir && dir.read_only) || false);
                 imageGrid.appendChild(imgEl);
             }
             this.accordion.appendChild(imageGrid);
@@ -447,6 +448,7 @@ class NeoGallery {
         } else {
             subfolder = dirName;
         }
+        const dir = this.allDirectories.find(d => d.name === dirName);
         
         if (images.length === 0) {
             showNoFilesMessage(this.accordion, "No images found in this folder");
@@ -466,7 +468,7 @@ class NeoGallery {
                 const itemSubfolder = item.subfolder || subfolder;
                 // Add subfolder to item so it's available when sending
                 const itemWithSubfolder = {...item, subfolder: itemSubfolder};
-                const el = this.components.createImageElement(this, itemWithSubfolder, itemSubfolder);
+                const el = this.components.createImageElement(this, itemWithSubfolder, itemSubfolder, (dir && dir.read_only) || false);
                 if (!isImageFile(item.filename)) {
                     el.style.width = `${this.maxThumbnailSize}px`;
                 }
@@ -552,7 +554,7 @@ class NeoGallery {
                 const item = this._renderQueue.shift();
                 // Add subfolder to item so it's available when sending
                 const itemWithSubfolder = {...item, subfolder: subfolder};
-                const el = this.components.createImageElement(this, itemWithSubfolder, subfolder);
+                const el = this.components.createImageElement(this, itemWithSubfolder, subfolder, dir.read_only);
                 if (!isImageFile(item.filename)) {
                     el.style.width = `${this.maxThumbnailSize}px`;
                 }

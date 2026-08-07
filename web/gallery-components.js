@@ -960,7 +960,7 @@ export class GalleryComponents {
 
     // ====== Image Element ======
 
-    createImageElement(gallery, image, subfolder) {
+    createImageElement(gallery, image, subfolder, readOnly = false) {
         const isImageFileResult = isImageFile(image.filename);
         const isVideoFileResult = isVideoFile(image.filename);
         const reservedSpace = getReservedSpace(gallery.displayLabels);
@@ -978,7 +978,7 @@ export class GalleryComponents {
 
         let deleteBtn = null;
         const isPresets = subfolder.toLowerCase() === 'presets' || subfolder.toLowerCase().startsWith('presets/');
-        if (!isPresets) {
+        if (!isPresets && !readOnly) {
             deleteBtn = $el("div", {
                 className: "neo-gallery-delete-btn",
                 onclick: (e) => {
