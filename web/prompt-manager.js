@@ -168,6 +168,9 @@ function createDownloadModal() {
 }
 
 function createSettingsModal() {
+    // 遮罩层 - 真正的模态窗口需要
+    const overlay = mkEl("div", "rs-settings-overlay");
+    
     const modal = mkEl("div", "rs-settings-modal");
     
     const wrapper = mkEl("div", "rs-settings-modal-wrapper");
@@ -254,75 +257,170 @@ function createSettingsModal() {
     const providerSelect = mkEl("select", "rs-form-input rs-remote-provider");
     providerSelect.id = "rs-remote-provider";
     providerSelect.innerHTML = `
-        <option value="openai">OpenAI (GPT-4o, etc.)</option>
-        <option value="anthropic">Anthropic (Claude)</option>
-        <option value="ollama">Ollama (Local)</option>
+        <option value="openai">OpenAI Compatible</option>
         <option value="lmstudio">LM Studio</option>
-        <option value="llamacpp">llama.cpp Server</option>
-        <option value="vllm">vLLM</option>
-        <option value="zhipu">智谱 (Zhipu GLM)</option>
-        <option value="doubao">豆包 (Doubao)</option>
+        <option value="ollama">Ollama</option>
     `;
     
     providerRow.appendChild(providerLabel);
     providerRow.appendChild(providerSelect);
     
-    // Enable change handler - auto-save
-    enableCheckbox.addEventListener("change", async () => {
-        const config = {
-            enabled: enableCheckbox.checked,
-            provider: providerSelect.value,
-            model: modelInput.value,
-            api_key: apiKeyInput.value,
-            base_url: baseUrlInput.value,
-            max_tokens: parseInt(maxTokensInput.value) || 500,
-            timeout: parseInt(timeoutInput.value) || 60,
-            temperature: parseFloat(temperatureInput?.value) || 0.0
-        };
+    // Provider change handler - 动态显示/隐藏字段 + 自动获取模型
+    // 所有在前向引用中的变量都需要提前用 let 声明
+    let modelSelectEl;  // 前向声明（在 provider change handler 中使用）
+    let baseUrlInput;   // 前向声明（在 blur handler 和 provider change handler 中使用）
+    let apiKeyInput;    // 前向声明（在 provider change handler 中使用）
+    let apiKeyRow;      // 前向声明（在 provider change handler 中使用）
+    let modelInput;     // 前向声明（在 provider change handler 中使用）
+    
+    const fetchModelsFromUrl = async (baseUrl, targetSelect) => {
+        // 先清除旧选项，显示"获取中..."
+        targetSelect.innerHTML = '';
+        const loadingOpt = document.createElement('option');
+        loadingOpt.value = '__loading__';
+        loadingOpt.textContent = '⏳ Loading models...';
+        targetSelect.appendChild(loadingOpt);
+        targetSelect.disabled = true;  // 禁用选择框防止干扰
         
-        const result = await window.NeoNodes?.saveRemoteLLMConfig?.(config);
+        try {
+            // 通过 ComfyUI 后端代理转发请求，避免 CORS 问题
+            const proxyUrl = `/rs_prompts/fetch_remote_models`;
+            const resp = await fetch(proxyUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ base_url: baseUrl })
+            });
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            const result = await resp.json();
+            if (!result.success) throw new Error(result.error || 'Failed');
+            
+            const data = result.data;
+            targetSelect.innerHTML = '';
+            
+            (data.data || []).forEach(m => {
+                const opt = document.createElement('option');
+                opt.value = m.id;
+                opt.textContent = m.id;
+                targetSelect.appendChild(opt);
+            });
+            
+            if (!targetSelect.options.length) {
+                const opt = document.createElement('option');
+                opt.value = '';
+                opt.textContent = 'No models found';
+                targetSelect.appendChild(opt);
+            }
+        } catch (e) {
+            console.warn('Failed to fetch models:', e);
+            targetSelect.innerHTML = '<option value="">❌ Failed to load</option>';
+        } finally {
+            targetSelect.disabled = false;  // 恢复选择框可用
+        }
+    };
+    
+    // 辅助函数：在 select 中设置已保存的模型值（如果存在则选中，否则添加并选中）
+    const setSelectedModelValue = (modelSelect, modelValue) => {
+        if (!modelValue || !modelSelect) return;
         
-        if (result && result.success) {
-            enableStatusText.textContent = enableCheckbox.checked ? "✅ Remote LLM enabled" : "⚪ Remote LLM disabled";
-            enableStatusText.style.display = "block";
-            enableStatusText.style.color = "#16a34a";
+        let found = false;
+        for (let i = 0; i < modelSelect.options.length; i++) {
+            if (modelSelect.options[i].value === modelValue) {
+                modelSelect.value = modelValue;
+                found = true;
+                break;
+            }
+        }
+        
+        // 如果没找到，添加到列表并选中
+        if (!found) {
+            const opt = document.createElement('option');
+            opt.value = modelValue;
+            opt.textContent = modelValue;
+            modelSelect.appendChild(opt);
+            modelSelect.value = modelValue;
+        }
+    };
+    
+    providerSelect.addEventListener("change", async () => {
+        const provider = providerSelect.value;
+        
+        if (provider === 'openai') {
+            apiKeyRow.style.display = "flex";
+            apiKeyInput.placeholder = "sk-... (optional for cloud)";
+            modelInput.style.display = 'block';
+            modelSelectEl.style.display = 'none';
+            modelInput.type = "text";
+            modelInput.placeholder = "e.g., gpt-4o-mini";
+            // OpenAI Compatible 默认不设置 Base URL（留空使用默认 API）
+            baseUrlInput.value = "";
+        } else if (provider === 'lmstudio') {
+            apiKeyRow.style.display = "none";
+            apiKeyInput.value = "";
+            baseUrlInput.value = "http://localhost:1234/v1";
             
-            setTimeout(() => {
-                enableStatusText.style.display = "none";
-            }, 1500);
-        } else {
-            enableStatusText.textContent = "❌ Save failed";
-            enableStatusText.style.display = "block";
-            enableStatusText.style.color = "#dc2626";
+            modelInput.style.display = 'none';
+            // 使用 setProperty + important 确保覆盖内联样式
+            modelSelectEl.style.setProperty('display', 'block', 'important');
             
-            setTimeout(() => {
-                enableStatusText.style.display = "none";
-            }, 2000);
+            // 自动获取模型列表
+            fetchModelsFromUrl("http://localhost:1234/v1", modelSelectEl);
+        } else if (provider === 'ollama') {
+            apiKeyRow.style.display = "none";
+            apiKeyInput.value = "";
+            baseUrlInput.value = "http://localhost:11430/v1";
             
-            // Revert checkbox
-            enableCheckbox.checked = !enableCheckbox.checked;
+            modelInput.style.display = 'none';
+            // 使用 setProperty + important 确保覆盖内联样式
+            modelSelectEl.style.setProperty('display', 'block', 'important');
+            
+            // 自动获取模型列表
+            fetchModelsFromUrl("http://localhost:11430/v1", modelSelectEl);
         }
     });
     
-    // Model input
+    // Enable change handler - show status + auto-save
+    let enableSaveTimeout = null;
+    const handleEnableChange = async () => {
+        enableStatusText.textContent = enableCheckbox.checked ? "✅ Remote LLM enabled" : "⚪ Remote LLM disabled";
+        enableStatusText.style.display = "block";
+        enableStatusText.style.color = "#16a34a";
+        
+        setTimeout(() => {
+            enableStatusText.style.display = "none";
+        }, 1500);
+        
+        // Trigger auto-save after status shown
+        if (enableSaveTimeout) clearTimeout(enableSaveTimeout);
+        enableSaveTimeout = setTimeout(autoSaveConfig, 200);
+    };
+    
+    enableCheckbox.addEventListener("change", handleEnableChange);
+    
+    // Model input (OpenAI Compatible 为输入框，LM Studio/Ollama 为下拉选择)
     const modelRow = mkEl("div", "rs-config-row");
     const modelLabel = mkEl("label", "rs-form-label");
     modelLabel.textContent = "Model";
     
-    const modelInput = mkEl("input", "rs-form-input rs-remote-model");
+    modelInput = document.createElement('input');
     modelInput.type = "text";
+    modelInput.className = "rs-form-input rs-remote-model";
     modelInput.id = "rs-remote-model";
     modelInput.placeholder = "e.g., gpt-4o-mini";
     
+    // 创建 Model select（LM Studio/Ollama 时显示）
+    modelSelectEl = document.createElement('select');
+    modelSelectEl.className = 'rs-form-input rs-remote-model';
+    modelSelectEl.id = 'rs-remote-model-select';
+    modelSelectEl.style.display = 'none';
+    
     modelRow.appendChild(modelLabel);
-    modelRow.appendChild(modelInput);
     
     // API Key input
-    const apiKeyRow = mkEl("div", "rs-config-row");
+    apiKeyRow = mkEl("div", "rs-config-row");
     const apiKeyLabel = mkEl("label", "rs-form-label");
     apiKeyLabel.textContent = "API Key";
     
-    const apiKeyInput = mkEl("input", "rs-form-input rs-remote-api-key");
+    apiKeyInput = mkEl("input", "rs-form-input rs-remote-api-key");
     apiKeyInput.type = "password";
     apiKeyInput.id = "rs-remote-api-key";
     apiKeyInput.placeholder = "Optional for local services";
@@ -335,7 +433,7 @@ function createSettingsModal() {
     const baseUrlLabel = mkEl("label", "rs-form-label");
     baseUrlLabel.textContent = "Base URL";
     
-    const baseUrlInput = mkEl("input", "rs-form-input rs-remote-base-url");
+    baseUrlInput = mkEl("input", "rs-form-input rs-remote-base-url");
     baseUrlInput.type = "text";
     baseUrlInput.id = "rs-remote-base-url";
     baseUrlInput.placeholder = "Leave empty for default";
@@ -343,60 +441,9 @@ function createSettingsModal() {
     baseUrlRow.appendChild(baseUrlLabel);
     baseUrlRow.appendChild(baseUrlInput);
     
-    // Max tokens and temperature row
-    const paramsRow = mkEl("div", "rs-params-row");
-    
-    const maxTokensCol = mkEl("div", "rs-config-col");
-    const maxTokensLabel = mkEl("label", "rs-form-label");
-    maxTokensLabel.textContent = "Max Tokens";
-    
-    const maxTokensInput = mkEl("input", "rs-form-input rs-remote-max-tokens");
-    maxTokensInput.type = "number";
-    maxTokensInput.value = "500";
-    maxTokensInput.min = "1";
-    maxTokensInput.max = "8192";
-    
-    maxTokensCol.appendChild(maxTokensLabel);
-    maxTokensCol.appendChild(maxTokensInput);
-    
-    const timeoutCol = mkEl("div", "rs-config-col");
-    const timeoutLabel = mkEl("label", "rs-form-label");
-    timeoutLabel.textContent = "Timeout (s)";
-    
-    const timeoutInput = mkEl("input", "rs-form-input rs-remote-timeout");
-    timeoutInput.type = "number";
-    timeoutInput.value = "60";
-    timeoutInput.min = "10";
-    timeoutInput.max = "300";
-    
-    timeoutCol.appendChild(timeoutLabel);
-    timeoutCol.appendChild(timeoutInput);
-    
-    const temperatureCol = mkEl("div", "rs-config-col");
-    const temperatureLabel = mkEl("label", "rs-form-label");
-    temperatureLabel.textContent = "Temperature";
-    
-    const temperatureInput = mkEl("input", "rs-form-input rs-remote-temperature");
-    temperatureInput.type = "number";
-    temperatureInput.value = "0.0";
-    temperatureInput.step = "0.1";
-    temperatureInput.min = "0";
-    temperatureInput.max = "2";
-    
-    temperatureCol.appendChild(temperatureLabel);
-    temperatureCol.appendChild(temperatureInput);
-    
-    paramsRow.appendChild(maxTokensCol);
-    paramsRow.appendChild(timeoutCol);
-    paramsRow.appendChild(temperatureCol);
-    
-    // Remote form buttons row
+    // Remote form buttons row - 自动保存，不需要保存按钮
     const remoteBtnRow = mkEl("div", "rs-remote-btn-row rs-modal-btns");
-    
-    const remoteSaveBtn = mkEl("button", "rs-btn rs-remote-save-btn");
-    remoteSaveBtn.textContent = "💾 Save Provider Settings";
-    remoteSaveBtn.type = "button";
-    remoteSaveBtn.style.cssText = "display:block !important; visibility:visible !important; width:100% !important; padding:6px 12px !important; background:#1a3a5a !important; color:#60a5fa !important; border:1px solid #3a6a9a !important; border-radius:4px !important; cursor:pointer !important; font-size:12px !important; font-weight:500 !important; pointer-events:auto !important;";
+    remoteBtnRow.style.display = "none";  // 隐藏按钮行
     
     // Provider save status indicator
     const providerSaveStatusText = mkEl("div", "rs-provider-save-status");
@@ -406,10 +453,15 @@ function createSettingsModal() {
     providerSaveStatusText.style.color = "#999";
     providerSaveStatusText.style.marginTop = "4px";
     
-    // 将保存按钮添加到按钮行
-    remoteBtnRow.appendChild(remoteSaveBtn);
+    // 将 modelInput 和 modelSelect 都加入 DOM
+    modelRow.appendChild(modelInput);
     
-    remoteForm.append(enableRow, enableStatusText, providerRow, modelRow, apiKeyRow, baseUrlRow, paramsRow, remoteBtnRow, providerSaveStatusText);
+    const modelRowWrapper = mkEl("div", "rs-config-row");
+    modelRowWrapper.id = "rs-model-input-wrapper";
+    modelRowWrapper.appendChild(modelInput);
+    modelRowWrapper.appendChild(modelSelectEl);
+    
+    remoteForm.append(enableRow, enableStatusText, providerRow, modelRowWrapper, apiKeyRow, baseUrlRow, remoteBtnRow, providerSaveStatusText);
     
     remoteTabContent.append(remoteInfoText, remoteForm);
     
@@ -437,119 +489,90 @@ function createSettingsModal() {
         remoteTabContent.style.display = "block";
     });
     
-    // Provider save handler
-    remoteSaveBtn.addEventListener("click", async () => {
-        const config = {
-            enabled: enableCheckbox.checked,
-            provider: providerSelect.value,
-            model: modelInput.value,
-            api_key: apiKeyInput.value,
-            base_url: baseUrlInput.value,
-            max_tokens: parseInt(maxTokensInput.value) || 500,
-            timeout: parseInt(timeoutInput.value) || 60,
-            temperature: parseFloat(temperatureInput?.value) || 0.0
-        };
-        
-        const result = await window.NeoNodes?.saveRemoteLLMConfig?.(config);
-        
-        if (result && result.success) {
-            remoteSaveBtn.textContent = "✅ Saved!";
-            remoteSaveBtn.style.background = "#16a34a";
-            remoteSaveBtn.style.color = "#fff";
-            remoteSaveBtn.style.opacity = "1";
-            
-            providerSaveStatusText.textContent = "✅ Provider settings saved!";
-            providerSaveStatusText.style.display = "block";
-            providerSaveStatusText.style.color = "#16a34a";
-            
-            setTimeout(() => {
-                remoteSaveBtn.textContent = "💾 Save Provider Settings";
-                remoteSaveBtn.disabled = false;
-                remoteSaveBtn.style.background = "#1a3a5a";
-                remoteSaveBtn.style.color = "#60a5fa";
-                remoteSaveBtn.style.opacity = "1";
-                providerSaveStatusText.style.display = "none";
-            }, 2000);
+    // Provider save handler - 获取当前显示的 model 值
+    const getModelValue = () => {
+        const provider = providerSelect.value;
+        if (provider === 'openai') {
+            // OpenAI Compatible 使用 text input
+            return modelInput.value;
         } else {
-            remoteSaveBtn.textContent = "❌ Failed";
-            remoteSaveBtn.style.background = "#dc2626";
-            remoteSaveBtn.style.color = "#fff";
-            remoteSaveBtn.style.opacity = "1";
-            
-            providerSaveStatusText.textContent = "❌ Failed to save: " + (result?.error || "Unknown error");
-            providerSaveStatusText.style.display = "block";
-            providerSaveStatusText.style.color = "#dc2626";
-            
-            setTimeout(() => {
-                remoteSaveBtn.textContent = "💾 Save Provider Settings";
-                remoteSaveBtn.disabled = false;
-                remoteSaveBtn.style.background = "#1a3a5a";
-                remoteSaveBtn.style.color = "#60a5fa";
-                remoteSaveBtn.style.opacity = "1";
-                providerSaveStatusText.style.display = "none";
-            }, 3000);
+            // LM Studio / Ollama 使用 select dropdown
+            if (modelSelectEl && modelSelectEl.style.display !== 'none') {
+                return modelSelectEl.value;
+            }
+            // Fallback to modelInput
+            return modelInput.value;
         }
+    };
+    
+    // 自动保存函数 - 失去焦点时调用
+    let saveTimeout = null;
+    const autoSaveConfig = () => {
+        if (saveTimeout) clearTimeout(saveTimeout);
+        saveTimeout = setTimeout(async () => {
+            const modelValue = getModelValue();
+            const config = {
+                enabled: enableCheckbox.checked,
+                provider: providerSelect.value,
+                model: modelValue,
+                api_key: apiKeyInput.value,
+                base_url: baseUrlInput.value
+            };
+
+            const result = await window.NeoNodes?.saveRemoteLLMConfig?.(config);
+            
+            if (result && result.success) {
+                providerSaveStatusText.textContent = "✅ Saved";
+                providerSaveStatusText.style.display = "block";
+                providerSaveStatusText.style.color = "#16a34a";
+                
+                setTimeout(() => {
+                    providerSaveStatusText.style.display = "none";
+                }, 1500);
+            } else {
+                providerSaveStatusText.textContent = "❌ Save failed";
+                providerSaveStatusText.style.display = "block";
+                providerSaveStatusText.style.color = "#dc2626";
+                
+                setTimeout(() => {
+                    providerSaveStatusText.style.display = "none";
+                }, 2000);
+            }
+        }, 300);  // 防抖 300ms
+    };
+    
+    // 所有字段失去焦点时自动保存（enableCheckbox 已在 handleEnableChange 中调用 autoSaveConfig）
+    providerSelect.addEventListener("change", autoSaveConfig);
+    apiKeyInput.addEventListener("blur", autoSaveConfig);
+    baseUrlInput.addEventListener("blur", autoSaveConfig);
+    modelInput.addEventListener("blur", autoSaveConfig);
+    modelSelectEl.addEventListener("change", () => {
+        autoSaveConfig();
     });
     
-    // Provider info update
-    providerSelect.addEventListener("change", () => {
-        const localProviders = ["ollama", "lmstudio", "llamacpp", "vllm"];
-        if (localProviders.includes(providerSelect.value)) {
-            apiKeyInput.placeholder = "Optional for local services";
-        } else {
-            apiKeyInput.placeholder = "Required for cloud services";
-        }
-        
-        if (providerSelect.value === "openai") {
-            modelInput.placeholder = "e.g., gpt-4o-mini";
-            if (!modelInput.value) modelInput.value = "gpt-4o-mini";
-        } else if (providerSelect.value === "anthropic") {
-            modelInput.placeholder = "e.g., claude-sonnet-4-20250514";
-            if (!modelInput.value) modelInput.value = "claude-sonnet-4-20250514";
-        } else if (providerSelect.value === "ollama") {
-            modelInput.placeholder = "e.g., llama3";
-            if (!modelInput.value) modelInput.value = "llama3";
-            baseUrlInput.value = "http://localhost:11430/v1";
-        } else if (providerSelect.value === "lmstudio") {
-            modelInput.placeholder = "e.g., qwen2.5";
-            if (!modelInput.value) modelInput.value = "qwen2.5";
-            baseUrlInput.value = "http://localhost:1234/v1";
-        } else if (providerSelect.value === "llamacpp") {
-            modelInput.placeholder = "Enter model name";
-            baseUrlInput.value = "http://localhost:8080/v1";
-        } else if (providerSelect.value === "vllm") {
-            modelInput.placeholder = "Enter model name";
-            baseUrlInput.value = "http://localhost:8000/v1";
-        } else if (providerSelect.value === "zhipu") {
-            modelInput.placeholder = "e.g., glm-4";
-            if (!modelInput.value) modelInput.value = "glm-4";
-            baseUrlInput.value = "https://open.bigmodel.cn/api/proxy";
-        } else if (providerSelect.value === "doubao") {
-            modelInput.placeholder = "e.g., doubao-lite-128k";
-            if (!modelInput.value) modelInput.value = "doubao-lite-128k";
-        }
-    });
     
     return { 
         modal, 
+        overlay,  // 遮罩层引用
         modelList, 
         statusText, 
         closeBtn,
         enableCheckbox,
         providerSelect,
         modelInput,
+        modelSelectEl,
         apiKeyInput,
+        apiKeyRow,
         baseUrlInput,
-        maxTokensInput,
-        timeoutInput,
-        temperatureInput,
-        remoteSaveBtn,
         enableStatusText,
         providerSaveStatusText,
         localTabBtn,
         remoteTabBtn,
         localTabContent,
-        remoteTabContent
+        remoteTabContent,
+        autoSaveConfig,  // 导出供外部使用（关闭前保存）
+        fetchModelsFromUrl,  // 暴露给外部用于 loadRemoteLLMConfig 自动获取模型
+        setSelectedModelValue  // 暴露给外部用于加载后选中已保存的模型
     };
 }
 
@@ -559,18 +582,63 @@ async function loadRemoteLLMConfig(settingsModal) {
         settingsModal.enableCheckbox.checked = config.enabled || false;
         settingsModal.providerSelect.value = config.provider || 'openai';
         settingsModal.apiKeyInput.value = config.api_key === '***' ? '' : (config.api_key || '');
-        settingsModal.maxTokensInput.value = config.max_tokens || 500;
-        settingsModal.timeoutInput.value = config.timeout || 60;
-        if (settingsModal.temperatureInput) {
-            settingsModal.temperatureInput.value = config.temperature || 0.0;
-        }
-        if (config.model) {
-            settingsModal.modelInput.value = config.model;
-        }
         if (config.base_url) {
             settingsModal.baseUrlInput.value = config.base_url;
         }
-        settingsModal.providerSelect.dispatchEvent(new Event('change'));
+        
+        // 直接调用 provider change handler（不触发事件，避免误触 autoSaveConfig）
+        const provider = settingsModal.providerSelect.value;
+        let targetBaseUrl = null;  // 记录要获取模型的 Base URL
+        
+        if (provider === 'openai') {
+            settingsModal.apiKeyRow.style.display = "flex";
+            settingsModal.modelInput.style.display = '';
+            settingsModal.modelSelectEl.style.display = 'none';
+            settingsModal.modelInput.type = "text";
+            settingsModal.modelInput.placeholder = "e.g., gpt-4o-mini";
+            
+            // 设置 OpenAI Compatible 的 model value
+            if (config.model) {
+                setTimeout(() => {
+                    const modelInput = document.getElementById("rs-remote-model");
+                    if (modelInput) modelInput.value = config.model;
+                }, 50);
+            }
+        } else if (provider === 'lmstudio') {
+            settingsModal.apiKeyRow.style.display = "none";
+            settingsModal.apiKeyInput.value = "";
+            targetBaseUrl = "http://localhost:1234/v1";
+            settingsModal.baseUrlInput.value = targetBaseUrl;
+            settingsModal.modelInput.style.display = 'none';
+            // 使用 setProperty + important 确保覆盖内联样式
+            settingsModal.modelSelectEl.style.setProperty('display', 'block', 'important');
+        } else if (provider === 'ollama') {
+            settingsModal.apiKeyRow.style.display = "none";
+            settingsModal.apiKeyInput.value = "";
+            targetBaseUrl = "http://localhost:11430/v1";
+            settingsModal.baseUrlInput.value = targetBaseUrl;
+            settingsModal.modelInput.style.display = 'none';
+            // 使用 setProperty + important 确保覆盖内联样式
+            settingsModal.modelSelectEl.style.setProperty('display', 'block', 'important');
+        }
+        
+        // LM Studio / Ollama 需要自动获取模型列表，然后选中已保存的模型
+        if ((provider === 'lmstudio' || provider === 'ollama')) {
+            console.log('[prompt-manager] Auto-fetching models for', provider, 'with baseUrl:', targetBaseUrl);
+            const baseUrl = targetBaseUrl;
+            if (baseUrl) {
+                settingsModal.fetchModelsFromUrl(baseUrl, settingsModal.modelSelectEl).then(() => {
+                    console.log('[prompt-manager] Models fetched, selecting saved model:', config.model);
+                    // 模型列表加载完成后，自动选中已保存的模型值
+                    setTimeout(() => {
+                        settingsModal.setSelectedModelValue(settingsModal.modelSelectEl, config.model);
+                    }, 100);
+                }).catch(err => {
+                    console.error('[prompt-manager] Failed to fetch models:', err);
+                });
+            }
+        }
+        
         if (config.enabled) {
             settingsModal.localTabBtn.classList.remove("active");
             settingsModal.remoteTabBtn.classList.add("active");
@@ -726,6 +794,7 @@ function createPromptManagerUI() {
     root.appendChild(presetNameInput);
     root.appendChild(deleteConfirmOverlay);
     root.appendChild(downloadModal.modal);
+    root.appendChild(settingsModal.overlay);  // Settings overlay (遮罩层)
     root.appendChild(settingsModal.modal);
 
     presetListBody.style.scrollbarWidth = "thin";
@@ -1177,17 +1246,6 @@ function createPromptManagerUI() {
             }
         });
 
-        // 点击外部时关闭 settings modal（但点击 modal 内部时不关闭）
-        document.addEventListener("mousedown", (e) => {
-            if (isSettingsBtnClicked) {
-                isSettingsBtnClicked = false;
-                return;
-            }
-            if (!settingsModal.modal.contains(e.target)) {
-                settingsModal.modal.style.display = "none";
-            }
-        });
-
         inputOk.addEventListener("click", performSave);
         inputCancel.addEventListener("click", () => {
             presetNameInput.style.display = "none";
@@ -1430,13 +1488,11 @@ function createPromptManagerUI() {
             // Toggle settings modal
             if (settingsModal.modal.style.display === "flex") {
                 settingsModal.modal.style.display = "none";
+                settingsModal.overlay.style.display = "none";
                 return;
             }
             
-            settingsModal.modal.classList.add("rs-positioned-right");
-            
-            let offsetParent = settingsBtn.offsetParent;
-            
+            // 使用 offsetParent 累加计算按钮在页面中的精确位置
             let accumulatedTop = 0;
             let accumulatedLeft = 0;
             let currentEl = settingsBtn;
@@ -1447,7 +1503,12 @@ function createPromptManagerUI() {
                 currentEl = currentEl.offsetParent;
             }
             
-            const topPos = accumulatedTop;
+            // 垂直居中：按钮位置 + 按钮高度一半 - modal 高度一半
+            const btnHeight = settingsBtn.offsetHeight || 24;
+            const modalHeight = settingsModal.modal.offsetHeight || 400;
+            const topPos = accumulatedTop + (btnHeight / 2) - (modalHeight / 2);
+            
+            // 水平位置：按钮右侧 + 5px 偏移
             const leftPos = accumulatedLeft + settingsBtn.offsetWidth + 5;
             
             settingsModal.modal.style.position = "absolute";
@@ -1455,33 +1516,60 @@ function createPromptManagerUI() {
             settingsModal.modal.style.top = topPos + "px";
             settingsModal.modal.style.left = leftPos + "px";
             settingsModal.modal.style.transform = "none";
+            settingsModal.modal.style.margin = "0";
             settingsModal.modal.style.justifyContent = "flex-start";
             settingsModal.modal.style.alignItems = "flex-start";
             settingsModal.modal.style.opacity = "1";
             settingsModal.modal.style.visibility = "visible";
             
+            // 显示遮罩层 + modal（真正的模态窗口）
+            settingsModal.overlay.style.display = "block";
             settingsModal.modal.style.display = "flex";
             
             loadModelsIntoSettings();
             loadRemoteLLMConfig(settingsModal);
         });
         
-        settingsModal.closeBtn.addEventListener("click", () => {
-            settingsModal.modal.style.display = "none";
+        // 点击遮罩层不关闭（真正的模态行为）- 阻止事件冒泡防止 ComfyUI 全局处理
+        settingsModal.overlay.addEventListener("click", (e) => {
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            // 什么都不做，只阻止默认行为和冒泡
         });
-
+        
+        // 确保 modal 内部点击也不冒泡到 document
         settingsModal.modal.addEventListener("click", (e) => {
-            if (e.target === settingsModal.modal || e.target === settingsModal.wrapper) {
-                settingsModal.modal.style.display = "none";
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+        }, true);
+        
+        // 关闭前自动保存 Remote API 配置
+        const closeSettingsModal = async () => {
+            // 先触发自动保存（通过 settingsModal.autoSaveConfig）
+            if (settingsModal.autoSaveConfig) {
+                settingsModal.autoSaveConfig();
             }
-        });
+            // 等待一下让保存请求发出
+            await new Promise(resolve => setTimeout(resolve, 350));
+            settingsModal.modal.style.display = "none";
+            settingsModal.overlay.style.display = "none";
+        };
+        
+        // 使用 capture 阶段捕获 mousedown + click，防止 ComfyUI 全局事件拦截
+        const handleCloseClick = (e) => {
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            e.preventDefault();
+            closeSettingsModal();
+        };
+        
+        settingsModal.closeBtn.addEventListener("mousedown", handleCloseClick, true);
+        settingsModal.closeBtn.addEventListener("click", handleCloseClick, true);
 
-        // Global click handler to close modal when clicking outside
-        document.addEventListener("click", (e) => {
-            if (settingsModal.modal.style.display === "flex" &&
-                !settingsModal.modal.contains(e.target) &&
-                !settingsBtn.contains(e.target)) {
-                settingsModal.modal.style.display = "none";
+        // ESC 键关闭 settings modal + overlay（关闭前自动保存）
+        document.addEventListener("keydown", (e) => {
+            if (e.key === "Escape" && settingsModal.modal.style.display === "flex") {
+                closeSettingsModal();
             }
         });
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import os
 import json
+import asyncio
 import server
 import torch
 from aiohttp import web
@@ -683,6 +684,41 @@ async def rs_prompts_check_all_models(request):
             "current_model": "",
             "error": str(e)
         }, status=500)
+
+# ==========================================
+# Proxy API for fetching remote models (CORS workaround)
+# ==========================================
+
+@server.PromptServer.instance.routes.post("/rs_prompts/fetch_remote_models")
+async def rs_prompts_fetch_remote_models(request):
+    """Proxy request to fetch model list from LM Studio / Ollama"""
+    try:
+        import aiohttp
+        data = await request.json()
+        base_url = data.get("base_url", "").rstrip("/")
+        
+        if not base_url:
+            return web.Response(status=400, text="base_url required")
+        
+        # Ensure /v1 suffix
+        url = f"{base_url}/v1/models" if not base_url.endswith("/v1") else f"{base_url}/models"
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                if resp.status == 200:
+                    models_data = await resp.json()
+                    return web.json_response({"success": True, "data": models_data})
+                else:
+                    return web.json_response(
+                        {"success": False, "error": f"HTTP {resp.status}"},
+                        status=502
+                    )
+    except asyncio.TimeoutError:
+        return web.json_response({"success": False, "error": "Timeout"}, status=504)
+    except Exception as e:
+        logger.error(f"Error fetching remote models: {e}")
+        return web.json_response({"success": False, "error": str(e)}, status=502)
+
 
 @server.PromptServer.instance.routes.post("/rs_prompts/download_model")
 async def rs_prompts_download_model(request):

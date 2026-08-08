@@ -696,10 +696,23 @@
     50% { opacity: 0.7; }
 }
 
-/* Settings modal */
+/* Settings modal overlay (遮罩层) - 真正的模态窗口，点击不关闭 */
+.rs-settings-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.6);
+    z-index: 99998;
+    display: none;
+    /* 确保遮罩层捕获所有点击事件，防止穿透到下方元素 */
+    pointer-events: auto !important;
+}
+
+/* Settings modal - 阻止点击冒泡到 document */
 .rs-settings-modal {
-    position: absolute;
-    background: rgba(0, 0, 0, 0.85);
+    position: fixed;
     display: none;
     justify-content: flex-start;
     align-items: flex-start;
@@ -710,6 +723,7 @@
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
+    pointer-events: auto !important;
 }
 
 /* 当通过 JS 设置为右侧定位时，移除 transform */
@@ -725,19 +739,11 @@
     min-width: 320px;
     max-width: 400px;
     border-radius: 8px;
-    overflow: visible;
+    overflow: hidden;
+    pointer-events: auto !important;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
     border: 1px solid #444;
     background: #1a1a2a;
-}
-
-.rs-settings-modal-wrapper {
-    display: flex;
-    flex-direction: column;
-    min-width: 320px;
-    max-width: 400px;
-    border-radius: 8px;
-    overflow: hidden;
 }
 
 .rs-settings-modal.show { display: flex !important; }
