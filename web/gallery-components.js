@@ -1278,6 +1278,11 @@ export class GalleryComponents {
         const imgWrapper = document.createElement('div');
         imgWrapper.id = "neo-gallery-lightbox-img-wrapper";
         imgWrapper.className = "neo-gallery-lightbox-img-wrapper";
+        imgWrapper.style.userSelect = 'none';
+        imgWrapper.style.webkitUserSelect = 'none';
+        imgWrapper.style.mozUserSelect = 'none';
+        imgWrapper.style.msUserSelect = 'none';
+        imgWrapper.style.draggable = false;
 
         const categoryParam = image.category ? `&category=${encodeURIComponent(image.category)}` : '';
         const isVideo = isVideoFile(image.filename);
@@ -1298,6 +1303,11 @@ export class GalleryComponents {
             mediaEl = document.createElement('img');
             mediaEl.className = "neo-gallery-lightbox-image";
             mediaEl.src = mediaUrl;
+            mediaEl.draggable = false;
+            mediaEl.style.userSelect = 'none';
+            mediaEl.style.webkitUserSelect = 'none';
+            mediaEl.style.mozUserSelect = 'none';
+            mediaEl.style.msUserSelect = 'none';
         }
 
         const closeBtn = document.createElement('div');
@@ -1698,6 +1708,11 @@ export class GalleryComponents {
             newMediaEl = document.createElement('img');
             newMediaEl.className = "neo-gallery-lightbox-image";
             newMediaEl.src = newMediaUrl + (newMediaUrl.includes('?') ? '&' : '?') + 'v=' + Date.now();
+            newMediaEl.draggable = false;
+            newMediaEl.style.userSelect = 'none';
+            newMediaEl.style.webkitUserSelect = 'none';
+            newMediaEl.style.mozUserSelect = 'none';
+            newMediaEl.style.msUserSelect = 'none';
         }
 
         // Append new media element
@@ -1728,15 +1743,15 @@ export class GalleryComponents {
                 if (!currentMediaEl) return;
                 
                 const delta = e.deltaY > 0 ? -0.1 : 0.1;
-                const newScale = Math.max(0.5, Math.min(5, gallery._lightboxScale + delta));
+                const newScale = Math.max(0.5, Math.min(5, this.gallery._lightboxScale + delta));
                 
-                gallery._lightboxScale = newScale;
-                this._applyLightboxTransform(gallery, currentMediaEl);
+                this.gallery._lightboxScale = newScale;
+                this._applyLightboxTransform(this.gallery, currentMediaEl);
             };
             
             // 拖拽平移事件 - 动态获取当前图片元素
             const mouseDownHandler = (e) => {
-                if (gallery._lightboxScale <= 1) return;
+                if (this.gallery._lightboxScale <= 1) return;
                 const currentMediaEl = imgWrapper.querySelector('img');
                 if (!currentMediaEl) return;
                 if (e.target !== currentMediaEl && e.target !== imgWrapper) return;
@@ -1744,40 +1759,40 @@ export class GalleryComponents {
                 e.stopPropagation();
                 e.stopImmediatePropagation();
                 
-                gallery._lightboxIsDragging = true;
-                gallery._lightboxDragStartX = e.clientX - gallery._lightboxPanX;
-                gallery._lightboxDragStartY = e.clientY - gallery._lightboxPanY;
+                this.gallery._lightboxIsDragging = true;
+                this.gallery._lightboxDragStartX = e.clientX - this.gallery._lightboxPanX;
+                this.gallery._lightboxDragStartY = e.clientY - this.gallery._lightboxPanY;
                 
                 currentMediaEl.style.cursor = 'grabbing';
             };
             
             const mouseMoveHandler = (e) => {
-                if (!gallery._lightboxIsDragging) return;
+                if (!this.gallery._lightboxIsDragging) return;
                 const currentMediaEl = imgWrapper.querySelector('img');
                 if (!currentMediaEl) return;
                 e.preventDefault();
                 e.stopPropagation();
                 e.stopImmediatePropagation();
                 
-                gallery._lightboxPanX = e.clientX - gallery._lightboxDragStartX;
-                gallery._lightboxPanY = e.clientY - gallery._lightboxDragStartY;
+                this.gallery._lightboxPanX = e.clientX - this.gallery._lightboxDragStartX;
+                this.gallery._lightboxPanY = e.clientY - this.gallery._lightboxDragStartY;
                 
-                this._applyLightboxTransform(gallery, currentMediaEl);
+                this._applyLightboxTransform(this.gallery, currentMediaEl);
             };
             
             const mouseUpHandler = () => {
-                gallery._lightboxIsDragging = false;
+                this.gallery._lightboxIsDragging = false;
                 const currentMediaEl = imgWrapper.querySelector('img');
                 if (currentMediaEl) {
-                    currentMediaEl.style.cursor = gallery._lightboxScale > 1 ? 'grab' : 'default';
+                    currentMediaEl.style.cursor = this.gallery._lightboxScale > 1 ? 'grab' : 'default';
                 }
             };
             
             const mouseLeaveHandler = () => {
-                gallery._lightboxIsDragging = false;
+                this.gallery._lightboxIsDragging = false;
                 const currentMediaEl = imgWrapper.querySelector('img');
                 if (currentMediaEl) {
-                    currentMediaEl.style.cursor = gallery._lightboxScale > 1 ? 'grab' : 'default';
+                    currentMediaEl.style.cursor = this.gallery._lightboxScale > 1 ? 'grab' : 'default';
                 }
             };
             
@@ -1795,8 +1810,8 @@ export class GalleryComponents {
             imgWrapper._lightboxMouseLeaveHandler = mouseLeaveHandler;
             
             // 应用当前的缩放和平移状态
-            if (gallery._lightboxScale !== 1) {
-                this._applyLightboxTransform(gallery, newMediaEl);
+            if (this.gallery._lightboxScale !== 1) {
+                this._applyLightboxTransform(this.gallery, newMediaEl);
             }
         }
 
