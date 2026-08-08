@@ -1236,6 +1236,16 @@ export class GalleryComponents {
 
     injectAnimations() { }
 
+    _applyLightboxTransform(gallery, mediaEl) {
+        if (gallery._lightboxScale === 1) {
+            mediaEl.style.transform = 'none';
+            mediaEl.style.cursor = 'default';
+        } else {
+            mediaEl.style.transform = `scale(${gallery._lightboxScale}) translate(${gallery._lightboxPanX}px, ${gallery._lightboxPanY}px)`;
+            mediaEl.style.cursor = gallery._lightboxIsDragging ? 'grabbing' : 'grab';
+        }
+    }
+
     showLightbox(gallery, image, subfolder) {
         gallery.injectAnimations();
 
@@ -1329,6 +1339,85 @@ export class GalleryComponents {
         };
 
         imgWrapper.appendChild(mediaEl);
+
+        // 为图片添加缩放和平移事件监听器
+        if (!isVideo) {
+            // 滚轮缩放事件 - 动态获取当前图片元素
+            const wheelHandler = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+                
+                const currentMediaEl = imgWrapper.querySelector('img');
+                if (!currentMediaEl) return;
+                
+                const delta = e.deltaY > 0 ? -0.1 : 0.1;
+                const newScale = Math.max(0.5, Math.min(5, gallery._lightboxScale + delta));
+                
+                gallery._lightboxScale = newScale;
+                this._applyLightboxTransform(gallery, currentMediaEl);
+            };
+            
+            // 拖拽平移事件 - 动态获取当前图片元素
+            const mouseDownHandler = (e) => {
+                if (gallery._lightboxScale <= 1) return;
+                const currentMediaEl = imgWrapper.querySelector('img');
+                if (!currentMediaEl) return;
+                if (e.target !== currentMediaEl && e.target !== imgWrapper) return;
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+                
+                gallery._lightboxIsDragging = true;
+                gallery._lightboxDragStartX = e.clientX - gallery._lightboxPanX;
+                gallery._lightboxDragStartY = e.clientY - gallery._lightboxPanY;
+                
+                currentMediaEl.style.cursor = 'grabbing';
+            };
+            
+            const mouseMoveHandler = (e) => {
+                if (!gallery._lightboxIsDragging) return;
+                const currentMediaEl = imgWrapper.querySelector('img');
+                if (!currentMediaEl) return;
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+                
+                gallery._lightboxPanX = e.clientX - gallery._lightboxDragStartX;
+                gallery._lightboxPanY = e.clientY - gallery._lightboxDragStartY;
+                
+                this._applyLightboxTransform(gallery, currentMediaEl);
+            };
+            
+            const mouseUpHandler = () => {
+                gallery._lightboxIsDragging = false;
+                const currentMediaEl = imgWrapper.querySelector('img');
+                if (currentMediaEl) {
+                    currentMediaEl.style.cursor = gallery._lightboxScale > 1 ? 'grab' : 'default';
+                }
+            };
+            
+            const mouseLeaveHandler = () => {
+                gallery._lightboxIsDragging = false;
+                const currentMediaEl = imgWrapper.querySelector('img');
+                if (currentMediaEl) {
+                    currentMediaEl.style.cursor = gallery._lightboxScale > 1 ? 'grab' : 'default';
+                }
+            };
+            
+            imgWrapper.addEventListener('wheel', wheelHandler, { passive: false, capture: true });
+            imgWrapper.addEventListener('mousedown', mouseDownHandler, { capture: true });
+            imgWrapper.addEventListener('mousemove', mouseMoveHandler, { capture: true });
+            imgWrapper.addEventListener('mouseup', mouseUpHandler, { capture: true });
+            imgWrapper.addEventListener('mouseleave', mouseLeaveHandler, { capture: true });
+            
+            // 保存处理器引用以便后续移除
+            imgWrapper._lightboxWheelHandler = wheelHandler;
+            imgWrapper._lightboxMouseDownHandler = mouseDownHandler;
+            imgWrapper._lightboxMouseMoveHandler = mouseMoveHandler;
+            imgWrapper._lightboxMouseUpHandler = mouseUpHandler;
+            imgWrapper._lightboxMouseLeaveHandler = mouseLeaveHandler;
+        }
 
         const imageInfo = document.createElement('div');
         if (!isVideo) {
@@ -1545,6 +1634,11 @@ export class GalleryComponents {
             document.removeEventListener('keydown', gallery.currentLightboxKeyboardHandler);
             gallery.currentLightboxKeyboardHandler = null;
         }
+        // 重置缩放和平移状态
+        gallery._lightboxScale = 1;
+        gallery._lightboxPanX = 0;
+        gallery._lightboxPanY = 0;
+        gallery._lightboxIsDragging = false;
     }
 
     navigateLightboxImage(gallery, direction) {
@@ -1587,41 +1681,136 @@ export class GalleryComponents {
                 existingMedia.src = '';  // Clear src to release resources
             }
             existingMedia.remove();
+        }
 
-            // Create new media element after removing the old one
+        // Create new media element
+        let newMediaEl;
+        if (isVideo) {
+            newMediaEl = document.createElement('video');
+            newMediaEl.className = "neo-gallery-lightbox-image neo-gallery-lightbox-video";
+            newMediaEl.src = newVideoUrl;
+            newMediaEl.controls = true;
+            newMediaEl.autoplay = true;
+            newMediaEl.loop = true;
+            newMediaEl.style.maxWidth = '100%';
+            newMediaEl.style.maxHeight = '80vh';
+        } else {
+            newMediaEl = document.createElement('img');
+            newMediaEl.className = "neo-gallery-lightbox-image";
+            newMediaEl.src = newMediaUrl + (newMediaUrl.includes('?') ? '&' : '?') + 'v=' + Date.now();
+        }
 
-            // Create new media element
-            let newMediaEl;
-            if (isVideo) {
-                newMediaEl = document.createElement('video');
-                newMediaEl.className = "neo-gallery-lightbox-image neo-gallery-lightbox-video";
-                newMediaEl.src = newVideoUrl;
-                newMediaEl.controls = true;
-                newMediaEl.autoplay = true;
-                newMediaEl.loop = true;
-                newMediaEl.style.maxWidth = '100%';
-                newMediaEl.style.maxHeight = '80vh';
-            } else {
-                newMediaEl = document.createElement('img');
-                newMediaEl.className = "neo-gallery-lightbox-image";
-                newMediaEl.src = newMediaUrl + (newMediaUrl.includes('?') ? '&' : '?') + 'v=' + Date.now();
-            }
-
-            // Append new media element (old one already removed)
-            imgWrapper.appendChild(newMediaEl);
-
-            // Update image info
-            const infoEl = container.querySelector('.neo-gallery-lightbox-image-info');
-            if (infoEl) {
-                if (isVideo) {
-                    newMediaEl.onloadedmetadata = () => {
-                        infoEl.textContent = `${newMediaEl.videoWidth} \u00d7 ${newMediaEl.videoHeight}`;
-                    };
-                } else {
-                    newMediaEl.onload = () => {
-                        infoEl.textContent = `${newMediaEl.naturalWidth} \u00d7 ${newMediaEl.naturalHeight}`;
-                    };
+        // Append new media element
+        imgWrapper.appendChild(newMediaEl);
+        
+        // 在 imgWrapper 上添加事件监听器（而不是在图片上），确保事件能被捕获
+        if (!isVideo) {
+            // 移除旧的事件监听器
+            const oldWheelHandler = imgWrapper._lightboxWheelHandler;
+            const oldMouseDownHandler = imgWrapper._lightboxMouseDownHandler;
+            const oldMouseMoveHandler = imgWrapper._lightboxMouseMoveHandler;
+            const oldMouseUpHandler = imgWrapper._lightboxMouseUpHandler;
+            const oldMouseLeaveHandler = imgWrapper._lightboxMouseLeaveHandler;
+            
+            if (oldWheelHandler) imgWrapper.removeEventListener('wheel', oldWheelHandler, { capture: true });
+            if (oldMouseDownHandler) imgWrapper.removeEventListener('mousedown', oldMouseDownHandler, { capture: true });
+            if (oldMouseMoveHandler) imgWrapper.removeEventListener('mousemove', oldMouseMoveHandler, { capture: true });
+            if (oldMouseUpHandler) imgWrapper.removeEventListener('mouseup', oldMouseUpHandler, { capture: true });
+            if (oldMouseLeaveHandler) imgWrapper.removeEventListener('mouseleave', oldMouseLeaveHandler, { capture: true });
+            
+            // 滚轮缩放事件 - 动态获取当前图片元素
+            const wheelHandler = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+                
+                const currentMediaEl = imgWrapper.querySelector('img');
+                if (!currentMediaEl) return;
+                
+                const delta = e.deltaY > 0 ? -0.1 : 0.1;
+                const newScale = Math.max(0.5, Math.min(5, gallery._lightboxScale + delta));
+                
+                gallery._lightboxScale = newScale;
+                this._applyLightboxTransform(gallery, currentMediaEl);
+            };
+            
+            // 拖拽平移事件 - 动态获取当前图片元素
+            const mouseDownHandler = (e) => {
+                if (gallery._lightboxScale <= 1) return;
+                const currentMediaEl = imgWrapper.querySelector('img');
+                if (!currentMediaEl) return;
+                if (e.target !== currentMediaEl && e.target !== imgWrapper) return;
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+                
+                gallery._lightboxIsDragging = true;
+                gallery._lightboxDragStartX = e.clientX - gallery._lightboxPanX;
+                gallery._lightboxDragStartY = e.clientY - gallery._lightboxPanY;
+                
+                currentMediaEl.style.cursor = 'grabbing';
+            };
+            
+            const mouseMoveHandler = (e) => {
+                if (!gallery._lightboxIsDragging) return;
+                const currentMediaEl = imgWrapper.querySelector('img');
+                if (!currentMediaEl) return;
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+                
+                gallery._lightboxPanX = e.clientX - gallery._lightboxDragStartX;
+                gallery._lightboxPanY = e.clientY - gallery._lightboxDragStartY;
+                
+                this._applyLightboxTransform(gallery, currentMediaEl);
+            };
+            
+            const mouseUpHandler = () => {
+                gallery._lightboxIsDragging = false;
+                const currentMediaEl = imgWrapper.querySelector('img');
+                if (currentMediaEl) {
+                    currentMediaEl.style.cursor = gallery._lightboxScale > 1 ? 'grab' : 'default';
                 }
+            };
+            
+            const mouseLeaveHandler = () => {
+                gallery._lightboxIsDragging = false;
+                const currentMediaEl = imgWrapper.querySelector('img');
+                if (currentMediaEl) {
+                    currentMediaEl.style.cursor = gallery._lightboxScale > 1 ? 'grab' : 'default';
+                }
+            };
+            
+            imgWrapper.addEventListener('wheel', wheelHandler, { passive: false, capture: true });
+            imgWrapper.addEventListener('mousedown', mouseDownHandler, { capture: true });
+            imgWrapper.addEventListener('mousemove', mouseMoveHandler, { capture: true });
+            imgWrapper.addEventListener('mouseup', mouseUpHandler, { capture: true });
+            imgWrapper.addEventListener('mouseleave', mouseLeaveHandler, { capture: true });
+            
+            // 保存处理器引用以便后续移除
+            imgWrapper._lightboxWheelHandler = wheelHandler;
+            imgWrapper._lightboxMouseDownHandler = mouseDownHandler;
+            imgWrapper._lightboxMouseMoveHandler = mouseMoveHandler;
+            imgWrapper._lightboxMouseUpHandler = mouseUpHandler;
+            imgWrapper._lightboxMouseLeaveHandler = mouseLeaveHandler;
+            
+            // 应用当前的缩放和平移状态
+            if (gallery._lightboxScale !== 1) {
+                this._applyLightboxTransform(gallery, newMediaEl);
+            }
+        }
+
+        // Update image info
+        const infoEl = container.querySelector('.neo-gallery-lightbox-image-info');
+        if (infoEl) {
+            if (isVideo) {
+                newMediaEl.onloadedmetadata = () => {
+                    infoEl.textContent = `${newMediaEl.videoWidth} \u00d7 ${newMediaEl.videoHeight}`;
+                };
+            } else {
+                newMediaEl.onload = () => {
+                    infoEl.textContent = `${newMediaEl.naturalWidth} \u00d7 ${newMediaEl.naturalHeight}`;
+                };
             }
         }
 
