@@ -87,9 +87,7 @@ function createBasicNodeInitializer(node, instanceUid) {
         if (!node.properties) {
             node.properties = {};
         }
-        if (node.properties.rs_disable_state === undefined) {
-            node.properties.rs_disable_state = false;
-        }
+        // rs_disable_state 不在这里设置默认值，由调用方根据是否有 text_input 连接来决定
         if (node.properties.rs_waiting_prompt === undefined) {
             node.properties.rs_waiting_prompt = "";
         }
@@ -122,11 +120,17 @@ app.registerExtension({
         nodeType.prototype.onConfigure = function(data) {
             const result = _origOnConfigure.apply(this, arguments);
             const node = this;
-            
+
             if (this.widgets) {
                 const uidWidget = this.widgets.find(w => w.name === "instance_uid");
                 if (uidWidget && this.properties?.rs_instance_uid !== undefined) {
                     uidWidget.value = this.properties.rs_instance_uid;
+                }
+            }
+            if (this.widgets) {
+                const disableWidget = this.widgets.find(w => w.name === "disable_text_input");
+                if (disableWidget && this.properties?.rs_disable_state !== undefined) {
+                    disableWidget.value = this.properties.rs_disable_state;
                 }
             }
             setTimeout(() => {
@@ -140,6 +144,8 @@ app.registerExtension({
             if (node.properties && node.widgets) {
                 const uidWidget = node.widgets.find(w => w.name === "instance_uid");
                 if (uidWidget && uidWidget.value) node.properties.rs_instance_uid = uidWidget.value;
+                const disableWidget = node.widgets.find(w => w.name === "disable_text_input");
+                if (disableWidget && node.properties) node.properties.rs_disable_state = disableWidget.value;
             }
             return _origSerialize.apply(this, arguments);
         };
@@ -153,6 +159,24 @@ app.registerExtension({
             let instanceUid = NodeBehaviors.getInstanceUid(node);
             node.properties.rs_instance_uid = instanceUid;
 
+            // 初始化 rs_disable_state：默认为 LOCAL PROMPT (true)
+            node.properties.rs_disable_state = true;
+
+            const textWidget = node.widgets?.find(w => w.name === "prompt");
+            const disableWidget = node.widgets?.find(w => w.name === "disable_text_input");
+            const uidWidget = node.widgets?.find(w => w.name === "instance_uid");
+
+            if (uidWidget) {
+                uidWidget.value = instanceUid;
+                uidWidget.hidden = true;
+                uidWidget.serializeValue = () => node.properties.rs_instance_uid;
+            }
+            if (textWidget) textWidget.hidden = true;
+            if (disableWidget) {
+                disableWidget.value = node.properties.rs_disable_state;
+                disableWidget.hidden = true;
+            }
+
             // Create prompt manager UI FIRST
             const promptUI = createPromptManagerUI();
             const root = promptUI.root;
@@ -160,41 +184,19 @@ app.registerExtension({
             // Add the custom DOM widget - this will contain all visible UI elements
             node.addDOMWidget("prompt_ui", "custom", root);
 
-            // Get textWidget reference BEFORE hiding other widgets
-            const textWidget = node.widgets?.find(w => w.name === "prompt");
-            
-            // Hide specific default ComfyUI widgets only (not prompt_ui which is our container)
-            const uidWidget = node.widgets?.find(w => w.name === "instance_uid");
-            if (uidWidget) {
-                uidWidget.value = instanceUid;
-                uidWidget.serializeValue = () => node.properties.rs_instance_uid;
-                uidWidget.hidden = true;
-            }
-
-            // Hide the prompt STRING widget
-            if (textWidget) {
-                textWidget.hidden = true;
-                if (textWidget.element) textWidget.element.style.display = 'none';
-                if (textWidget.inputEl) textWidget.inputEl.style.display = 'none';
-            }
             node.setSize([370, 280]);
             node.minWidth = 370;
             node.minHeight = 260;
 
             // Initialize prompt manager - get UI elements and settings button
             // Pass textWidget so save handler can read current prompt text for AI extraction
-            const { 
-                enhanceBtn, translateBtn, generateBtn, randomBtn, quickInput, 
-                customTextarea, statusBar, settingsBtn,
+            const {
+                enhanceBtn, translateBtn, generateBtn, randomBtn, quickInput,
+                customTextarea, statusBar, settingsBtn, toggleSwitch, toggleKnob,
                 presetListOverlay, presetNameInput, deleteConfirmOverlay, downloadModal,
                 settingsModal, loadModelsIntoSettings,
                 quickInputWrapper
             } = promptUI.init({ node, graph: node.graph, textWidget });
-
-            // Hide status bar for NeoPromptGenerator
-            if (statusBar) {
-                statusBar.style.display = "none";
-            }
 
             // Node lifecycle management
             const behaviorManager = NodeBehaviors.createNodeBehaviorManager();
@@ -202,25 +204,92 @@ app.registerExtension({
             // Save references for cleanup
             node._promptUIElements = { presetListOverlay, presetNameInput, deleteConfirmOverlay };
 
-            // NeoPromptGenerator UI update function (simplified - no toggle/statusBar)
-            const updateStatusAndUI = () => {
-                enhanceBtn.disabled = false;
-                enhanceBtn.style.opacity = "1";
-                translateBtn.disabled = false;
-                translateBtn.style.opacity = "1";
-                customTextarea.style.border = "1px solid #444";
-
-                // Always show LOCAL PROMPT theme (no external input toggle)
-                root.classList.remove("rs-theme-external");
-                root.classList.add("rs-theme-local");
-
-                if (node.graph) node.graph.setDirtyCanvas(true, true);
+            const hasTextInputConnection = () => {
+                return node.inputs?.some(i => i.name === "text_input" && i.link !== null) || false;
             };
+
+            // NeoPromptGenerator UI update function (with toggle support)
+            const updateStatusAndUI = (() => {
+                const applyTheme = (isExternal) => {
+                    if (isExternal) {
+                        statusBar.style.background = "#1a2a4a";
+                        statusBar.style.color = "#60a5fa";
+                        const statusTextEl = statusBar.querySelector("span");
+                        if (statusTextEl) statusTextEl.textContent = "🔵 EXTERNAL INPUT";
+                        root.classList.remove("rs-theme-local");
+                        root.classList.add("rs-theme-external");
+                    } else {
+                        statusBar.style.background = "#1a3a1a";
+                        statusBar.style.color = "#4ade80";
+                        const statusTextEl = statusBar.querySelector("span");
+                        if (statusTextEl) statusTextEl.textContent = "🟢 LOCAL PROMPT";
+                        root.classList.remove("rs-theme-external");
+                        root.classList.add("rs-theme-local");
+                    }
+                };
+
+                return () => {
+                    const isDisabled = node.properties.rs_disable_state;
+
+                    enhanceBtn.disabled = false;
+                    enhanceBtn.style.opacity = "1";
+                    translateBtn.disabled = false;
+                    translateBtn.style.opacity = "1";
+                    customTextarea.style.border = "1px solid #444";
+
+                    applyTheme(!isDisabled);
+
+                    if (toggleSwitch && toggleKnob) {
+                        if (isDisabled) {
+                            // LOCAL PROMPT: toggle OFF (knob left, gray background)
+                            toggleSwitch.style.setProperty('background', '#3a3a3a', 'important');
+                            toggleSwitch.style.setProperty('border-color', '#555', 'important');
+                            toggleKnob.style.setProperty('transform', 'translateX(0)', 'important');
+                            toggleKnob.style.setProperty('background', '#999', 'important');
+                        } else {
+                            // EXTERNAL INPUT: toggle ON (knob right, theme color background)
+                            toggleSwitch.style.setProperty('background', '#4a4a4a', 'important');
+                            toggleSwitch.style.setProperty('border-color', '#666', 'important');
+                            toggleKnob.style.setProperty('transform', 'translateX(12px)', 'important');
+                            toggleKnob.style.setProperty('background', '#fff', 'important');
+                        }
+                    }
+
+                    if (node.graph) node.graph.setDirtyCanvas(true, true);
+                };
+            })();
+
+            // Toggle switch click handler
+            if (toggleSwitch) {
+                toggleSwitch.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    const currentState = node.properties.rs_disable_state;
+                    const newState = !currentState;
+
+                    if (!newState && !hasTextInputConnection()) {
+                        const statusTextEl = statusBar.querySelector("span");
+                        if (statusTextEl) {
+                            statusTextEl.textContent = "⚠️ CONNECT text_input TO SWITCH";
+                        }
+                        statusBar.style.background = "#3a2a1a";
+                        statusBar.style.color = "#fbbf24";
+                        updateStatusAndUI();
+                        setTimeout(() => updateStatusAndUI(), 1500);
+                        return;
+                    }
+
+                    node.properties.rs_disable_state = newState;
+                    if (disableWidget) disableWidget.value = node.properties.rs_disable_state;
+                    updateStatusAndUI();
+                    if (node.graph) node.graph.setDirtyCanvas(true, true);
+                });
+            }
 
 
             // Node removal cleanup
             node.onRemoved = function() {
-                behaviorManager.stopEnforcement(node);
+                stopEnforcement();
                 presetListOverlay.remove();
                 presetNameInput.remove();
                 deleteConfirmOverlay.remove();
@@ -233,10 +302,50 @@ app.registerExtension({
                 updateStatusAndUI();
             };
 
+            // 启动强制执行定时器
+            let enforcementInterval = null;
+            const startEnforcement = () => {
+                if (enforcementInterval) clearInterval(enforcementInterval);
+                enforcementInterval = setInterval(() => {
+                    let needsRedraw = false;
+                    if (disableWidget && disableWidget.value !== node.properties.rs_disable_state) {
+                        disableWidget.value = node.properties.rs_disable_state;
+                        needsRedraw = true;
+                    }
+                    if (needsRedraw && node.graph) node.graph.setDirtyCanvas(true, true);
+                }, 200);
+            };
+
+            const stopEnforcement = () => {
+                if (enforcementInterval) {
+                    clearInterval(enforcementInterval);
+                    enforcementInterval = null;
+                }
+                behaviorManager.stopEnforcement(node);
+            };
+
             // Initialize
             setTimeout(() => {
                 NodeBehaviors.restoreTextFromStorage(node, textWidget, customTextarea);
-                behaviorManager.startEnforcement(node);
+
+                if (disableWidget) {
+                    const originalDisableCallback = disableWidget.callback;
+                    disableWidget.callback = function(v) {
+                        node.properties.rs_disable_state = v;
+                        originalDisableCallback?.apply(this, arguments);
+                        updateStatusAndUI();
+                    };
+                }
+
+                // Force toggle to OFF state (LOCAL PROMPT) on initial creation
+                if (toggleSwitch && toggleKnob) {
+                    toggleSwitch.style.setProperty('background', '#3a3a3a', 'important');
+                    toggleSwitch.style.setProperty('border-color', '#555', 'important');
+                    toggleKnob.style.setProperty('transform', 'translateX(0)', 'important');
+                    toggleKnob.style.setProperty('background', '#999', 'important');
+                }
+
+                startEnforcement();
                 updateStatusAndUI();
             }, 100);
 
@@ -414,10 +523,8 @@ app.registerExtension({
             let instanceUid = NodeBehaviors.getInstanceUid(node);
             node.properties.rs_instance_uid = instanceUid;
 
-            if (node.properties.rs_disable_state === undefined) {
-                const disableWidget = node.widgets?.find(w => w.name === "disable_text_input");
-                node.properties.rs_disable_state = disableWidget ? disableWidget.value : false;
-            }
+            // 初始化 rs_disable_state：默认为 LOCAL PROMPT (true)
+            node.properties.rs_disable_state = true;
 
             const textWidget = node.widgets?.find(w => w.name === "text");
             const disableWidget = node.widgets?.find(w => w.name === "disable_text_input");
@@ -535,16 +642,16 @@ app.registerExtension({
                     if (toggleSwitch && toggleKnob) {
                         if (isDisabled) {
                             // LOCAL PROMPT: toggle OFF (knob left, gray background)
-                            toggleSwitch.style.background = "#3a3a3a";
-                            toggleSwitch.style.borderColor = "#555";
-                            toggleKnob.style.transform = "translateX(0)";
-                            toggleKnob.style.background = "#999";
+                            toggleSwitch.style.setProperty('background', '#3a3a3a', 'important');
+                            toggleSwitch.style.setProperty('border-color', '#555', 'important');
+                            toggleKnob.style.setProperty('transform', 'translateX(0)', 'important');
+                            toggleKnob.style.setProperty('background', '#999', 'important');
                         } else {
                             // EXTERNAL INPUT: toggle ON (knob right, theme color background)
-                            toggleSwitch.style.background = "#4a4a4a";
-                            toggleSwitch.style.borderColor = "#666";
-                            toggleKnob.style.transform = "translateX(12px)";
-                            toggleKnob.style.background = "#fff";
+                            toggleSwitch.style.setProperty('background', '#4a4a4a', 'important');
+                            toggleSwitch.style.setProperty('border-color', '#666', 'important');
+                            toggleKnob.style.setProperty('transform', 'translateX(12px)', 'important');
+                            toggleKnob.style.setProperty('background', '#fff', 'important');
                         }
                     }
 
@@ -581,13 +688,15 @@ app.registerExtension({
                     const currentState = node.properties.rs_disable_state;
                     const newState = !currentState;
 
-                    if (newState && !hasTextInputConnection()) {
+                    if (!newState && !hasTextInputConnection()) {
                         const statusTextEl = statusBar.querySelector("span");
                         if (statusTextEl) {
                             statusTextEl.textContent = "⚠️ CONNECT text_input TO SWITCH";
                         }
                         statusBar.style.background = "#3a2a1a";
                         statusBar.style.color = "#fbbf24";
+                        // 保持当前状态不变，更新 UI
+                        updateStatusAndUI();
                         setTimeout(() => updateStatusAndUI(), 1500);
                         return;
                     }
@@ -626,6 +735,14 @@ app.registerExtension({
                         originalDisableCallback?.apply(this, arguments);
                         updateStatusAndUI();
                     };
+                }
+
+                // Force toggle to OFF state (LOCAL PROMPT) on initial creation
+                if (toggleSwitch && toggleKnob) {
+                    toggleSwitch.style.setProperty('background', '#3a3a3a', 'important');
+                    toggleSwitch.style.setProperty('border-color', '#555', 'important');
+                    toggleKnob.style.setProperty('transform', 'translateX(0)', 'important');
+                    toggleKnob.style.setProperty('background', '#999', 'important');
                 }
 
                 startEnforcement();

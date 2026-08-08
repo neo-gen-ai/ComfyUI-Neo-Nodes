@@ -710,11 +710,11 @@ class NeoPromptGenerator:
     """
     A simple prompt generator node that outputs text only.
     - No clip input required
-    - No switch (external/internal input toggle)
+    - Supports external/internal input toggle
     - Output: STRING (the prompt text)
     - Has a settings button to select LLM model
     """
-    
+
     _CACHE_MAX_SIZE = 50
     MIN_SIZE = (400, 300)
 
@@ -722,7 +722,11 @@ class NeoPromptGenerator:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "prompt": ("STRING", {"multiline": True, "default": "",  "hidden": True}),
+                "prompt": ("STRING", {"multiline": True, "default": "", "hidden": True}),
+                "disable_text_input": ("BOOLEAN", {"default": False, "hidden": True}),
+            },
+            "optional": {
+                "text_input": ("STRING", {"forceInput": True}),
                 "instance_uid": ("STRING", {"default": "", "hidden": True}),
             },
             "hidden": {
@@ -735,13 +739,26 @@ class NeoPromptGenerator:
     FUNCTION = "get_prompt"
     CATEGORY = "Neo-Nodes"
     OUTPUT_NODE = True
-    DESCRIPTION = "Simple prompt generator node with settings button. No clip encoder binding."
+    DESCRIPTION = "Simple prompt generator node with settings button. Supports external/internal input toggle. No clip encoder binding."
 
-    def get_prompt(self, prompt="", instance_uid="", unique_id=None):
+    def get_prompt(self, prompt="", disable_text_input=False, text_input=None, instance_uid="", unique_id=None):
         """Returns the prompt text as output."""
+        if disable_text_input:
+            current_text = prompt
+            effective_text_input = None
+        else:
+            current_text = text_input if text_input is not None else prompt
+            effective_text_input = text_input
+
+        if effective_text_input is not None and instance_uid:
+            PromptServer.instance.send_sync("rs.prompt.update", {
+                "instance_uid": instance_uid,
+                "prompt": current_text
+            })
+
         return {
-            "ui": {"text": [prompt]},
-            "result": (prompt,)
+            "ui": {"text": [current_text]},
+            "result": (current_text,)
         }
 
     @classmethod

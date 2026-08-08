@@ -509,17 +509,17 @@ function createSettingsModal() {
         } else if (providerSelect.value === "ollama") {
             modelInput.placeholder = "e.g., llama3";
             if (!modelInput.value) modelInput.value = "llama3";
-            baseUrlInput.value = "http://localhost:11430";
+            baseUrlInput.value = "http://localhost:11430/v1";
         } else if (providerSelect.value === "lmstudio") {
             modelInput.placeholder = "e.g., qwen2.5";
             if (!modelInput.value) modelInput.value = "qwen2.5";
-            baseUrlInput.value = "http://localhost:1234";
+            baseUrlInput.value = "http://localhost:1234/v1";
         } else if (providerSelect.value === "llamacpp") {
             modelInput.placeholder = "Enter model name";
-            baseUrlInput.value = "http://localhost:8080";
+            baseUrlInput.value = "http://localhost:8080/v1";
         } else if (providerSelect.value === "vllm") {
             modelInput.placeholder = "Enter model name";
-            baseUrlInput.value = "http://localhost:8000";
+            baseUrlInput.value = "http://localhost:8000/v1";
         } else if (providerSelect.value === "zhipu") {
             modelInput.placeholder = "e.g., glm-4";
             if (!modelInput.value) modelInput.value = "glm-4";
@@ -610,9 +610,13 @@ function createStatusBars() {
     
     const toggleSwitch = mkEl("div", "rs-toggle-switch");
     toggleSwitch.setAttribute("data-rs-tooltip", "Enable external text input");
-    
+    toggleSwitch.style.setProperty('background', '#3a3a3a', 'important');
+    toggleSwitch.style.setProperty('border-color', '#555', 'important');
+
     const toggleKnob = mkEl("div", "rs-toggle-knob");
-    
+    toggleKnob.style.setProperty('transform', 'translateX(0)', 'important');
+    toggleKnob.style.setProperty('background', '#999', 'important');
+
     toggleSwitch.appendChild(toggleKnob);
     toggleWrapper.appendChild(toggleSwitch);
     
