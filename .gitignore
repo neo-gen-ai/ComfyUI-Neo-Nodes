@@ -6,3 +6,4 @@ gallery_settings.json
 model_config.json
 prompts/custom/
 gallery/thumbnails/
+.tiktoken_cache/

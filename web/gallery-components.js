@@ -536,7 +536,6 @@ export class GalleryComponents {
         });
 
         const hasSelection = selKeys.length > 0;
-        console.log(`[Neo Gallery] _showSendMenu: selectedNodes=${selKeys.length}, menuItems=${menuItems.length}, autoSelect=${!hasSelection && menuItems.length === 1}`);
         if (!hasSelection && menuItems.length === 1) {
             this.sendToTarget(image.name, image.txt_content, button, menuItems[0].nodeId, menuItems[0].widgetIndex);
             return;
@@ -1486,10 +1485,8 @@ export class GalleryComponents {
                         });
                         if (resp.ok) {
                             const result = await resp.json();
-                            console.log('[Neo Gallery] Reverse prompt API response:', result);
                             if (result.status === "success") {
                                 image.txt_content = result.prompt || "";
-                                console.log('[Neo Gallery] Set image.txt_content to:', image.txt_content.substring(0, 100));
                                 showToast(gallery.app, "success", "\u2705 \u53CD\u63A8\u6210\u529F", "");
                             } else {
                                 showToast(gallery.app, "error", "\u274C \u53CD\u63A8\u5931\u8D25", result.error || "");
@@ -1584,11 +1581,14 @@ export class GalleryComponents {
         const existingMedia = imgWrapper.querySelector('video, img');
 
         if (existingMedia) {
-            // Stop any playing video
+            // Stop any playing video and remove old media element first
             if (existingMedia.tagName === 'VIDEO') {
                 existingMedia.pause();
-                existingMedia.remove();
+                existingMedia.src = '';  // Clear src to release resources
             }
+            existingMedia.remove();
+
+            // Create new media element after removing the old one
 
             // Create new media element
             let newMediaEl;
@@ -1607,8 +1607,8 @@ export class GalleryComponents {
                 newMediaEl.src = newMediaUrl + (newMediaUrl.includes('?') ? '&' : '?') + 'v=' + Date.now();
             }
 
-            // Replace old element
-            imgWrapper.replaceChild(newMediaEl, existingMedia);
+            // Append new media element (old one already removed)
+            imgWrapper.appendChild(newMediaEl);
 
             // Update image info
             const infoEl = container.querySelector('.neo-gallery-lightbox-image-info');

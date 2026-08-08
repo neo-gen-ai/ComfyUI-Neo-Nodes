@@ -1066,11 +1066,55 @@ def _generate_video_thumbnail(source_path: Path, cache_path: Path, size: int = T
 
 
 def _get_thumbnail_path(filename: str, subfolder: str, size: int) -> Path:
-    """Get the cache path for a thumbnail."""
-    # Sanitize subfolder for filename
-    safe_subfolder = subfolder.replace("/", "_").replace("\\", "_") if subfolder else "presets"
-    stem = Path(filename).stem
-    return THUMBNAIL_DIR / f"{stem}_{safe_subfolder}_{size}.jpg"
+    """Get the cache path for a thumbnail using hash based on file content.
+    
+    Uses date-based subdirectories (YYYY-MM) to avoid too many files in one directory.
+    """
+    import time
+    # Find source path to compute hash from actual file properties
+    source_path = _find_source_media(filename, subfolder)
+    if source_path and source_path.exists():
+        # Use absolute path + size + mtime for unique hash
+        stat = source_path.stat()
+        cache_key = f"{source_path.resolve().as_posix()}_{stat.st_size}_{stat.st_mtime}"
+        # Create date-based subdirectory (YYYY-MM) from file modification time
+        date_str = time.strftime("%Y-%m", time.localtime(stat.st_mtime))
+    else:
+        # Fallback to filename-based hash if source not found
+        cache_key = f"{filename}_{subfolder}_{size}"
+        date_str = time.strftime("%Y-%m")
+    
+    import hashlib
+    hash_hex = hashlib.md5(cache_key.encode()).hexdigest()[:12]
+    cache_path = THUMBNAIL_DIR / date_str / f"{hash_hex}_{size}.jpg"
+    # Auto-create date directory if it doesn't exist
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    return cache_path
+
+
+def _get_thumbnail_cache_dir(date_str: str) -> Path:
+    """Get the cache directory for a specific date."""
+    return THUMBNAIL_DIR / date_str
+
+
+def _find_thumbnail_by_hash(hash_hex: str, size: int) -> Path | None:
+    """Find a cached thumbnail by hash across all date directories."""
+    import hashlib
+    # Search in current year-month and previous months (up to 12 months back)
+    import time
+    now = time.localtime()
+    for i in range(13):  # Check current month + 12 previous months
+        y, m = now.tm_year, now.tm_mon - i
+        while m <= 0:
+            y -= 1
+            m += 12
+        date_str = f"{y:04d}-{m:02d}"
+        cache_dir = THUMBNAIL_DIR / date_str
+        if cache_dir.exists():
+            pattern = f"{hash_hex}_*.jpg"
+            for thumb_file in cache_dir.glob(pattern):
+                return thumb_file
+    return None
 
 
 def _find_source_media(filename: str, subfolder: str) -> Path | None:
@@ -1515,23 +1559,32 @@ async def delete_gallery_item(request):
             stem_path.unlink()
             txt_deleted = True
 
-        # Delete cached thumbnails
-        stem = Path(filename).stem
-        safe_subfolder = subfolder.replace("/", "_").replace("\\", "_")
+        # Delete cached thumbnails (search by date directories)
         thumb_count = 0
-        for thumb_file in THUMBNAIL_DIR.glob(f"{stem}_{safe_subfolder}_*.jpg"):
-            try:
-                thumb_file.unlink()
-                thumb_count += 1
-            except Exception:
-                pass
-        # Also delete any matching thumbnails without subfolder
-        for thumb_file in THUMBNAIL_DIR.glob(f"{stem}_*.jpg"):
-            try:
-                thumb_file.unlink()
-                thumb_count += 1
-            except Exception:
-                pass
+        for date_dir in THUMBNAIL_DIR.iterdir():
+            if not date_dir.is_dir():
+                continue
+            # Try to match by filename stem in this date directory
+            stem = Path(filename).stem
+            for thumb_file in date_dir.glob(f"{stem}_*.jpg"):
+                try:
+                    thumb_file.unlink()
+                    thumb_count += 1
+                except Exception:
+                    pass
+            # Also check hash-based files (new format)
+            source_path = _find_source_media(filename, subfolder)
+            if source_path and source_path.exists():
+                stat = source_path.stat()
+                cache_key = f"{source_path.resolve().as_posix()}_{stat.st_size}_{stat.st_mtime}"
+                import hashlib
+                hash_hex = hashlib.md5(cache_key.encode()).hexdigest()[:12]
+                for thumb_file in date_dir.glob(f"{hash_hex}_*.jpg"):
+                    try:
+                        thumb_file.unlink()
+                        thumb_count += 1
+                    except Exception:
+                        pass
 
         return web.json_response({"deleted": img_deleted or txt_deleted, "thumbnails_cleared": thumb_count})
     except Exception as e:
@@ -1546,16 +1599,21 @@ async def clear_thumbnails(request):
         subfolder = data.get("subfolder", "")
         
         if not subfolder:
-            # Clear all thumbnails
-            for thumb_file in THUMBNAIL_DIR.glob("*.jpg"):
-                thumb_file.unlink()
+            # Clear all thumbnails by removing date directories
+            import shutil
+            for date_dir in THUMBNAIL_DIR.iterdir():
+                if date_dir.is_dir():
+                    shutil.rmtree(date_dir)
             return web.json_response({"success": True, "cleared": "all"})
         
-        safe_subfolder = subfolder.replace("/", "_").replace("\\", "_")
+        # For specific subfolder, clear all date directories (hash-based cache)
         count = 0
-        for thumb_file in THUMBNAIL_DIR.glob(f"*_{safe_subfolder}_*.jpg"):
-            thumb_file.unlink()
-            count += 1
+        for date_dir in THUMBNAIL_DIR.iterdir():
+            if not date_dir.is_dir():
+                continue
+            for thumb_file in date_dir.glob("*.jpg"):
+                thumb_file.unlink()
+                count += 1
         
         return web.json_response({"success": True, "cleared": count})
     except Exception as e:

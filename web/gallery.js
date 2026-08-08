@@ -55,6 +55,11 @@ class NeoGallery {
         // Store current directory images for lightbox navigation (used in lazy mode)
         this._currentDirImages = [];
         
+        // 滚动位置状态
+        this._scrollPositions = {};
+        this._currentScrollKey = null;
+        this._scrollContainer = null; // 缓存滚动容器
+        
         // Custom dir input
         this.customDirInput = $el("input", {
             type: "text",
@@ -176,10 +181,11 @@ class NeoGallery {
             sortAscending: this.sortAscending,
             maxThumbnailSize: this.maxThumbnailSize,
             displayLabels: this.displayLabels,
+            scrollPositions: this._scrollPositions,
             ...overrides
         };
         try {
-            await api.fetchApi('/userdata/neo_gallery_data.json', {
+            const resp = await api.fetchApi('/userdata/neo_gallery_data.json', {
                 method: 'POST',
                 body: JSON.stringify(pluginData),
                 headers: { 'Content-Type': 'application/json' }
@@ -198,6 +204,7 @@ class NeoGallery {
                 this.sortAscending = data.sortAscending !== undefined ? data.sortAscending : true;
                 this.maxThumbnailSize = data.maxThumbnailSize || 300;
                 this.displayLabels = data.displayLabels !== undefined ? data.displayLabels : true;
+                this._scrollPositions = data.scrollPositions || {};
             }
         } catch (error) {
             console.error('Error loading plugin data:', error);
@@ -288,6 +295,9 @@ class NeoGallery {
         const dirName = source;
         const relPath = pathSegments.join("/");
         
+        // 保存当前滚动位置
+        this._saveScrollPosition();
+        
         try {
             // Use lazy loading for faster initial load
             const resp = await api.fetchApi(`/neo_gallery/dir_structure_lazy?dir_name=${encodeURIComponent(dirName)}&path=${encodeURIComponent(relPath)}`);
@@ -329,6 +339,9 @@ class NeoGallery {
             this.components.updateBreadcrumb(this, pathSegments, '');
             
             this.renderDirectoryStructure(structure, dirName, pathSegments);
+            
+            // 恢复滚动位置
+            this._restoreScrollPosition();
             
             // Push state to history for back button support (use query param to avoid conflict with workflow hash)
             const stateKey = `gallery_${dirName}_${pathSegments.join('/')}`;
@@ -487,22 +500,9 @@ class NeoGallery {
         // Save images for lightbox navigation (lazy mode fallback)
         this._currentDirImages = [...sortedItems];
         
+        // 滚动到底部自动加载
         if (this._renderQueue.length > 0) {
-            const createLoadMoreBtn = () => {
-                const btn = $el("div", {
-                    className: "neo-gallery-load-more-btn",
-                    textContent: `Load more (${this._renderQueue.length} remaining)`
-                });
-                btn.onclick = () => {
-                    btn.remove();
-                    renderPage(PAGE_SIZE);
-                    if (this._renderQueue.length > 0) {
-                        this.accordion.appendChild(createLoadMoreBtn());
-                    }
-                };
-                return btn;
-            };
-            this.accordion.appendChild(createLoadMoreBtn());
+            this._setupAutoLoad(imageGrid, renderPage);
         }
     }
 
@@ -511,6 +511,9 @@ class NeoGallery {
     }
 
     async showCategoryCards() {
+        // 保存当前滚动位置
+        this._saveScrollPosition();
+        
         this.currentView.mode = 'categories';
         this.currentView.source = null;
         this.currentView.categoryPath = [];
@@ -526,6 +529,9 @@ class NeoGallery {
         history.replaceState(null, '', currentUrl.toString());
 
         await this.sortAndDisplayImages();
+        
+        // 恢复滚动位置
+        this._restoreScrollPosition();
     }
 
     renderExpandedImages() {
@@ -576,22 +582,115 @@ class NeoGallery {
         // Save images for lightbox navigation (lazy mode fallback)
         this._currentDirImages = [...sortedItems];
         
+        // 滚动到底部自动加载
         if (this._renderQueue.length > 0) {
-            const createLoadMoreBtn = () => {
-                const btn = $el("div", {
-                    className: "neo-gallery-load-more-btn",
-                    textContent: `Load more (${this._renderQueue.length} remaining)`
-                });
-                btn.onclick = () => {
-                    btn.remove();
+            this._setupAutoLoad(imageGrid, renderPage);
+        }
+    }
+
+    _getScrollKey() {
+        if (this.currentView.mode === 'directory' && this.currentView.source) {
+            return `gallery_${this.currentView.source}_${this.currentView.categoryPath.join('/')}`;
+        }
+        return 'gallery_categories';
+    }
+
+    _getScrollContainer() {
+        if (this._scrollContainer) {
+            return this._scrollContainer;
+        }
+        
+        // 尝试多种可能的滚动容器选择器
+        const selectors = [
+            '.sidebar-content-container',
+            '.comfy-menu',
+            '#comfy-sidebar',
+            '.comfy-sidebar',
+            '.sidebar',
+            '.comfy-app',
+            'body'
+        ];
+        
+        for (const selector of selectors) {
+            const container = document.querySelector(selector);
+            if (container && (container.scrollHeight > container.clientHeight || container === document.body)) {
+                this._scrollContainer = container;
+                return container;
+            }
+        }
+        
+        // 如果没找到，返回 window 作为后备
+        return window;
+    }
+
+    _saveScrollPosition() {
+        const key = this._getScrollKey();
+        if (key) {
+            const scrollContainer = this._getScrollContainer();
+            const scrollTop = scrollContainer === window 
+                ? window.pageYOffset || document.documentElement.scrollTop 
+                : scrollContainer.scrollTop;
+            this._scrollPositions[key] = scrollTop;
+            this.savePluginData();
+        }
+    }
+
+    _restoreScrollPosition() {
+        const key = this._getScrollKey();
+        if (key && this._scrollPositions[key]) {
+            // 等待 DOM 渲染完成后再恢复
+            requestAnimationFrame(() => {
+                const scrollContainer = this._getScrollContainer();
+                if (scrollContainer === window) {
+                    window.scrollTo(0, this._scrollPositions[key]);
+                } else {
+                    scrollContainer.scrollTo(0, this._scrollPositions[key]);
+                }
+            });
+        }
+    }
+
+    _setupAutoLoad(container, renderPage) {
+        // 移除旧的监听器
+        if (this._autoLoadScrollHandler) {
+            const oldContainer = this._getScrollContainer();
+            if (oldContainer === window) {
+                window.removeEventListener('scroll', this._autoLoadScrollHandler);
+            } else {
+                oldContainer.removeEventListener('scroll', this._autoLoadScrollHandler);
+            }
+        }
+        
+        const threshold = 300; // 距离底部多少像素时触发加载
+        const scrollContainer = this._getScrollContainer();
+        
+        this._autoLoadScrollHandler = () => {
+            const scrollTop = scrollContainer === window 
+                ? window.pageYOffset || document.documentElement.scrollTop 
+                : scrollContainer.scrollTop;
+            const windowHeight = window.innerHeight;
+            const docHeight = scrollContainer === window 
+                ? document.documentElement.scrollHeight 
+                : scrollContainer.scrollHeight;
+            
+            // 当滚动到距离底部 threshold 像素时触发加载
+            if (scrollTop + windowHeight >= docHeight - threshold) {
+                if (this._renderQueue.length > 0) {
                     renderPage(PAGE_SIZE);
+                    // 如果还有剩余，继续监听
                     if (this._renderQueue.length > 0) {
-                        this.accordion.appendChild(createLoadMoreBtn());
+                        this._setupAutoLoad(container, renderPage);
                     }
-                };
-                return btn;
-            };
-            this.accordion.appendChild(createLoadMoreBtn());
+                }
+            }
+            // 保存滚动位置（节流）
+            this._saveScrollPosition();
+        };
+        
+        if (scrollContainer === window) {
+            window.addEventListener('scroll', this._autoLoadScrollHandler);
+        } else {
+            scrollContainer.addEventListener('scroll', this._autoLoadScrollHandler);
         }
     }
 
