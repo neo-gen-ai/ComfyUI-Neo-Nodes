@@ -60,6 +60,14 @@ class NeoGallery {
         this._currentScrollKey = null;
         this._scrollContainer = null; // 缓存滚动容器
         
+        // Lightbox 缩放和平移状态
+        this._lightboxScale = 1;
+        this._lightboxPanX = 0;
+        this._lightboxPanY = 0;
+        this._lightboxIsDragging = false;
+        this._lightboxDragStartX = 0;
+        this._lightboxDragStartY = 0;
+        
         // Custom dir input
         this.customDirInput = $el("input", {
             type: "text",
@@ -79,7 +87,12 @@ class NeoGallery {
                 className: "neo-gallery-header-row",
                 style: { display: 'grid', gridTemplateColumns: 'auto 1fr auto', alignItems: 'center' }
             }, [
-                $el("h3", { className: "neo-gallery-header-title", textContent: "Neo Gallery" }),
+                $el("h3", { 
+                    className: "neo-gallery-header-title",
+                    textContent: "Neo Gallery",
+                    onclick: () => this.showCategoryCards(),
+                    title: "Click to return to home"
+                }),
                 $el("div", { 
                     style: { display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 10, gridColumn: '2' }
                 }, [this.thumbnailSizeSlider]),
