@@ -686,8 +686,6 @@ export class GalleryComponents {
         });
     }
 
-    // ====== Card Creation ======
-
     async createDirCard(gallery, name, path, items, subdirs = {}, readOnly = false) {
         const card = $el("div", {
             className: "neo-gallery-category-card",
@@ -737,14 +735,14 @@ export class GalleryComponents {
                 if (!resp.ok) throw new Error('Failed to fetch');
 
                 const structure = await resp.json();
+                
                 const countEl = card.querySelector('.neo-gallery-card-count');
-
                 if (countEl) {
                     countEl.textContent = `${structure.total_images} items`;
                 }
 
+                // Update cover with sample images
                 let finalCoverImages = [];
-
                 if (structure.sample_images && structure.sample_images.length > 0) {
                     finalCoverImages = structure.sample_images.slice(0, 2);
                 } else if (structure.images && structure.images.length > 0) {
@@ -840,6 +838,7 @@ export class GalleryComponents {
                 if (!resp.ok) throw new Error('Failed to fetch');
 
                 const structure = await resp.json();
+                
                 const countEl = card.querySelector('.neo-gallery-card-count');
                 const typeBadge = card.querySelector('.neo-gallery-card-type-badge');
 
@@ -853,69 +852,23 @@ export class GalleryComponents {
                     typeBadge.textContent = '\uD83D\uDCC1';
                 }
 
+                // Update cover with sample images
                 let coverImages = [];
-
-                // First priority: use sample_images from backend (recursively collected)
                 if (structure.sample_images && structure.sample_images.length > 0) {
                     coverImages = structure.sample_images.slice(0, 2);
                 } else if (structure.images && structure.images.length > 0) {
-                    // Fallback: use direct images at this level
-                    let currentSubfolder;
-                    if (fullPath.length > 0) {
-                        currentSubfolder = parentDir + "/" + fullPath.join("/");
-                    } else {
-                        currentSubfolder = parentDir;
-                    }
                     coverImages = structure.images.slice(0, 2);
-                } else if (structure.subdirs && structure.subdirs.length > 0) {
-                    // Last resort: no sample_images from backend, try to fetch manually
-                    let currentSubfolder;
-                    if (fullPath.length > 0) {
-                        currentSubfolder = parentDir + "/" + fullPath.join("/");
-                    } else {
-                        currentSubfolder = parentDir;
-                    }
-
-                    // Collect images from the first few subdirectories
-                    const maxFetch = Math.min(3, structure.subdirs.length);
-
-                    for (let i = 0; i < maxFetch && coverImages.length < 2; i++) {
-                        try {
-                            const resp = await api.fetchApi(`/neo_gallery/dir_structure?dir_name=${encodeURIComponent(parentDir)}&path=${encodeURIComponent(fullPath.join("/"))}/${encodeURIComponent(structure.subdirs[i])}&samples=2`);
-                            if (resp.ok) {
-                                const subStructure = await resp.json();
-                                if (subStructure.sample_images && subStructure.sample_images.length > 0) {
-                                    coverImages.push(subStructure.sample_images[0]);
-                                } else if (subStructure.images && subStructure.images.length > 0) {
-                                    coverImages.push(subStructure.images[0]);
-                                } else if (subStructure.subdirs && subStructure.subdirs.length > 0) {
-                                    const deepResp = await api.fetchApi(`/neo_gallery/dir_structure?dir_name=${encodeURIComponent(parentDir)}&path=${encodeURIComponent(fullPath.join("/"))}/${encodeURIComponent(subStructure.subdirs[0])}&samples=2`);
-                                    if (deepResp.ok) {
-                                        const deepStructure = await deepResp.json();
-                                        if (deepStructure.sample_images && deepStructure.sample_images.length > 0) {
-                                            coverImages.push(deepStructure.sample_images[0]);
-                                        } else if (deepStructure.images && deepStructure.images.length > 0) {
-                                            coverImages.push(deepStructure.images[0]);
-                                        }
-                                    }
-                                }
-                            }
-                        } catch (e) { }
-                    }
                 }
 
                 if (coverImages.length > 0) {
                     coverWrapper.innerHTML = '';
-
                     const coverGrid = $el("div", { className: "neo-gallery-card-cover-grid" });
 
                     let loadedCount = 0;
                     const displayImages = coverImages.slice(0, 2);
 
                     displayImages.forEach((imgData) => {
-                        // Use the subfolder from the image data itself (set by backend)
                         const imgSubfolder = imgData.subfolder || "";
-
                         const imgItem = $el("div", { className: "neo-gallery-card-cover-grid-item" });
 
                         const img = $el("img", {
@@ -942,7 +895,6 @@ export class GalleryComponents {
 
                     coverWrapper.appendChild(coverGrid);
                 } else {
-                    // No images found at any level, show folder icon
                     coverWrapper.innerHTML = '';
                     coverWrapper.appendChild($el("div", {
                         className: "neo-gallery-card-cover neo-gallery-card-placeholder",
@@ -955,6 +907,67 @@ export class GalleryComponents {
         }, 0);
 
         return card;
+    }
+
+    /**
+     * Update subdir card cover with sample images.
+     */
+    _updateSubdirCardCover(card, coverWrapper, structure, subdirName, gallery) {
+        let coverImages = [];
+
+        // First priority: use sample_images from backend (recursively collected)
+        if (structure.sample_images && structure.sample_images.length > 0) {
+            coverImages = structure.sample_images.slice(0, 2);
+        } else if (structure.images && structure.images.length > 0) {
+            // Fallback: use direct images at this level
+            coverImages = structure.images.slice(0, 2);
+        }
+
+        if (coverImages.length > 0) {
+            coverWrapper.innerHTML = '';
+
+            const coverGrid = $el("div", { className: "neo-gallery-card-cover-grid" });
+
+            let loadedCount = 0;
+            const displayImages = coverImages.slice(0, 2);
+
+            displayImages.forEach((imgData) => {
+                // Use the subfolder from the image data itself (set by backend)
+                const imgSubfolder = imgData.subfolder || "";
+
+                const imgItem = $el("div", { className: "neo-gallery-card-cover-grid-item" });
+
+                const img = $el("img", {
+                    src: getThumbnailSrc(imgData, imgSubfolder),
+                    alt: subdirName,
+                    loading: "lazy"
+                });
+
+                img.onload = () => {
+                    loadedCount++;
+                    if (loadedCount === displayImages.length) {
+                        const height = getCoverHeight(coverWrapper, gallery);
+                        coverGrid.style.height = `${height * 2}px`;
+                    }
+                };
+
+                img.onerror = () => {
+                    imgItem.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#555;font-size:24px;">\uD83D\uDCCB</div>';
+                };
+
+                imgItem.appendChild(img);
+                coverGrid.appendChild(imgItem);
+            });
+
+            coverWrapper.appendChild(coverGrid);
+        } else {
+            // No images found at any level, show folder icon
+            coverWrapper.innerHTML = '';
+            coverWrapper.appendChild($el("div", {
+                className: "neo-gallery-card-cover neo-gallery-card-placeholder",
+                textContent: "\uD83D\uDCCB"
+            }));
+        }
     }
 
     // ====== Image Element ======

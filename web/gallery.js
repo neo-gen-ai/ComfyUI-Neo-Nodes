@@ -224,14 +224,60 @@ class NeoGallery {
         }
     }
 
-    // ====== Data Loading ======
+    // ====== Data Loading & Caching ======
 
+    _getCacheKey() {
+        return 'neo_gallery_cache';
+    }
+
+    _saveToCache(data) {
+        try {
+            const cacheData = {
+                directories: data.directories || [],
+                timestamp: Date.now(),
+                // 保存每个目录的文件数量用于检测变化
+                dirCounts: (data.directories || []).reduce((acc, d) => {
+                    acc[d.name] = d.items ? d.items.length : 0;
+                    return acc;
+                }, {})
+            };
+            localStorage.setItem(this._getCacheKey(), JSON.stringify(cacheData));
+        } catch (e) {
+            console.warn('[Neo Gallery] Failed to save cache:', e);
+        }
+    }
+
+    _loadFromCache() {
+        try {
+            const cached = localStorage.getItem(this._getCacheKey());
+            if (!cached) return null;
+            
+            const data = JSON.parse(cached);
+            // 缓存有效期：24小时
+            if (Date.now() - data.timestamp > 24 * 60 * 60 * 1000) {
+                localStorage.removeItem(this._getCacheKey());
+                return null;
+            }
+            
+            console.log('[Neo Gallery] Loaded from cache, age:', Math.round((Date.now() - data.timestamp) / 1000), 's');
+            return data;
+        } catch (e) {
+            console.warn('[Neo Gallery] Failed to load cache:', e);
+            return null;
+        }
+    }
+
+    
     async loadGallery() {
         try {
             // Use lazy loading for faster initial load
             const resp = await api.fetchApi('/neo_gallery/list?lazy=1');
             if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
             const data = await resp.json();
+            
+            // 保存到前端缓存
+            this._saveToCache(data);
+            
             this.allDirectories = (data.directories || []).map(dir => ({
                 name: dir.name,
                 path: dir.path,
@@ -243,9 +289,41 @@ class NeoGallery {
             this.filteredDirectories = this.allDirectories;
         } catch (error) {
             console.error('Error loading gallery:', error);
-            this.allDirectories = [];
-            this.filteredDirectories = [];
+            // 如果网络失败，尝试使用缓存
+            const cached = this._loadFromCache();
+            if (cached && cached.directories) {
+                console.log('[Neo Gallery] Using cache as fallback');
+                this.allDirectories = cached.directories.map(dir => ({
+                    name: dir.name,
+                    path: dir.path,
+                    subdirs: dir.subdirs || {},
+                    read_only: dir.read_only || false,
+                    lazy: dir.lazy || false,
+                    root_count: dir.root_count || 0
+                }));
+            } else {
+                this.allDirectories = [];
+            }
+            this.filteredDirectories = this.allDirectories;
         }
+    }
+
+    async loadGalleryFromCache() {
+        const cached = this._loadFromCache();
+        if (cached && cached.directories) {
+            console.log('[Neo Gallery] Restoring from cache');
+            this.allDirectories = cached.directories.map(dir => ({
+                name: dir.name,
+                path: dir.path,
+                subdirs: dir.subdirs || {},
+                read_only: dir.read_only || false,
+                lazy: dir.lazy || false,
+                root_count: dir.root_count || 0
+            }));
+            this.filteredDirectories = this.allDirectories;
+            return true;
+        }
+        return false;
     }
 
     // ====== Rendering ======
@@ -308,9 +386,6 @@ class NeoGallery {
         const dirName = source;
         const relPath = pathSegments.join("/");
         
-        // 保存当前滚动位置
-        this._saveScrollPosition();
-        
         try {
             // Use lazy loading for faster initial load
             const resp = await api.fetchApi(`/neo_gallery/dir_structure_lazy?dir_name=${encodeURIComponent(dirName)}&path=${encodeURIComponent(relPath)}`);
@@ -352,9 +427,6 @@ class NeoGallery {
             this.components.updateBreadcrumb(this, pathSegments, '');
             
             this.renderDirectoryStructure(structure, dirName, pathSegments);
-            
-            // 恢复滚动位置
-            this._restoreScrollPosition();
             
             // Push state to history for back button support (use query param to avoid conflict with workflow hash)
             const stateKey = `gallery_${dirName}_${pathSegments.join('/')}`;
@@ -446,28 +518,33 @@ class NeoGallery {
                 currentSubfolder = dirName;
             }
             
-            for (let i = 0; i < Math.min(20, images.length); i++) {
-                // Use item's own subfolder if available (from backend), otherwise use current directory path
-                const itemSubfolder = images[i].subfolder || currentSubfolder;
-                const itemWithSubfolder = {...images[i], subfolder: itemSubfolder};
-                const imgEl = this.components.createImageElement(this, itemWithSubfolder, itemSubfolder, (dir && dir.read_only) || false);
-                imageGrid.appendChild(imgEl);
-            }
+            // Use render queue for lazy loading
+            this._renderQueue = [...sortByMtime(images)];
+            this._renderedCount = 0;
+            
+            const renderPage = (count) => {
+                for (let i = 0; i < count && this._renderQueue.length > 0; i++) {
+                    const item = this._renderQueue.shift();
+                    const itemSubfolder = item.subfolder || currentSubfolder;
+                    const itemWithSubfolder = {...item, subfolder: itemSubfolder};
+                    const imgEl = this.components.createImageElement(this, itemWithSubfolder, itemSubfolder, (dir && dir.read_only) || false);
+                    imageGrid.appendChild(imgEl);
+                }
+                this._renderedCount += count;
+            };
+            
+            // Render first page
+            renderPage(PAGE_SIZE);
             this.accordion.appendChild(imageGrid);
-            if (image_count > 20) {
-                const loadMoreBtn = $el("div", {
-                    className: "neo-gallery-load-more-btn",
-                    textContent: `Load more (${image_count - 20} remaining)`
-                });
-                loadMoreBtn.onclick = () => {
-                    this.renderImagesFromStructure(images, dirName, pathSegments);
-                    loadMoreBtn.remove();
-                };
-                this.accordion.appendChild(loadMoreBtn);
+            
+            // Setup auto-load if there are more images
+            if (this._renderQueue.length > 0) {
+                console.log('[Neo Gallery] Setting up auto-load in renderSubdirCards, remaining:', this._renderQueue.length);
+                this._setupAutoLoad(imageGrid, renderPage);
             }
             
             // Save images for lightbox navigation (lazy mode fallback)
-            this._currentDirImages = [...images];
+            this._currentDirImages = [...sortByMtime(images)];
         }
     }
 
@@ -524,9 +601,6 @@ class NeoGallery {
     }
 
     async showCategoryCards() {
-        // 保存当前滚动位置
-        this._saveScrollPosition();
-        
         this.currentView.mode = 'categories';
         this.currentView.source = null;
         this.currentView.categoryPath = [];
@@ -542,9 +616,6 @@ class NeoGallery {
         history.replaceState(null, '', currentUrl.toString());
 
         await this.sortAndDisplayImages();
-        
-        // 恢复滚动位置
-        this._restoreScrollPosition();
     }
 
     renderExpandedImages() {
@@ -613,14 +684,19 @@ class NeoGallery {
             return this._scrollContainer;
         }
         
-        // 尝试多种可能的滚动容器选择器
+        // 尝试多种可能的滚动容器选择器（按优先级排序）
         const selectors = [
+            // Tailwind CSS: ComfyUI 主内容区滚动容器
+            '.size-full.overflow-x-hidden.overflow-y-auto',
+            // ComfyUI 侧边栏相关
             '.sidebar-content-container',
-            '.comfy-menu',
             '#comfy-sidebar',
             '.comfy-sidebar',
+            '.comfy-menu',
             '.sidebar',
-            '.comfy-app',
+            '.p-splitterpanel.side-bar-panel',
+            // 通用选择器
+            '[role="complementary"]',
             'body'
         ];
         
@@ -628,11 +704,13 @@ class NeoGallery {
             const container = document.querySelector(selector);
             if (container && (container.scrollHeight > container.clientHeight || container === document.body)) {
                 this._scrollContainer = container;
+                console.log('[Neo Gallery] Scroll container found:', selector, 'scrollH:', container.scrollHeight, 'clientH:', container.clientHeight);
                 return container;
             }
         }
         
         // 如果没找到，返回 window 作为后备
+        console.warn('[Neo Gallery] No specific scroll container found, falling back to window');
         return window;
     }
 
@@ -651,22 +729,38 @@ class NeoGallery {
     _restoreScrollPosition() {
         const key = this._getScrollKey();
         if (key && this._scrollPositions[key]) {
-            // 等待 DOM 渲染完成后再恢复
-            requestAnimationFrame(() => {
+            // 等待 DOM 完全渲染后再恢复滚动位置（特别是懒加载模式）
+            const restore = () => {
                 const scrollContainer = this._getScrollContainer();
                 if (scrollContainer === window) {
                     window.scrollTo(0, this._scrollPositions[key]);
                 } else {
                     scrollContainer.scrollTo(0, this._scrollPositions[key]);
                 }
+            };
+            
+            // 使用 MutationObserver 等待 DOM 稳定
+            const observer = new MutationObserver(() => {
+                clearTimeout(this._restoreTimeout);
+                this._restoreTimeout = setTimeout(restore, 150);
             });
+            
+            observer.observe(document.body, { childList: true, subtree: true });
+            
+            // 兜底：300ms 后强制恢复
+            setTimeout(() => {
+                observer.disconnect();
+                restore();
+            }, 300);
         }
     }
 
     _setupAutoLoad(container, renderPage) {
-        // 移除旧的监听器
-        if (this._autoLoadScrollHandler) {
-            const oldContainer = this._getScrollContainer();
+        // 移除旧的监听器 - 使用闭包保存的旧容器引用
+        if (this._autoLoadScrollHandler && this._currentScrollContainer) {
+            const oldContainer = this._currentScrollContainer;
+            console.log('[Neo Gallery] Removing old scroll listener from:', 
+                oldContainer === window ? 'window' : oldContainer.className);
             if (oldContainer === window) {
                 window.removeEventListener('scroll', this._autoLoadScrollHandler);
             } else {
@@ -675,31 +769,46 @@ class NeoGallery {
         }
         
         const threshold = 300; // 距离底部多少像素时触发加载
+        // 不要重置缓存，使用已经找到的正确容器
         const scrollContainer = this._getScrollContainer();
+        console.log('[Neo Gallery] Setting up auto-load on:', 
+            scrollContainer === window ? 'window' : scrollContainer.className,
+            '| scrollH:', scrollContainer === window ? document.documentElement.scrollHeight : scrollContainer.scrollHeight,
+            '| clientH:', scrollContainer === window ? window.innerHeight : scrollContainer.clientHeight);
+        
+        // 保存容器引用到闭包中，避免后续查找错误元素
+        this._currentScrollContainer = scrollContainer;
         
         this._autoLoadScrollHandler = () => {
-            const scrollTop = scrollContainer === window 
+            const currentContainer = this._currentScrollContainer || this._getScrollContainer();
+            const scrollTop = currentContainer === window 
                 ? window.pageYOffset || document.documentElement.scrollTop 
-                : scrollContainer.scrollTop;
-            const windowHeight = window.innerHeight;
-            const docHeight = scrollContainer === window 
+                : currentContainer.scrollTop;
+            // 修复：非 window 容器时使用容器的 clientHeight
+            const viewHeight = currentContainer === window 
+                ? window.innerHeight 
+                : currentContainer.clientHeight;
+            const docHeight = currentContainer === window 
                 ? document.documentElement.scrollHeight 
-                : scrollContainer.scrollHeight;
+                : currentContainer.scrollHeight;
+            
+            console.log('[Neo Gallery] Auto-load check: scrollTop:', scrollTop, 'viewH:', viewHeight, 'docH:', docHeight, 'threshold:', threshold, 'remaining:', this._renderQueue.length);
             
             // 当滚动到距离底部 threshold 像素时触发加载
-            if (scrollTop + windowHeight >= docHeight - threshold) {
+            if (scrollTop + viewHeight >= docHeight - threshold) {
                 if (this._renderQueue.length > 0) {
                     renderPage(PAGE_SIZE);
+                    console.log('[Neo Gallery] Loaded PAGE_SIZE, remaining:', this._renderQueue.length);
                     // 如果还有剩余，继续监听
                     if (this._renderQueue.length > 0) {
                         this._setupAutoLoad(container, renderPage);
                     }
                 }
             }
-            // 保存滚动位置（节流）
-            this._saveScrollPosition();
         };
         
+        console.log('[Neo Gallery] Attaching scroll listener to:', 
+            scrollContainer === window ? 'window' : scrollContainer.className);
         if (scrollContainer === window) {
             window.addEventListener('scroll', this._autoLoadScrollHandler);
         } else {
@@ -728,7 +837,9 @@ class NeoGallery {
                 } catch (e) { console.warn('[Gallery] Failed to clear thumbnails:', e); }
                 
                 for (const dir of this.allDirectories) {
-                    dir.items = dir.items.filter(item => item.name !== name);
+                    if (dir.items) {
+                        dir.items = dir.items.filter(item => item.name !== name);
+                    }
                 }
                 
                 if (this.isSearchActive) {
@@ -1165,12 +1276,11 @@ class NeoGallery {
         this.accordion.innerHTML = '';
         const loadingEl = showLoadingOverlay(this.accordion);
         
-        await Promise.resolve();
-        
+        // 直接加载（不额外增加延迟）
         await this.loadGallery();
+        await this.sortAndDisplayImages();
         
         if (loadingEl.parentNode) loadingEl.remove();
-        await this.sortAndDisplayImages();
     }
 }
 
