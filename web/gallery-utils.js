@@ -81,7 +81,7 @@ export function getImageSrc(image, subfolder) {
  */
 export function getThumbnailSrc(image, subfolder, size = THUMBNAIL_CACHE_SIZE) {
     const categoryParam = image.category ? `&category=${encodeURIComponent(image.category)}` : '';
-    return `${window.location.protocol}//${window.location.host}/neo_gallery/thumbnail?filename=${encodeURIComponent(image.filename)}&subfolder=${encodeURIComponent(subfolder)}&size=${size}&t=${Date.now()}${categoryParam}`;
+    return `${window.location.protocol}//${window.location.host}/neo_gallery/thumbnail?filename=${encodeURIComponent(image.filename)}&subfolder=${encodeURIComponent(subfolder)}&size=${size}${categoryParam}`;
 }
 
 /**
@@ -134,7 +134,8 @@ export async function buildCoverGrid(coverImages, subfolder, gallery, placeholde
         
         let loadedCount = 0;
         coverImages.forEach((imgData) => {
-            const src = getImageSrc(imgData, subfolder);
+            // Use thumbnail API for cover images to reduce bandwidth (original image can be several MB)
+            const src = getThumbnailSrc(imgData, subfolder);
             
             const imgItem = $el("div", { className: "neo-gallery-card-cover-grid-item" });
             

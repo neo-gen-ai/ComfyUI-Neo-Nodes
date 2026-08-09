@@ -729,7 +729,6 @@ export class GalleryComponents {
         card.appendChild(info);
 
         // Fetch sample images from subdirectories asynchronously (skips empty intermediate dirs)
-        setTimeout(async () => {
             try {
                 const resp = await api.fetchApi(`/neo_gallery/dir_structure?dir_name=${encodeURIComponent(name)}&path=&samples=2`);
                 if (!resp.ok) throw new Error('Failed to fetch');
@@ -793,7 +792,6 @@ export class GalleryComponents {
             } catch (e) {
                 console.error('[Gallery] Error fetching dir sample images:', e);
             }
-        }, 0);
 
         return card;
     }
@@ -1045,34 +1043,29 @@ export class GalleryComponents {
         }
 
         let mediaEl;
-        if (isVideoFileResult) {
-            // Video thumbnail
-            const videoSrc = getThumbnailSrc(image, subfolder);
+        const thumbnailSrc = isVideoFileResult || isImageFileResult ? getThumbnailSrc(image, subfolder) : null;
+        
+        if (thumbnailSrc) {
+            // Lazy loading: defer actual src until image scrolls into view
             mediaEl = $el("img", {
                 className: "neo-gallery-thumb-img",
-                src: videoSrc,
+                src: gallery.placeholderImageUrl,
                 alt: image.name,
+                dataset: { thumbnailSrc },
                 onerror: () => {
-                    mediaEl.src = gallery.placeholderImageUrl;
+                    if (mediaEl) mediaEl.src = gallery.placeholderImageUrl;
                 }
             });
-        } else if (isImageFileResult) {
-            // Image thumbnail
-            const src = getThumbnailSrc(image, subfolder);
-            const img = new Image();
-            img.onload = () => {
-                const aspectRatio = img.height / img.width;
+            
+            // Pre-load for aspect ratio calculation AND set real src
+            const preloaderImg = new Image();
+            preloaderImg.onload = () => {
+                const aspectRatio = preloaderImg.height / preloaderImg.width;
                 container.style.width = `${Math.max(gallery.maxThumbnailSize * (1 / aspectRatio), 40)}px`;
+                // Set the real thumbnail src now that we have dimensions
+                mediaEl.src = thumbnailSrc;
             };
-            img.src = src;
-            mediaEl = $el("img", {
-                className: "neo-gallery-thumb-img",
-                src: src,
-                alt: image.name,
-                onerror: () => {
-                    mediaEl.src = gallery.placeholderImageUrl;
-                }
-            });
+            preloaderImg.src = thumbnailSrc;
         } else {
             // Unknown type - show placeholder
             mediaEl = $el("div", {

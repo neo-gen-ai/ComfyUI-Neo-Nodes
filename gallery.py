@@ -1222,16 +1222,31 @@ async def get_thumbnail(request):
             pass
     
     if use_cache:
-        # Return cached thumbnail
+        # Return cached thumbnail with long-term caching headers
+        # Since URL is deterministic (hash-based), browser can cache indefinitely
         with open(cache_path, "rb") as f:
             content = f.read()
-        return web.Response(body=content, content_type="image/jpeg")
+        return web.Response(
+            body=content, 
+            content_type="image/jpeg",
+            headers={
+                "Cache-Control": "public, max-age=31536000, immutable",
+                "ETag": f'"{cache_path.stat().st_mtime}-{cache_path.stat().st_size}"'
+            }
+        )
     
     # Generate thumbnail
     if _generate_thumbnail(source_path, cache_path, size):
         with open(cache_path, "rb") as f:
             content = f.read()
-        return web.Response(body=content, content_type="image/jpeg")
+        return web.Response(
+            body=content, 
+            content_type="image/jpeg",
+            headers={
+                "Cache-Control": "public, max-age=31536000, immutable",
+                "ETag": f'"{cache_path.stat().st_mtime}-{cache_path.stat().st_size}"'
+            }
+        )
     
     # Fallback: return original image
     with open(source_path, "rb") as f:

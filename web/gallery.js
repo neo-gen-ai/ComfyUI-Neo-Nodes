@@ -792,7 +792,6 @@ class NeoGallery {
                 ? document.documentElement.scrollHeight 
                 : currentContainer.scrollHeight;
             
-            console.log('[Neo Gallery] Auto-load check: scrollTop:', scrollTop, 'viewH:', viewHeight, 'docH:', docHeight, 'threshold:', threshold, 'remaining:', this._renderQueue.length);
             
             // 当滚动到距离底部 threshold 像素时触发加载
             if (scrollTop + viewHeight >= docHeight - threshold) {
