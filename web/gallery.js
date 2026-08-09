@@ -329,17 +329,31 @@ class NeoGallery {
     // ====== Rendering ======
 
     async sortAndDisplayImages() {
+        // Clear cached scroll container reference before clearing DOM
+        this._scrollContainer = null;
         this.accordion.innerHTML = "";
 
         const dirsToDisplay = this.isSearchActive ? this.filteredDirectories : this.allDirectories;
 
         if (this.currentView.mode === 'directory' && this._currentDirStructure) {
             this.renderDirectoryStructure(this._currentDirStructure, this.currentView.source, this.currentView.categoryPath);
+            // Restore scroll position after directory rendering
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    this._restoreScrollPosition();
+                });
+            });
             return;
         }
 
         if (this.currentView.mode === 'images') {
             this.renderExpandedImages();
+            // Restore scroll position after images rendering
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    this._restoreScrollPosition();
+                });
+            });
             return;
         }
 
@@ -362,6 +376,13 @@ class NeoGallery {
         if (cardContainer) {
             this.accordion.appendChild(cardContainer);
         }
+
+        // Restore scroll position after rendering completes
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                this._restoreScrollPosition();
+            });
+        });
     }
 
     async createCategoryCardGrid(dirGroups) {
@@ -385,6 +406,11 @@ class NeoGallery {
     async showDirectoryStructure(source, pathSegments = []) {
         const dirName = source;
         const relPath = pathSegments.join("/");
+        
+        // 修复：在进入新视图之前，先保存当前视图的滚动位置
+        if (this.currentView.mode !== 'directory' || this.currentView.source !== dirName) {
+            await this._saveCurrentScrollPosition();
+        }
         
         try {
             // Use lazy loading for faster initial load
@@ -601,10 +627,20 @@ class NeoGallery {
     }
 
     async showCategoryCards() {
+        // 保存当前滚动位置（在切换 mode 之前）
+        const currentKey = this._getScrollKey();
+        if (currentKey) {
+            const scrollContainer = this._getScrollContainer();
+            const scrollTop = scrollContainer === window 
+                ? window.pageYOffset || document.documentElement.scrollTop 
+                : scrollContainer.scrollTop;
+            this._scrollPositions[currentKey] = scrollTop;
+        }
+        
         this.currentView.mode = 'categories';
         this.currentView.source = null;
         this.currentView.categoryPath = [];
-        
+
         const breadcrumb = document.getElementById("neo-gallery-breadcrumb");
         if (breadcrumb) {
             breadcrumb.style.display = 'none';
@@ -686,32 +722,67 @@ class NeoGallery {
         
         // 尝试多种可能的滚动容器选择器（按优先级排序）
         const selectors = [
+            // ComfyUI sidebar-content-container: 实际的侧边栏滚动容器（最常见）
+            '.sidebar-content-container',
             // Tailwind CSS: ComfyUI 主内容区滚动容器
             '.size-full.overflow-x-hidden.overflow-y-auto',
+            // ComfyUI v1.3.x+ sidebar panel (flex layout)
+            '[id="side-bar-panel"]',
+            '.p-splitterpanel.side-bar-panel',
             // ComfyUI 侧边栏相关
-            '.sidebar-content-container',
             '#comfy-sidebar',
             '.comfy-sidebar',
             '.comfy-menu',
             '.sidebar',
-            '.p-splitterpanel.side-bar-panel',
             // 通用选择器
             '[role="complementary"]',
-            'body'
         ];
         
         for (const selector of selectors) {
             const container = document.querySelector(selector);
             if (container && (container.scrollHeight > container.clientHeight || container === document.body)) {
                 this._scrollContainer = container;
-                console.log('[Neo Gallery] Scroll container found:', selector, 'scrollH:', container.scrollHeight, 'clientH:', container.clientHeight);
                 return container;
             }
         }
         
-        // 如果没找到，返回 window 作为后备
-        console.warn('[Neo Gallery] No specific scroll container found, falling back to window');
+        // 回退：使用 window
+        const parent = this.element?.parentElement;
+        if (parent) {
+            let current = parent;
+            while (current && current !== document.body && current !== document.documentElement) {
+                const style = window.getComputedStyle(current);
+                
+                if (style.overflowY === 'auto' || style.overflowY === 'scroll' || style.overflow === 'auto' || style.overflow === 'scroll') {
+                    const canScroll = current.scrollHeight > current.clientHeight + 10;
+                    
+                    if (canScroll) {
+                        this._scrollContainer = current;
+                        return current;
+                    } else {
+                        if (!this._scrollContainer) {
+                            this._scrollContainer = current;
+                        }
+                    }
+                }
+                current = current.parentElement;
+            }
+            
+            if (this._scrollContainer) {
+                return this._scrollContainer;
+            }
+        }
+        
         return window;
+    }
+
+    async _saveScrollPositionAsync(key) {
+        const scrollContainer = this._getScrollContainer();
+        const scrollTop = scrollContainer === window 
+            ? window.pageYOffset || document.documentElement.scrollTop 
+            : scrollContainer.scrollTop;
+        this._scrollPositions[key] = scrollTop;
+        await this.savePluginData();
     }
 
     _saveScrollPosition() {
@@ -722,45 +793,93 @@ class NeoGallery {
                 ? window.pageYOffset || document.documentElement.scrollTop 
                 : scrollContainer.scrollTop;
             this._scrollPositions[key] = scrollTop;
-            this.savePluginData();
+            
+            // 异步持久化，不阻塞渲染
+            this.savePluginData({ scrollPositions: this._scrollPositions }).catch(err => {
+                console.warn('[Neo Gallery] Failed to persist scroll position:', err);
+            });
+        }
+    }
+
+    /**
+     * 保存当前视图的滚动位置（用于视图切换前）
+     */
+    async _saveCurrentScrollPosition() {
+        const currentKey = this._getScrollKey();
+        if (!currentKey) return;
+        
+        // 清除缓存的滚动容器引用，确保获取最新的
+        this._scrollContainer = null;
+        const scrollContainer = this._getScrollContainer();
+        
+        let scrollTop = 0;
+        if (scrollContainer === window) {
+            scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+        } else {
+            // Neo Gallery 内容在 .sidebar-content-container 内部滚动，使用容器的 scrollTop
+            scrollTop = scrollContainer.scrollTop;
+        }
+        
+        this._scrollPositions[currentKey] = scrollTop;
+        
+        // 立即持久化
+        try {
+            await this.savePluginData();
+        } catch (err) {
+            console.error('[Neo Gallery] [_saveCurrentScrollPosition] Failed to persist:', err);
         }
     }
 
     _restoreScrollPosition() {
         const key = this._getScrollKey();
-        if (key && this._scrollPositions[key]) {
-            // 等待 DOM 完全渲染后再恢复滚动位置（特别是懒加载模式）
-            const restore = () => {
-                const scrollContainer = this._getScrollContainer();
-                if (scrollContainer === window) {
-                    window.scrollTo(0, this._scrollPositions[key]);
-                } else {
-                    scrollContainer.scrollTo(0, this._scrollPositions[key]);
-                }
-            };
-            
-            // 使用 MutationObserver 等待 DOM 稳定
-            const observer = new MutationObserver(() => {
-                clearTimeout(this._restoreTimeout);
-                this._restoreTimeout = setTimeout(restore, 150);
-            });
-            
-            observer.observe(document.body, { childList: true, subtree: true });
-            
-            // 兜底：300ms 后强制恢复
-            setTimeout(() => {
-                observer.disconnect();
-                restore();
-            }, 300);
+        if (!key) return;
+        
+        // 修复：使用 'in' 检查 key 是否存在，而不是 !this._scrollPositions[key]（因为值可能是 0）
+        if (!(key in this._scrollPositions)) {
+            return;
         }
+        
+        const targetScrollTop = this._scrollPositions[key];
+        
+        // 使用多次 requestAnimationFrame + setTimeout 确保 DOM 完全渲染后再恢复滚动位置
+        const restore = () => {
+            const scrollContainer = this._getScrollContainer();
+            
+            if (scrollContainer === window) {
+                window.scrollTo(0, targetScrollTop);
+            } else {
+                const windowScrollTop = window.pageYOffset || document.documentElement.scrollTop;
+                if (scrollContainer.scrollTop === 0 && windowScrollTop > 0) {
+                    window.scrollTo(0, targetScrollTop);
+                } else if (scrollContainer.scrollHeight > scrollContainer.clientHeight) {
+                    const maxScroll = scrollContainer.scrollHeight - scrollContainer.clientHeight;
+                    scrollContainer.scrollTop = Math.min(targetScrollTop, maxScroll);
+                } else {
+                    return false;
+                }
+            }
+            return true;
+        };
+        
+        // 延迟恢复以确保 DOM 完全渲染
+        setTimeout(() => {
+            const scrollContainer = this._getScrollContainer();
+            if (scrollContainer === window) {
+                window.scrollTo(0, targetScrollTop);
+            } else if (scrollContainer.scrollHeight > scrollContainer.clientHeight) {
+                const maxScroll = scrollContainer.scrollHeight - scrollContainer.clientHeight;
+                scrollContainer.scrollTop = Math.min(targetScrollTop, maxScroll);
+            } else {
+                // 容器尚未就绪，稍后重试
+                setTimeout(() => restore(), 300);
+            }
+        }, 100);
     }
 
     _setupAutoLoad(container, renderPage) {
         // 移除旧的监听器 - 使用闭包保存的旧容器引用
         if (this._autoLoadScrollHandler && this._currentScrollContainer) {
             const oldContainer = this._currentScrollContainer;
-            console.log('[Neo Gallery] Removing old scroll listener from:', 
-                oldContainer === window ? 'window' : oldContainer.className);
             if (oldContainer === window) {
                 window.removeEventListener('scroll', this._autoLoadScrollHandler);
             } else {
@@ -769,12 +888,7 @@ class NeoGallery {
         }
         
         const threshold = 300; // 距离底部多少像素时触发加载
-        // 不要重置缓存，使用已经找到的正确容器
         const scrollContainer = this._getScrollContainer();
-        console.log('[Neo Gallery] Setting up auto-load on:', 
-            scrollContainer === window ? 'window' : scrollContainer.className,
-            '| scrollH:', scrollContainer === window ? document.documentElement.scrollHeight : scrollContainer.scrollHeight,
-            '| clientH:', scrollContainer === window ? window.innerHeight : scrollContainer.clientHeight);
         
         // 保存容器引用到闭包中，避免后续查找错误元素
         this._currentScrollContainer = scrollContainer;
@@ -784,7 +898,6 @@ class NeoGallery {
             const scrollTop = currentContainer === window 
                 ? window.pageYOffset || document.documentElement.scrollTop 
                 : currentContainer.scrollTop;
-            // 修复：非 window 容器时使用容器的 clientHeight
             const viewHeight = currentContainer === window 
                 ? window.innerHeight 
                 : currentContainer.clientHeight;
@@ -792,22 +905,16 @@ class NeoGallery {
                 ? document.documentElement.scrollHeight 
                 : currentContainer.scrollHeight;
             
-            
             // 当滚动到距离底部 threshold 像素时触发加载
             if (scrollTop + viewHeight >= docHeight - threshold) {
                 if (this._renderQueue.length > 0) {
                     renderPage(PAGE_SIZE);
-                    console.log('[Neo Gallery] Loaded PAGE_SIZE, remaining:', this._renderQueue.length);
-                    // 如果还有剩余，继续监听
                     if (this._renderQueue.length > 0) {
                         this._setupAutoLoad(container, renderPage);
                     }
                 }
             }
         };
-        
-        console.log('[Neo Gallery] Attaching scroll listener to:', 
-            scrollContainer === window ? 'window' : scrollContainer.className);
         if (scrollContainer === window) {
             window.addEventListener('scroll', this._autoLoadScrollHandler);
         } else {
@@ -1321,6 +1428,55 @@ class NeoGallery {
         
         if (loadingEl.parentNode) loadingEl.remove();
     }
+
+    /**
+     * 启动滚动监听器，在每次滚动时自动保存当前位置
+     */
+    startScrollListener() {
+        // 清除旧的监听器
+        this.stopScrollListener();
+        
+        const onScroll = () => {
+            if (!this.currentView || !this.currentView.mode) return;
+            
+            const key = this._getScrollKey();
+            if (!key) return;
+            
+            const scrollContainer = this._getScrollContainer();
+            let scrollTop = 0;
+            if (scrollContainer === window) {
+                scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+            } else {
+                scrollTop = scrollContainer.scrollTop;
+            }
+            
+            // 只在位置变化超过 50px 时保存，避免频繁写入
+            const prevValue = this._scrollPositions[key];
+            if (prevValue === undefined || Math.abs(scrollTop - prevValue) > 50) {
+                this._scrollPositions[key] = scrollTop;
+            }
+        };
+        
+        // 监听滚动容器的 scroll 事件
+        const scrollContainer = this._getScrollContainer();
+        if (scrollContainer === window) {
+            window.addEventListener('scroll', onScroll, { passive: true });
+            this._scrollListener = onScroll;
+            this._scrollTarget = window;
+        } else {
+            scrollContainer.addEventListener('scroll', onScroll, { passive: true });
+            this._scrollListener = onScroll;
+            this._scrollTarget = scrollContainer;
+        }
+    }
+
+    stopScrollListener() {
+        if (this._scrollListener && this._scrollTarget) {
+            this._scrollTarget.removeEventListener('scroll', this._scrollListener);
+            this._scrollListener = null;
+            this._scrollTarget = null;
+        }
+    }
 }
 
 // ====== Extension Registration =====
@@ -1345,6 +1501,9 @@ app.registerExtension({
             onChange: (val) => { if (app.neoGallery) app.neoGallery.updateLabelDisplay(val); }
         });
 
+        // Periodic persistence of scroll positions (every 5 seconds when gallery is visible)
+        let _scrollPersistInterval = null;
+        
         if (app.extensionManager && app.extensionManager.registerSidebarTab) {
                 app.extensionManager.registerSidebarTab({
             id: "neo.gallery",
@@ -1374,6 +1533,9 @@ app.registerExtension({
                     gallery.components.updateBreadcrumb(gallery, gallery.currentView.categoryPath, '');
                 }
                 gallery.isVisible = true;
+                
+                // 启动滚动监听器，在每次滚动时自动保存位置
+                gallery.startScrollListener();
 
             },
             });
