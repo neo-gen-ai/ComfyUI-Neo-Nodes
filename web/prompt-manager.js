@@ -16,7 +16,12 @@ import {
     getAvailableModels,
     setCurrentModel,
     checkModel,
-    checkAllModels
+    checkAllModels,
+    // Template management
+    listTemplates,
+    loadTemplate,
+    saveTemplate,
+    deleteTemplate
 } from "./prompt-service.js";
 
 // ==========================================
@@ -196,8 +201,12 @@ function createSettingsModal() {
     const remoteTabBtn = mkEl("button", "rs-tab-btn");
     remoteTabBtn.textContent = "🌐 Remote API";
     
+    const templateTabBtn = mkEl("button", "rs-tab-btn");
+    templateTabBtn.textContent = "📝 Prompt Templates";
+    
     tabNav.appendChild(localTabBtn);
     tabNav.appendChild(remoteTabBtn);
+    tabNav.appendChild(templateTabBtn);
     
     // Tab content containers
     const localTabContent = mkEl("div", "rs-tab-content rs-tab-content-local");
@@ -465,7 +474,68 @@ function createSettingsModal() {
     
     remoteTabContent.append(remoteInfoText, remoteForm);
     
-    content.append(tabNav, localTabContent, remoteTabContent);
+    // ==========================================
+    // Template Management Tab (Tab 3)
+    // ==========================================
+    const templateTabContent = mkEl("div", "rs-tab-content");
+    
+    // Search + New button row
+    const tplToolbar = mkEl("div", "rs-tpl-toolbar");
+    const tplSearchInput = mkEl("input", "rs-form-input rs-tpl-search");
+    tplSearchInput.placeholder = "🔍 Search templates...";
+    const newTplBtn = mkEl("button", "rs-btn rs-btn-local rs-tpl-new-btn");
+    newTplBtn.textContent = "+ New Template";
+    
+    // Template list area
+    const tplListBody = mkEl("div", "rs-tpl-list-body");
+    
+    // Editor area
+    const tplEditorArea = mkEl("div", "rs-tpl-editor-area");
+    
+    const tplNameRow = mkEl("div", "rs-config-row");
+    const tplNameLabel = mkEl("label", "rs-form-label");
+    tplNameLabel.textContent = "Template Name";
+    const tplNameInput = mkEl("input", "rs-form-input rs-tpl-name");
+    tplNameInput.placeholder = "Enter template name...";
+    tplNameRow.appendChild(tplNameLabel);
+    tplNameRow.appendChild(tplNameInput);
+    
+    const tplTagsRow = mkEl("div", "rs-config-row");
+    const tplTagsLabel = mkEl("label", "rs-form-label");
+    tplTagsLabel.textContent = "Tags (comma separated)";
+    const tplTagsInput = mkEl("input", "rs-form-input rs-tpl-tags");
+    tplTagsInput.placeholder = "e.g., style, enhance";
+    tplTagsRow.appendChild(tplTagsLabel);
+    tplTagsRow.appendChild(tplTagsInput);
+    
+    const tplContentRow = mkEl("div", "rs-config-row");
+    const tplContentLabel = mkEl("label", "rs-form-label");
+    tplContentLabel.textContent = "System Prompt Content";
+    const tplContentTextarea = document.createElement("textarea");
+    tplContentTextarea.className = "rs-form-input rs-tpl-content";
+    tplContentTextarea.style.minHeight = "120px";
+    tplContentTextarea.style.resize = "vertical";
+    tplContentTextarea.placeholder = "Enter the system prompt content...";
+    tplContentRow.appendChild(tplContentLabel);
+    
+    const tplEditorBtns = mkEl("div", "rs-modal-btns");
+    const tplSaveBtn = mkEl("button", "rs-btn rs-btn-local rs-tpl-save-btn");
+    tplSaveBtn.textContent = "💾 Save";
+    const tplCancelBtn = mkEl("button", "rs-btn rs-delete-cancel-btn rs-tpl-cancel-btn");
+    tplCancelBtn.textContent = "✕ Cancel";
+    const tplCopyAsCustomBtn = mkEl("button", "rs-btn rs-btn-external rs-tpl-copy-btn");
+    tplCopyAsCustomBtn.textContent = "📋 Copy as Custom";
+    
+    tplEditorBtns.append(tplSaveBtn, tplCancelBtn);
+    tplEditorArea.append(tplNameRow, tplTagsRow, tplContentRow, tplEditorBtns, tplCopyAsCustomBtn);
+    tplContentRow.appendChild(tplContentTextarea);
+    
+    // Assemble template tab content
+    templateTabContent.append(tplToolbar, tplListBody, tplEditorArea);
+    tplToolbar.append(tplSearchInput, newTplBtn);
+    
+    // Add to content
+    content.append(tabNav, localTabContent, remoteTabContent, templateTabContent);
     
     const statusText = mkEl("div", "rs-settings-status");
     statusText.textContent = "";
@@ -474,20 +544,213 @@ function createSettingsModal() {
     wrapper.append(header, content);
     modal.appendChild(wrapper);
     
-    // Tab switching logic
-    localTabBtn.addEventListener("click", () => {
-        localTabBtn.classList.add("active");
+    // ==========================================
+    // Tab switching logic - unified handler for all tabs
+    // ==========================================
+    const switchToTab = (tabBtn, contentEl) => {
+        localTabBtn.classList.remove("active");
         remoteTabBtn.classList.remove("active");
-        localTabContent.style.display = "block";
+        templateTabBtn.classList.remove("active");
+        tabBtn.classList.add("active");
+        localTabContent.style.display = "none";
         remoteTabContent.style.display = "none";
+        templateTabContent.style.display = "none";
+        contentEl.style.display = "block";
+    };
+
+    // ==========================================
+    // Tab click event listeners - attach BEFORE using them
+    // ==========================================
+    const handleLocalClick = (e) => { e.stopImmediatePropagation(); switchToTab(localTabBtn, localTabContent); };
+    const handleRemoteClick = (e) => { e.stopImmediatePropagation(); switchToTab(remoteTabBtn, remoteTabContent); };
+    
+    let _templatesLoaded = false;
+    const handleTemplateClick = async (e) => { 
+        e.stopImmediatePropagation(); 
+        switchToTab(templateTabBtn, templateTabContent); 
+        if (!_templatesLoaded) {
+            await loadTemplatesList();
+            _templatesLoaded = true;
+        }
+    };
+
+    // Attach using capture phase to fire before ComfyUI's global listeners
+    localTabBtn.addEventListener("mousedown", handleLocalClick, true);
+    remoteTabBtn.addEventListener("mousedown", handleRemoteClick, true);
+    templateTabBtn.addEventListener("mousedown", handleTemplateClick, true);
+
+    // Also attach click handlers for broader compatibility
+    localTabBtn.addEventListener("click", handleLocalClick, true);
+    remoteTabBtn.addEventListener("click", handleRemoteClick, true);
+    templateTabBtn.addEventListener("click", handleTemplateClick, true);
+
+    // ==========================================
+    // Template management state and functions (MUST be defined before use in handlers)
+    // ==========================================
+    let currentTemplateId = null;
+    
+    async function loadTemplatesList() {
+        tplListBody.innerHTML = "";
+        
+        const templates = await listTemplates();
+        if (!templates || !templates.length) {
+            tplListBody.textContent = "No templates found";
+            return;
+        }
+        
+        templates.forEach(tpl => {
+            const row = document.createElement("div");
+            row.className = "rs-tpl-item";
+            row.dataset.id = tpl.id;
+            
+            const leftDiv = mkEl("div", "rs-preset-left");
+            const contentSpan = mkEl("span", "rs-preset-content");
+            contentSpan.textContent = tpl.name || tpl.id;
+            
+            const sourceBadge = mkEl("span", "rs-source-badge");
+            sourceBadge.textContent = tpl.source === "presets" ? "SYS" : "USR";
+            sourceBadge.title = tpl.source === "presets" ? "System preset (cannot delete)" : "User custom";
+            contentSpan.appendChild(sourceBadge);
+            
+            leftDiv.appendChild(contentSpan);
+            row.appendChild(leftDiv);
+            
+            if (tpl.tags && tpl.tags.length > 0) {
+                const tagsSpan = document.createElement("span");
+                tagsSpan.className = "rs-tags-part";
+                tagsSpan.textContent = ` [${tpl.tags.join(", ")}]`;
+                contentSpan.appendChild(document.createTextNode(" "));
+                contentSpan.appendChild(tagsSpan);
+            }
+            
+            if (tpl.source === "custom") {
+                const deleteBtn = mkEl("span", "rs-delete-icon");
+                deleteBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>';
+                deleteBtn.onclick = async (e) => {
+                    e.stopPropagation();
+                    if (!confirm(`Delete template "${tpl.name}"?`)) return;
+                    const result = await deleteTemplate(tpl.id);
+                    if (result.success) loadTemplatesList();
+                };
+                row.appendChild(deleteBtn);
+            } else {
+                const copyBtn = mkEl("span", "rs-delete-icon");
+                copyBtn.innerHTML = '📋';
+                copyBtn.title = "Copy as custom template";
+                copyBtn.onclick = async (e) => {
+                    e.stopPropagation();
+                    tplCopyAsCustom(tpl);
+                };
+                row.appendChild(copyBtn);
+            }
+            
+            row.addEventListener("click", () => loadTemplateEditor(tpl));
+            tplListBody.appendChild(row);
+        });
+    }
+    
+    async function loadTemplateEditor(tpl) {
+        currentTemplateId = tpl.id;
+        tplNameInput.value = tpl.name || tpl.id;
+        tplTagsInput.value = (tpl.tags || []).join(", ");
+        tplContentTextarea.value = tpl.content || "";
+        tplEditorArea.style.display = "block";
+    }
+    
+    async function tplCopyAsCustom(tpl) {
+        const newId = tpl.id + "_copy_" + Date.now();
+        await saveTemplate({
+            id: newId,
+            name: (tpl.name || tpl.id) + " (Copy)",
+            content: tpl.content || "",
+            tags: [...(tpl.tags || [])],
+            source: "custom"
+        });
+        loadTemplatesList();
+    }
+    
+    // Template search handler
+    tplSearchInput.addEventListener("input", () => {
+        const query = tplSearchInput.value.trim().toLowerCase();
+        const items = tplListBody.querySelectorAll(".rs-tpl-item");
+        items.forEach(item => {
+            const name = (item.querySelector(".rs-preset-content")?.textContent || "").toLowerCase();
+            item.style.display = (!query || name.includes(query)) ? "flex" : "none";
+        });
     });
     
-    remoteTabBtn.addEventListener("click", () => {
-        remoteTabBtn.classList.add("active");
-        localTabBtn.classList.remove("active");
-        localTabContent.style.display = "none";
-        remoteTabContent.style.display = "block";
-    });
+    // New template button - use capture phase to prevent ComfyUI interception
+    const handleNewTplClick = (e) => {
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        currentTemplateId = null;
+        tplNameInput.value = "";
+        tplTagsInput.value = "";
+        tplContentTextarea.value = "";
+        tplEditorArea.style.display = "block";
+        tplNameInput.focus();
+    };
+    newTplBtn.addEventListener("mousedown", handleNewTplClick, true);
+    newTplBtn.addEventListener("click", handleNewTplClick, true);
+    
+    // Save template button - use capture phase
+    const handleSaveTplClick = async (e) => {
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        const name = tplNameInput.value.trim();
+        if (!name) { alert("Template name is required"); return; }
+        
+        const tagsStr = tplTagsInput.value.split(",").map(t => t.trim()).filter(Boolean);
+        const content = tplContentTextarea.value;
+        
+        let id = currentTemplateId || name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+        if (!id) return;
+        
+        const result = await saveTemplate({
+            id,
+            name,
+            content,
+            tags: tagsStr,
+            source: "custom"
+        });
+        
+        if (result.success) {
+            tplNameInput.value = "";
+            tplTagsInput.value = "";
+            tplContentTextarea.value = "";
+            currentTemplateId = null;
+            loadTemplatesList();
+        } else {
+            alert("Save failed: " + (result.error || "Unknown error"));
+        }
+    };
+    tplSaveBtn.addEventListener("mousedown", handleSaveTplClick, true);
+    tplSaveBtn.addEventListener("click", handleSaveTplClick, true);
+    
+    // Cancel button - use capture phase
+    const handleCancelTplClick = (e) => {
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        tplNameInput.value = "";
+        tplTagsInput.value = "";
+        tplContentTextarea.value = "";
+        currentTemplateId = null;
+        tplEditorArea.style.display = "none";
+    };
+    tplCancelBtn.addEventListener("mousedown", handleCancelTplClick, true);
+    tplCancelBtn.addEventListener("click", handleCancelTplClick, true);
+    
+    // Copy as custom button (from editor) - use capture phase
+    const handleCopyTplClick = async (e) => {
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        if (!currentTemplateId) return;
+        const templates = await listTemplates();
+        const tpl = templates.find(t => t.id === currentTemplateId);
+        if (tpl) tplCopyAsCustom(tpl);
+    };
+    tplCopyAsCustomBtn.addEventListener("mousedown", handleCopyTplClick, true);
+    tplCopyAsCustomBtn.addEventListener("click", handleCopyTplClick, true);
     
     // Provider save handler - 获取当前显示的 model 值
     const getModelValue = () => {
@@ -691,6 +954,40 @@ function createStatusBars() {
     const statusText = mkEl("span");
     statusText.textContent = "🟢 LOCAL PROMPT";
     
+    // Template selector dropdown (will be appended to action row in init())
+    const tplSelector = mkEl("select", "rs-tpl-selector");
+    tplSelector.style.cssText = "background:#1a2a3a;color:#60a5fa;border:1px solid #3a6a9a;border-radius:4px;padding:2px 6px;font-size:11px;cursor:pointer;max-width:140px;height:22px;margin-right:auto !important;flex-grow:1 !important;";
+    tplSelector.title = "Select system prompt template";
+    
+    // Populate templates (defined here but called from init() to have access to actionRow)
+    async function populateTemplateSelector() {
+        const templates = await listTemplates();
+        const currentVal = tplSelector.value;
+        tplSelector.innerHTML = "";
+        
+        const defaultOpt = document.createElement("option");
+        defaultOpt.value = "";
+        defaultOpt.textContent = "📝 No template";
+        tplSelector.appendChild(defaultOpt);
+        
+        if (templates) {
+            templates.forEach(tpl => {
+                const opt = document.createElement("option");
+                opt.value = tpl.id;
+                opt.textContent = tpl.name || tpl.id;
+                if (tpl.source === "presets") {
+                    opt.textContent += " 📌";
+                }
+                tplSelector.appendChild(opt);
+            });
+        }
+        
+        // Restore selection if still valid
+        if (currentVal && [...tplSelector.options].some(o => o.value === currentVal)) {
+            tplSelector.value = currentVal;
+        }
+    }
+    
     const settingsBtn = mkEl("button", "rs-settings-btn");
     settingsBtn.textContent = "⚙️";
     settingsBtn.setAttribute("data-rs-tooltip", "Model settings");
@@ -759,26 +1056,28 @@ function createStatusBars() {
     customTextarea.placeholder = "Enter your prompt here...";
 
     const buttonsWrapper = mkEl("div", "rs-buttons-wrapper");
-    const btnRow = mkEl("div", "rs-btn-row");
+    
+    // Single combined row: template selector + action buttons
+    const actionRow = mkEl("div", "rs-btn-row rs-action-row");
 
-    const enhanceBtn = mkEl("button", "rs-btn");
-    enhanceBtn.textContent = "🔧 Enhance";
+    const enhanceBtn = mkEl("button", "rs-btn rs-action-btn");
+    enhanceBtn.textContent = "🔧";
     enhanceBtn.setAttribute("data-rs-tooltip", "Enhance prompt with AI");
-    const translateBtn = mkEl("button", "rs-btn");
-    translateBtn.textContent = "🌐 Translate";
+    const translateBtn = mkEl("button", "rs-btn rs-action-btn");
+    translateBtn.textContent = "🌐";
     translateBtn.setAttribute("data-rs-tooltip", "Translate prompt");
-    const saveBtn = mkEl("button", "rs-btn");
-    saveBtn.textContent = "💾 Save";
+    const saveBtn = mkEl("button", "rs-btn rs-action-btn");
+    saveBtn.textContent = "💾";
     saveBtn.setAttribute("data-rs-tooltip", "Save as preset");
 
-    btnRow.append(enhanceBtn, translateBtn, saveBtn);
-    buttonsWrapper.append(btnRow);
+    actionRow.append(enhanceBtn, translateBtn, saveBtn);
+    buttonsWrapper.appendChild(actionRow);
 
-    return { statusBar, quickInputWrapper, randomBtn, listBtn, quickInput, generateBtn, customTextarea, buttonsWrapper, enhanceBtn, translateBtn, saveBtn, settingsBtn, toggleSwitch, toggleKnob };
+    return { statusBar, quickInputWrapper, randomBtn, listBtn, quickInput, generateBtn, customTextarea, buttonsWrapper, enhanceBtn, translateBtn, saveBtn, settingsBtn, toggleSwitch, toggleKnob, tplSelector, populateTemplateSelector, actionRow };
 }
 
 function createPromptManagerUI() {
-    const { statusBar, quickInputWrapper, randomBtn, listBtn, quickInput, generateBtn, customTextarea, buttonsWrapper, enhanceBtn, translateBtn, saveBtn, settingsBtn, toggleSwitch, toggleKnob } = createStatusBars();
+    const { statusBar, quickInputWrapper, randomBtn, listBtn, quickInput, generateBtn, customTextarea, buttonsWrapper, enhanceBtn, translateBtn, saveBtn, settingsBtn, toggleSwitch, toggleKnob, tplSelector, populateTemplateSelector, actionRow } = createStatusBars();
     const { overlay: presetListOverlay, body: presetListBody } = createOverlayWithSearch();
     const { modal: presetNameInput, aiStatus, field: inputField, tagsContainer, selectedTags, okBtn: inputOk, cancelBtn: inputCancel } = createInputModal();
     const { modal: deleteConfirmOverlay, textDiv: deleteText, okBtn: deleteOk, cancelBtn: deleteCancel } = createDeleteModal();
@@ -817,6 +1116,19 @@ function createPromptManagerUI() {
     function init(ctx) {
         context = ctx;
         const { node, graph, textWidget } = ctx;
+
+        // Append template selector to action row (LEFT side), buttons stay on right
+        if (!actionRow.contains(tplSelector)) {
+            const firstChild = actionRow.children[0];
+            if (firstChild) {
+                actionRow.insertBefore(tplSelector, firstChild);
+            } else {
+                actionRow.appendChild(tplSelector);
+            }
+        }
+
+        // Populate template selector on init (AFTER appending to DOM)
+        setTimeout(() => populateTemplateSelector(), 50);
 
         function handleSaveClick() {
             presetListOverlay.style.display = "none";

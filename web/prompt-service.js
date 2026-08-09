@@ -682,6 +682,85 @@ async function setCurrentModel(modelKey) {
 }
 
 // ==========================================
+// 提示词模版（System Prompt Template）API
+// ==========================================
+
+/**
+ * 列出所有提示词模版
+ * @returns {Promise<Array<{id: string, name: string, source: string, tags: string[], content: string}>>}
+ */
+async function listTemplates() {
+    try {
+        const res = await fetch("/rs_prompts/list_templates");
+        return await res.json();
+    } catch (e) {
+        console.error("Failed to list templates:", e);
+        return [];
+    }
+}
+
+/**
+ * 加载单个模版内容
+ * @param {string} id - 模版 ID
+ * @returns {Promise<{id: string, name: string, source: string, tags: string[], content: string}>}
+ */
+async function loadTemplate(id) {
+    try {
+        const res = await fetch("/rs_prompts/load_template", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id })
+        });
+        if (!res.ok) {
+            const text = await res.text();
+            return { error: text };
+        }
+        return await res.json();
+    } catch (e) {
+        console.error("Failed to load template:", e);
+        return { error: e.message };
+    }
+}
+
+/**
+ * 保存/更新模版
+ * @param {Object} template - 模版对象 {id, name, content, tags?, source?}
+ * @returns {Promise<{success: boolean}>}
+ */
+async function saveTemplate(template) {
+    try {
+        const res = await fetch("/rs_prompts/save_template", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(template)
+        });
+        return await res.json();
+    } catch (e) {
+        console.error("Failed to save template:", e);
+        return { success: false, error: e.message };
+    }
+}
+
+/**
+ * 删除模版（预设不可删）
+ * @param {string} id - 模版 ID
+ * @returns {Promise<{success: boolean}>}
+ */
+async function deleteTemplate(id) {
+    try {
+        const res = await fetch("/rs_prompts/delete_template", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id })
+        });
+        return await res.json();
+    } catch (e) {
+        console.error("Failed to delete template:", e);
+        return { success: false, error: e.message };
+    }
+}
+
+// ==========================================
 // 提示词服务包装器 - 为节点行为模块提供统一的 API 调用接口
 // ==========================================
 
@@ -776,7 +855,12 @@ export {
     // 远程 LLM 配置相关
     getRemoteLLMConfig,
     saveRemoteLLMConfig,
-    getLLMMode
+    getLLMMode,
+    // 提示词模版管理
+    listTemplates,
+    loadTemplate,
+    saveTemplate,
+    deleteTemplate
 };
 
 export default promptService;
@@ -792,4 +876,9 @@ if (typeof window !== 'undefined') {
     window.NeoNodes.getRemoteLLMConfig = getRemoteLLMConfig;
     window.NeoNodes.saveRemoteLLMConfig = saveRemoteLLMConfig;
     window.NeoNodes.getLLMMode = getLLMMode;
+    // 提示词模版管理
+    window.NeoNodes.listTemplates = listTemplates;
+    window.NeoNodes.loadTemplate = loadTemplate;
+    window.NeoNodes.saveTemplate = saveTemplate;
+    window.NeoNodes.deleteTemplate = deleteTemplate;
 }

@@ -491,8 +491,51 @@
 
 .rs-btn-row, .rs-action-row, .rs-row {
     display: flex;
-    gap: 6px;
+    gap: 4px;
     width: 100%;
+    align-items: center;
+}
+
+/* Action buttons (Enhance, Translate, Save) - unified with top row buttons */
+.rs-action-btn {
+    padding: 2px 5px !important;
+    font-size: 13px !important;
+    background: #1a3a5a !important;
+    color: #60a5fa !important;
+    border: 1px solid #3a6a9a !important;
+    border-radius: 4px !important;
+    cursor: pointer !important;
+    white-space: nowrap !important;
+    flex-shrink: 0 !important;
+    height: 22px !important;
+    min-width: auto !important;
+    transition: all 0.2s !important;
+}
+
+.rs-action-btn:hover {
+    background: #2a4a6a !important;
+    color: #fff !important;
+}
+
+/* Template selector in action row - pushed left by margin-right:auto inline style */
+.rs-tpl-selector {
+    background: #1a2a3a !important;
+    color: #60a5fa !important;
+    border: 1px solid #3a6a9a !important;
+    border-radius: 4px !important;
+    padding: 2px 6px !important;
+    font-size: 11px !important;
+    cursor: pointer !important;
+    max-width: 140px !important;
+    height: 22px !important;
+    margin-right: 4px !important;
+    flex-shrink: 0 !important;
+}
+
+.rs-tpl-selector option {
+    background: #1a2a3a;
+    color: #ccc;
+    padding: 4px;
 }
 
 .rs-tags-container {
@@ -1386,3 +1429,70 @@
     flex-direction: column;
     gap: 12px;
 }
+
+/* ==========================================
+   Template Management Tab (Tab 3) Styles
+   ========================================== */
+
+/* Toolbar row for template list */
+.rs-tpl-toolbar {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+    align-items: center;
+}
+
+.rs-tpl-search {
+    flex: 1;
+}
+
+.rs-tpl-new-btn {
+    padding: 4px 10px !important;
+    font-size: 11px !important;
+    white-space: nowrap;
+}
+
+/* Template list body */
+.rs-tpl-list-body {
+    max-height: 250px;
+    overflow-y: auto;
+    margin-bottom: 8px;
+}
+
+.rs-tpl-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 10px;
+    border-bottom: 1px solid #333;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.rs-tpl-item:hover {
+    background: #2a3a4a;
+}
+
+/* Template editor area */
+.rs-tpl-editor-area {
+    display: none;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid #3a4a5a;
+}
+
+.rs-tpl-name,
+.rs-tpl-tags,
+.rs-tpl-content {
+    width: 100%;
+    margin-bottom: 6px;
+}
+
+.rs-tpl-content {
+    min-height: 120px;
+    resize: vertical;
+}
+
+/* ==========================================
+   Theme - LOCAL PROMPT (Green)
+   ========================================== */

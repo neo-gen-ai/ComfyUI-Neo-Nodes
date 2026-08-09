@@ -24,14 +24,170 @@ CUSTOM_DIR = os.path.join(PROMPTS_DIR, "custom")
 PRESETS_TAGS_FILE = os.path.join(PRESETS_DIR, "_tags_index.json")
 CUSTOM_TAGS_FILE = os.path.join(CUSTOM_DIR, "_tags_index.json")
 
+# ==========================================
+# Template Management (System Prompt Templates)
+# ==========================================
+TEMPLATES_DIR = os.path.join(CURRENT_DIR, "prompts", "templates")
+TEMPLATE_PRESETS_DIR = os.path.join(TEMPLATES_DIR, "presets")
+TEMPLATE_CUSTOM_DIR = os.path.join(TEMPLATES_DIR, "custom")
+
 if not os.path.exists(PROMPTS_DIR):
     os.makedirs(PROMPTS_DIR)
 if not os.path.exists(PRESETS_DIR):
     os.makedirs(PRESETS_DIR)
 if not os.path.exists(CUSTOM_DIR):
     os.makedirs(CUSTOM_DIR)
+if not os.path.exists(TEMPLATES_DIR):
+    os.makedirs(TEMPLATES_DIR)
+if not os.path.exists(TEMPLATE_PRESETS_DIR):
+    os.makedirs(TEMPLATE_PRESETS_DIR)
+if not os.path.exists(TEMPLATE_CUSTOM_DIR):
+    os.makedirs(TEMPLATE_CUSTOM_DIR)
 
 PENDING_PROMPTS = {}
+
+_tags_lock = threading.Lock()
+_templates_lock = threading.Lock()
+
+
+# 内置预设模版数据
+DEFAULT_TEMPLATES = [
+    {
+        "id": "general_enhance",
+        "name": "\u901a\u7528\u589e\u5f3a",
+        "source": "presets",
+        "tags": ["\u589e\u5f3a", "\u666e\u901a"],
+        "content": (
+            "You are an expert AI image prompt engineer. Your task is to enhance and expand the user's prompt.\n\n"
+            "Rules:\n"
+            "- Expand brief descriptions into detailed, vivid prompts\n"
+            "- Include details about: subject appearance, clothing, pose, expression, lighting, background, atmosphere, style, quality tags\n"
+            "- Use comma-separated descriptive phrases in English\n"
+            "- Maintain the user's original intent and style preference\n"
+            "- Output ONLY the enhanced prompt text, nothing else\n"
+        ),
+    },
+    {
+        "id": "cyberpunk_style",
+        "name": "\u8d5b\u535a\u6717\u98ce\u683c",
+        "source": "presets",
+        "tags": ["\u98ce\u683c", "\u79d1\u5e7b"],
+        "content": (
+            "You are a cyberpunk-style AI image prompt specialist. Transform the user's input into vivid cyberpunk-themed prompts.\n\n"
+            "Rules:\n"
+            "- Emphasize neon lights, rain-slicked streets, holographic displays, futuristic architecture\n"
+            "- Include: dark alleyways, glowing signs, chrome implants, synthwave color palette (cyan, magenta, purple)\n"
+            "- Add atmosphere: dystopian, high-tech low-life, foggy, dramatic shadows\n"
+            "- Use comma-separated descriptive phrases in English\n"
+            "- Output ONLY the enhanced prompt text, nothing else\n"
+        ),
+    },
+    {
+        "id": "chinese_classical",
+        "name": "\u4e2d\u56fd\u53e4\u98ce",
+        "source": "presets",
+        "tags": ["\u98ce\u683c", "\u56fd\u98ce"],
+        "content": (
+            "You are a Chinese classical art AI image prompt specialist. Transform the user's input into beautiful Chinese-style prompts.\n\n"
+            "Rules:\n"
+            "- Emphasize traditional Chinese aesthetics: ink wash painting, watercolor, silk painting style\n"
+            "- Include: mountains, rivers, bamboo, plum blossoms, cranes, pagodas, misty landscapes\n"
+            "- Add atmosphere: ethereal, poetic, serene, ancient elegance\n"
+            "- Use comma-separated descriptive phrases in English\n"
+            "- Output ONLY the enhanced prompt text, nothing else\n"
+        ),
+    },
+    {
+        "id": "realistic_photo",
+        "name": "\u5199\u5b9e\u6444\u5f71",
+        "source": "presets",
+        "tags": ["\u98ce\u683c", "\u73b0\u5b9e"],
+        "content": (
+            "You are a realistic photography AI image prompt specialist. Transform the user's input into photorealistic prompts.\n\n"
+            "Rules:\n"
+            "- Emphasize camera settings, lighting conditions, photographic style\n"
+            "- Include: lens type (35mm, 85mm, macro), aperture (f/1.4, f/2.8), ISO, film grain\n"
+            "- Add photography terms: bokeh, depth of field, golden hour, natural lighting, HDR\n"
+            "- Use comma-separated descriptive phrases in English\n"
+            "- Output ONLY the enhanced prompt text, nothing else\n"
+        ),
+    },
+]
+
+
+def _load_template_file(filepath: str) -> dict | None:
+    """Load a single template file."""
+    if not os.path.exists(filepath):
+        return None
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            # Ensure required fields
+            data.setdefault('id', Path(filepath).stem)
+            data.setdefault('name', data.get('id'))
+            data.setdefault('source', 'custom')
+            data.setdefault('tags', [])
+            data.setdefault('content', '')
+            if 'created_at' not in data:
+                import datetime
+                data['created_at'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            return data
+    except (json.JSONDecodeError, Exception) as e:
+        logger.warning(f"Error loading template from {filepath}: {e}")
+        return None
+
+
+def _save_template_file(template: dict, filepath: str) -> bool:
+    """Save a template to file."""
+    try:
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(template, f, indent=2, ensure_ascii=False)
+        return True
+    except Exception as e:
+        logger.error(f"Error saving template to {filepath}: {e}")
+        return False
+
+
+def _scan_templates_recursive(base_dir: str, source: str = "custom") -> list:
+    """Recursively scan template directory."""
+    templates = []
+    if not os.path.exists(base_dir):
+        return templates
+
+    for entry in sorted(os.listdir(base_dir)):
+        full_path = os.path.join(base_dir, entry)
+        if os.path.isdir(full_path):
+            sub_prefix = f"{entry}/"
+            templates.extend(_scan_templates_recursive(full_path, source))
+        elif entry.endswith('.json') and not entry.startswith('_'):
+            data = _load_template_file(full_path)
+            if data:
+                data['_mtime'] = os.path.getmtime(full_path)
+                templates.append(data)
+    return templates
+
+
+def _ensure_builtin_templates():
+    """Ensure all built-in preset templates exist on disk."""
+    import datetime
+    for tpl in DEFAULT_TEMPLATES:
+        target_dir = TEMPLATE_PRESETS_DIR if tpl['source'] == 'presets' else TEMPLATE_CUSTOM_DIR
+        filename = f"{tpl['id']}.json"
+        filepath = os.path.join(target_dir, filename)
+        if not os.path.exists(filepath):
+            template_data = {
+                "id": tpl["id"],
+                "name": tpl["name"],
+                "source": tpl["source"],
+                "tags": tpl.get("tags", []),
+                "content": tpl["content"],
+                "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            }
+            _save_template_file(template_data, filepath)
+
+
+# Initialize built-in templates on module load
+_ensure_builtin_templates()
 
 _tags_lock = threading.Lock()
 
@@ -720,21 +876,137 @@ async def rs_prompts_fetch_remote_models(request):
         return web.json_response({"success": False, "error": str(e)}, status=502)
 
 
-@server.PromptServer.instance.routes.post("/rs_prompts/download_model")
-async def rs_prompts_download_model(request):
-    """启动后台下载任务（非阻塞）"""
+# ==========================================
+# Template Management API Routes
+# ==========================================
+
+@server.PromptServer.instance.routes.get("/rs_prompts/list_templates")
+async def rs_prompts_list_templates(request):
+    """列出所有提示词模版"""
+    try:
+        with _templates_lock:
+            preset_templates = _scan_templates_recursive(TEMPLATE_PRESETS_DIR, source="presets")
+            custom_templates = _scan_templates_recursive(TEMPLATE_CUSTOM_DIR, source="custom")
+        
+        # 按 mtime 倒序排序（每组内最新的在前）
+        def sort_key(x):
+            return -x.get("_mtime", 0)
+        
+        custom_templates.sort(key=sort_key)
+        preset_templates.sort(key=sort_key)
+        
+        # custom 在前，presets 在后
+        templates = custom_templates + preset_templates
+        
+        # 移除内部字段 _mtime
+        for tpl in templates:
+            tpl.pop("_mtime", None)
+        
+        return web.json_response(templates)
+    except Exception as e:
+        logger.error(f"Error listing templates: {e}")
+        return web.Response(status=500, text=str(e))
+
+
+@server.PromptServer.instance.routes.post("/rs_prompts/load_template")
+async def rs_prompts_load_template(request):
+    """加载单个模版内容"""
     try:
         data = await request.json()
-        file_type = data.get("file_type", "model")
+        template_id = data.get("id")
+        if not template_id:
+            return web.Response(status=400, text="Template id required")
         
-        if file_type not in ["model", "mmproj"]:
-            return web.json_response({"error": "Invalid file type"}, status=400)
+        with _templates_lock:
+            # 先在 custom 目录查找
+            for search_dir in [TEMPLATE_CUSTOM_DIR, TEMPLATE_PRESETS_DIR]:
+                filepath = os.path.join(search_dir, f"{template_id}.json")
+                if os.path.exists(filepath):
+                    tpl_data = _load_template_file(filepath)
+                    if tpl_data:
+                        result = {k: v for k, v in tpl_data.items() if k != "_mtime"}
+                        return web.json_response(result)
         
-        result = start_download(file_type)
-        return web.json_response(result)
+        return web.Response(status=404, text="Template not found")
     except Exception as e:
-        logger.error(f"Error starting download: {e}")
-        return web.json_response({"error": str(e)}, status=500)
+        logger.error(f"Error loading template: {e}")
+        return web.Response(status=500, text=str(e))
+
+
+@server.PromptServer.instance.routes.post("/rs_prompts/save_template")
+async def rs_prompts_save_template(request):
+    """保存/更新模版"""
+    try:
+        data = await request.json()
+        template_id = data.get("id", "").strip()
+        if not template_id:
+            return web.Response(status=400, text="Template id required")
+        
+        # 验证 ID（只允许字母、数字、下划线、连字符）
+        import re
+        template_id = re.sub(r'[^a-zA-Z0-9_-]', '', template_id)
+        if not template_id:
+            return web.Response(status=400, text="Invalid template id")
+        
+        name = data.get("name", "").strip() or template_id
+        content = data.get("content", "")
+        tags = data.get("tags", [])
+        source = data.get("source", "custom")
+        
+        # 确定保存目录
+        target_dir = TEMPLATE_PRESETS_DIR if source == "presets" else TEMPLATE_CUSTOM_DIR
+        
+        filepath = os.path.join(target_dir, f"{template_id}.json")
+        
+        # 加载现有数据以保留 created_at
+        existing_data = _load_template_file(filepath) if os.path.exists(filepath) else {}
+        template_data = {
+            "id": template_id,
+            "name": name,
+            "source": source,
+            "tags": tags,
+            "content": content,
+            "created_at": existing_data.get("created_at", __import__('datetime').datetime.now(__import__('datetime').timezone.utc).isoformat()),
+        }
+        
+        with _templates_lock:
+            if not _save_template_file(template_data, filepath):
+                return web.Response(status=500, text="Failed to save template")
+        
+        return web.json_response({"success": True})
+    except Exception as e:
+        logger.error(f"Error saving template: {e}")
+        return web.Response(status=500, text=str(e))
+
+
+@server.PromptServer.instance.routes.post("/rs_prompts/delete_template")
+async def rs_prompts_delete_template(request):
+    """删除模版（预设不可删）"""
+    try:
+        data = await request.json()
+        template_id = data.get("id")
+        if not template_id:
+            return web.Response(status=400, text="Template id required")
+        
+        with _templates_lock:
+            # 尝试在两个目录中查找并删除
+            for search_dir in [TEMPLATE_CUSTOM_DIR, TEMPLATE_PRESETS_DIR]:
+                filepath = os.path.join(search_dir, f"{template_id}.json")
+                if os.path.exists(filepath):
+                    source = "custom" if search_dir == TEMPLATE_CUSTOM_DIR else "presets"
+                    
+                    # 预设模版不允许删除
+                    tpl_data = _load_template_file(filepath)
+                    if tpl_data and tpl_data.get("source") == "presets":
+                        return web.Response(status=403, text="Cannot delete preset template")
+                    
+                    os.remove(filepath)
+                    return web.json_response({"success": True})
+        
+        return web.Response(status=404, text="Template not found")
+    except Exception as e:
+        logger.error(f"Error deleting template: {e}")
+        return web.Response(status=500, text=str(e))
 
 
 # ==========================================

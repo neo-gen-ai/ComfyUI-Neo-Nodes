@@ -9,7 +9,8 @@ import { mkEl, createPromptManagerUI, createSettingsModal, loadRemoteLLMConfig }
 import { 
     enhancePrompt, translatePrompt, randomPrompt as randomPromptAPI, 
     checkModelAndPrompt, downloadModel, showDownloadModal, monitorDownloadProgress,
-    getAvailableModels, checkAllModels, checkModel, setCurrentModel
+    getAvailableModels, checkAllModels, checkModel, setCurrentModel,
+    listTemplates
 } from "./prompt-service.js";
 
 // 导入 NodeBehaviors
@@ -190,13 +191,18 @@ app.registerExtension({
 
             // Initialize prompt manager - get UI elements and settings button
             // Pass textWidget so save handler can read current prompt text for AI extraction
-            const {
+            const { 
                 enhanceBtn, translateBtn, generateBtn, randomBtn, quickInput,
                 customTextarea, statusBar, settingsBtn, toggleSwitch, toggleKnob,
                 presetListOverlay, presetNameInput, deleteConfirmOverlay, downloadModal,
                 settingsModal, loadModelsIntoSettings,
-                quickInputWrapper
+                quickInputWrapper, populateTemplateSelector
             } = promptUI.init({ node, graph: node.graph, textWidget });
+
+            // Populate template selector on init
+            if (populateTemplateSelector) {
+                setTimeout(() => populateTemplateSelector(), 100);
+            }
 
             // Node lifecycle management
             const behaviorManager = NodeBehaviors.createNodeBehaviorManager();
@@ -569,8 +575,13 @@ app.registerExtension({
                 customTextarea, statusBar, settingsBtn, toggleSwitch, toggleKnob,
                 presetListOverlay, presetNameInput, deleteConfirmOverlay, downloadModal,
                 settingsModal, loadModelsIntoSettings,
-                quickInputWrapper
+                quickInputWrapper, populateTemplateSelector
             } = promptUI.init({ node, graph: node.graph, textWidget });
+
+            // Populate template selector on init
+            if (populateTemplateSelector) {
+                setTimeout(() => populateTemplateSelector(), 100);
+            }
 
             // 节点生命周期管理 - 使用共享的 behaviorManager
             const behaviorManager = NodeBehaviors.createNodeBehaviorManager();
