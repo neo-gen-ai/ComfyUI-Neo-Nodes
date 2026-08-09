@@ -603,7 +603,7 @@ async def copy_to_input(request):
         import hashlib
         source_size = source_path.stat().st_size
         source_hash = hashlib.md5()
-        with open(source_path, "rb") as f:
+        with source_path.open("rb") as f:
             for chunk in iter(lambda: f.read(8192), b""):
                 source_hash.update(chunk)
         source_md5 = source_hash.hexdigest()
@@ -1514,96 +1514,173 @@ async def upload_txt(request):
         return web.json_response({"error": str(e)}, status=500)
 
 
-@PromptServer.instance.routes.delete("/neo_gallery/delete")
+@PromptServer.instance.routes.post("/neo_gallery/delete")
 async def delete_gallery_item(request):
-    """Delete a preset or custom image + its .txt companion."""
+    """Delete a custom image + its .txt companion. Presets are read-only."""
     try:
         data = await request.json()
         filename = data.get("filename", "")
-        subfolder = data.get("subfolder", "presets")
+        subfolder = data.get("subfolder", "")
 
-        # Read-only check: presets directories cannot be deleted
-        if subfolder == "presets" or subfolder.startswith("presets/"):
-            return web.json_response({"error": "Cannot delete from read-only presets directory"}, status=403)
+        # --- Input validation ---
+        if not filename or ".." in filename:
+            return web.json_response({"success": False, "error": "Invalid filename"}, status=400)
 
-        if ".." in filename or not filename:
-            return web.json_response({"error": "Invalid filename"}, status=400)
+        # --- Read-only check for presets ---
+        subfolder_lower = (subfolder or "").lower()
+        if subfolder_lower == "presets" or subfolder_lower.startswith("presets/"):
+            return web.json_response({"success": False, "error": "Cannot delete from read-only presets directory"}, status=403)
 
+        # --- Resolve base directory and target path ---
         user_custom_dirs = _get_user_custom_dirs()
-        base = None
+        
+        print(f"[Neo Gallery] DELETE called: filename={filename!r}, subfolder={subfolder!r}")
+        print(f"[Neo Gallery] Custom dirs count: {len(user_custom_dirs)}")
+        for d in user_custom_dirs:
+            print(f"  - {d}")
 
+        base: Path | None = None
+        found_path: Path | None = None
+        
+        # Single unified search: try every custom dir + subfolder + filename with every extension
         for dir_path in user_custom_dirs:
-            dir_name = dir_path.name if dir_path.name else str(dir_path)
-            if subfolder == dir_name or subfolder.startswith(dir_name + "/"):
+            if subfolder:
+                candidate_base = dir_path / subfolder
+            else:
+                candidate_base = dir_path
+            
+            # Try exact filename first (without extension) — only if it exists as-is
+            if (candidate_base / filename).is_file():
                 base = dir_path
+                found_path = candidate_base / filename
+                print(f"[Neo Gallery] Found exact match: {found_path}")
+                break
+            
+            # Try with every media extension
+            for ext in ALL_MEDIA_EXTENSIONS:
+                candidate = candidate_base / f"{filename}{ext}"
+                if candidate.exists():
+                    base = dir_path
+                    found_path = candidate
+                    print(f"[Neo Gallery] Found with extension {ext}: {candidate}")
+                    break
+            
+            if base:
                 break
 
-        if not base and subfolder == "presets":
-            base = PRESETS_DIR
-        elif not base and subfolder == "custom":
-            base = CUSTOM_DIR
+        # Fallback: also check without subfolder prefix (root-level files)
+        if not base:
+            for dir_path in user_custom_dirs:
+                for ext in ALL_MEDIA_EXTENSIONS:
+                    candidate = dir_path / f"{filename}{ext}"
+                    if candidate.exists():
+                        base = dir_path
+                        found_path = candidate
+                        print(f"[Neo Gallery] Fallback found: {candidate}")
+                        break
+                if base:
+                    break
 
-        if not base or not base.exists():
-            return web.json_response({"error": "Directory not found"}, status=404)
+        if not base or not found_path:
+            return web.json_response({"success": False, "error": f"Source file not found (filename={filename!r}, subfolder={subfolder!r})"}, status=404)
 
-        if subfolder.startswith(base.name + "/"):
-            rel_path = subfolder[len(base.name) + 1:]
-            target_dir = base / rel_path if rel_path else base
-        else:
-            target_dir = base
+        # --- Resolve target directory ---
+        target_dir = found_path.parent
+        delete_filename = found_path.name  # Use the full filename with extension
+
+        print(f"[Neo Gallery] Target dir: {target_dir}, file: {delete_filename}")
 
         if not target_dir.exists():
-            return web.json_response({"error": "Subdirectory not found"}, status=404)
+            return web.json_response({"success": False, "error": f"Target directory not found: {target_dir}"}, status=404)
 
+        # --- Delete media files (use found_path's exact name) ---
         img_deleted = False
-        txt_deleted = False
-
-        for ext in ALL_MEDIA_EXTENSIONS:
-            p = target_dir / f"{filename}{ext}"
-            if p.exists():
-                p.unlink()
+        if found_path and found_path.suffix.lower() in ALL_MEDIA_EXTENSIONS:
+            try:
+                found_path.unlink()
                 img_deleted = True
+                print(f"[Neo Gallery] Deleted media: {found_path}")
+            except Exception as e:
+                print(f"[Neo Gallery] Failed to delete {found_path}: {e}")
 
-        txt = target_dir / f"{filename}.txt"
+        # --- Delete .txt companion (use the same stem as found_path) ---
+        txt_deleted = False
+        txt_stem = found_path.stem  # Use the stem of the actual file, not the original filename
+        txt = target_dir / f"{txt_stem}.txt"
         if txt.exists():
-            txt.unlink()
-            txt_deleted = True
+            try:
+                txt.unlink()
+                txt_deleted = True
+                print(f"[Neo Gallery] Deleted txt: {txt}")
+            except Exception as e:
+                print(f"[Neo Gallery] Failed to delete {txt}: {e}")
 
-        stem_path = target_dir / filename
-        if stem_path.exists() and stem_path.suffix.lower() == ".txt":
-            stem_path.unlink()
-            txt_deleted = True
+        # Also check for .txt with the original filename stem (fallback)
+        if not txt_deleted and filename:
+            orig_txt = target_dir / f"{filename}.txt"
+            if orig_txt.exists():
+                try:
+                    orig_txt.unlink()
+                    txt_deleted = True
+                except Exception as e:
+                    print(f"[Neo Gallery] Failed to delete {orig_txt}: {e}")
 
-        # Delete cached thumbnails (search by date directories)
+        # Also check for .txt with the stem directly (no extension prefix)
+        if not img_deleted and found_path.suffix.lower() != ".txt":
+            stem_path = target_dir / found_path.name
+            if stem_path.exists() and stem_path.suffix.lower() == ".txt":
+                try:
+                    stem_path.unlink()
+                    txt_deleted = True
+                except Exception as e:
+                    print(f"[Neo Gallery] Failed to delete {stem_path}: {e}")
+
+        # --- Delete cached thumbnails matching this file ---
         thumb_count = 0
+        filename_stem = Path(filename).stem
         for date_dir in THUMBNAIL_DIR.iterdir():
             if not date_dir.is_dir():
                 continue
-            # Try to match by filename stem in this date directory
-            stem = Path(filename).stem
-            for thumb_file in date_dir.glob(f"{stem}_*.jpg"):
-                try:
-                    thumb_file.unlink()
-                    thumb_count += 1
-                except Exception:
-                    pass
-            # Also check hash-based files (new format)
-            source_path = _find_source_media(filename, subfolder)
-            if source_path and source_path.exists():
-                stat = source_path.stat()
-                cache_key = f"{source_path.resolve().as_posix()}_{stat.st_size}_{stat.st_mtime}"
-                import hashlib
-                hash_hex = hashlib.md5(cache_key.encode()).hexdigest()[:12]
-                for thumb_file in date_dir.glob(f"{hash_hex}_*.jpg"):
+            # Pattern 1: old format "{stem}_*.jpg"
+            try:
+                for thumb_file in date_dir.glob(f"{filename_stem}_*.jpg"):
                     try:
                         thumb_file.unlink()
                         thumb_count += 1
                     except Exception:
                         pass
+            except Exception:
+                pass
 
-        return web.json_response({"deleted": img_deleted or txt_deleted, "thumbnails_cleared": thumb_count})
+            # Pattern 2: hash-based cache (new format) — recompute and delete
+            try:
+                import hashlib as _hashlib
+                source_path = _find_source_media(filename, subfolder)
+                if source_path and source_path.exists():
+                    stat = source_path.stat()
+                    cache_key = f"{source_path.resolve().as_posix()}_{stat.st_size}_{stat.st_mtime}"
+                    hash_hex = _hashlib.md5(cache_key.encode()).hexdigest()[:12]
+                    for thumb_file in date_dir.glob(f"{hash_hex}_*.jpg"):
+                        try:
+                            thumb_file.unlink()
+                            thumb_count += 1
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+
+        return web.json_response({
+            "success": True,
+            "deleted": img_deleted or txt_deleted,
+            "image_deleted": img_deleted,
+            "txt_deleted": txt_deleted,
+            "thumbnails_cleared": thumb_count
+        })
     except Exception as e:
-        return web.json_response({"error": str(e)}, status=500)
+        print(f"[Neo Gallery] delete_gallery_item error: {e}")
+        import traceback
+        traceback.print_exc()
+        return web.json_response({"success": False, "error": str(e)}, status=500)
 
 
 @PromptServer.instance.routes.post("/neo_gallery/clear_thumbnails")
@@ -1636,3 +1713,8 @@ async def clear_thumbnails(request):
 
 # Ensure gallery directories exist on module load
 _ensure_dirs()
+
+# Diagnostic: log route registration
+import sys as _sys
+print(f"[Neo Gallery] Module loaded from: {__file__}", file=_sys.stderr, flush=True)
+print(f"[Neo Gallery] Routes registered: {hasattr(PromptServer.instance, 'routes') and hasattr(PromptServer.instance.routes, '_grouped')}", file=_sys.stderr, flush=True)

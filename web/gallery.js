@@ -820,48 +820,88 @@ class NeoGallery {
     async deleteItem(name, subfolder) {
         try {
             const response = await api.fetchApi('/neo_gallery/delete', {
-                method: 'DELETE',
+                method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ filename: name, subfolder })
             });
             const result = await response.json();
-            if (result.deleted) {
-                // Clear thumbnail cache for this item
-                try {
-                    await api.fetchApi('/neo_gallery/clear_thumbnails', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ subfolder })
-                    });
-                } catch (e) { console.warn('[Gallery] Failed to clear thumbnails:', e); }
+            
+            // Check success field (new format) or deleted field (legacy fallback)
+            if (result.success || result.deleted) {
+                showToast(this.app, 'success', 'Deleted', `Removed: ${name}`);
                 
+                // Remove from data source immediately
                 for (const dir of this.allDirectories) {
                     if (dir.items) {
-                        dir.items = dir.items.filter(item => item.name !== name);
+                        const before = dir.items.length;
+                        dir.items = dir.items.filter(item => item.name !== name || item.subfolder !== subfolder);
+                        if (before !== dir.items.length) break;
                     }
                 }
                 
-                if (this.isSearchActive) {
-                    await this.handleSearch(this.searchInput.value);
-                } else {
-                    await this.sortAndDisplayImages();
+                // Also remove from filtered directories (search results)
+                for (const dir of this.filteredDirectories) {
+                    if (dir.items) {
+                        const before = dir.items.length;
+                        dir.items = dir.items.filter(item => item.name !== name || item.subfolder !== subfolder);
+                        if (before !== dir.items.length) break;
+                    }
                 }
                 
-                // Remove DOM element after re-render
+                // Remove DOM element immediately for better UX
+                let domRemoved = false;
+                
+                // Try matching by filename (with extension) and also try without extension
+                const nameWithoutExt = name.replace(/\.(png|jpg|jpeg|gif|webp|bmp|tiff|mp4|webm|mov|avi|mkv|flv|wmv)$/i, '');
+                
+                // First try: match with full filename (image.filename in DOM) or without extension
                 const thumbContainers = document.querySelectorAll('.neo-gallery-thumb-container');
                 for (const container of thumbContainers) {
-                    if (container.dataset.filename === name && container.dataset.subfolder === subfolder) {
+                    if ((container.dataset.filename === name || container.dataset.filename === nameWithoutExt) && 
+                        container.dataset.subfolder === subfolder) {
                         container.remove();
+                        domRemoved = true;
                         break;
                     }
                 }
-                showToast(this.app, 'success', 'Deleted', `Removed: ${name}`);
+                
+                // Second try: match by checking if filename starts with the deleted name (handles extension mismatch)
+                if (!domRemoved) {
+                    for (const container of thumbContainers) {
+                        const containerName = container.dataset.filename || '';
+                        const containerSubfolder = container.dataset.subfolder || '';
+                        if ((containerName === name || containerName.startsWith(nameWithoutExt + '.')) && 
+                            containerSubfolder === subfolder) {
+                            container.remove();
+                            domRemoved = true;
+                            break;
+                        }
+                    }
+                }
+                
+                // Also remove from presets directory cards that might reference this file
+                if (!domRemoved) {
+                    const cardThumbnails = document.querySelectorAll('.neo-gallery-card-cover-grid-item img');
+                    for (const img of cardThumbnails) {
+                        if (img.alt === name || (img.src && img.src.includes(encodeURIComponent(name)))) {
+                            img.parentElement?.parentElement?.remove();
+                            break;
+                        }
+                    }
+                }
+                
+                // If no elements remain, show empty state
+                const remaining = document.querySelectorAll('.neo-gallery-thumb-container');
+                if (remaining.length === 0 && !this.isSearchActive) {
+                    this.displayNoFilesMessage();
+                }
             } else {
-                showToast(this.app, 'warning', 'Delete Failed', 'Item not found or already deleted.');
+                const errorMsg = result.error || 'Unknown error';
+                showToast(this.app, 'error', 'Delete Failed', errorMsg);
             }
         } catch (error) {
             console.error("Error deleting item:", error);
-            showToast(this.app, 'error', 'Delete Failed', error.message);
+            showToast(this.app, 'error', 'Delete Failed', error.message || 'Network error');
         }
     }
 
