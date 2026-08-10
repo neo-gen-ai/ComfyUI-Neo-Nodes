@@ -1,7 +1,7 @@
 /* ComfyUI-Neo-Nodes - Prompt Management Styles */
 
 /* Shared variables */
-.rs-root, .rs-waiting-overlay, .rs-preset-list-overlay, .rs-preset-name-input,
+.rs-root, .rs-waiting-overlay, .rs-oset-list-overlay, .rs-preset-name-input,
 .rs-delete-confirm-overlay, .rs-download-modal, .rs-settings-modal-wrapper {
     box-sizing: border-box;
 }
@@ -1190,13 +1190,13 @@
     border-bottom-color: #60a5fa !important;
 }
 
-/* Tab content */
+/* Tab content - only Templates tab uses .rs-tab-content class now */
 .rs-tab-content {
     display: none;
 }
 
-/* First tab content (local) is visible by default */
-.rs-tab-content-local {
+/* LLM Settings tab content - visible by default (no .rs-tab-content class) */
+.rs-llm-settings-content {
     display: block;
 }
 
@@ -1430,6 +1430,24 @@
     gap: 12px;
 }
 
+/* Provider save status indicator */
+.rs-provider-save-status {
+    font-size: 11px;
+    color: #999;
+    margin-top: -4px;
+}
+
+/* Model input wrapper (for text + select stacking) */
+#rs-model-input-wrapper .rs-form-input[type="text"] {
+    display: block !important;
+}
+
+.rs-form-input.rs-remote-provider,
+.rs-form-input.rs-remote-api-key,
+.rs-form-input.rs-remote-base-url {
+    width: 100%;
+}
+
 /* ==========================================
    Template Management Tab (Tab 3) Styles
    ========================================== */
@@ -1491,6 +1509,114 @@
 .rs-tpl-content {
     min-height: 120px;
     resize: vertical;
+}
+
+/* ==========================================
+   Mode Switch (Local/Remote toggle in merged LLM tab)
+   ========================================== */
+
+.rs-mode-switch-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 16px;
+    padding: 8px 12px;
+    background: #1a1a2e;
+    border-radius: 8px;
+}
+
+.rs-mode-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: #ccc;
+    white-space: nowrap;
+}
+
+.rs-mode-btn {
+    flex: 1;
+    padding: 6px 0;
+    border: 1px solid #555;
+    border-radius: 4px;
+    background: #2a2a3e;
+    color: #ccc;
+    cursor: pointer;
+    font-size: 12px;
+    text-align: center;
+    transition: all 0.2s;
+}
+
+.rs-mode-btn:hover {
+    background: #3a3a5e;
+    border-color: #666;
+}
+
+.rs-mode-btn.active {
+    background: #1a4a8a !important;
+    border-color: #5090cc !important;
+    color: #fff !important;
+}
+
+/* Local/Remote panel visibility - controlled by data attribute on wrapper */
+.rs-llm-content-wrapper[data-llm-mode="local"] .rs-local-panel {
+    display: block !important;
+}
+
+.rs-llm-content-wrapper[data-llm-mode="local"] .rs-remote-panel {
+    display: none !important;
+}
+
+.rs-llm-content-wrapper[data-llm-mode="remote"] .rs-local-panel {
+    display: none !important;
+}
+
+.rs-llm-content-wrapper[data-llm-mode="remote"] .rs-remote-panel {
+    display: block !important;
+}
+
+/* Auto-unload toggle row */
+.rs-auto-unload-row {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid #333;
+}
+
+.rs-switch-container input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 40px;
+    height: 20px;
+    background: #3a3a3a;
+    border-radius: 10px;
+    position: relative;
+    cursor: pointer;
+    border: 1px solid #555;
+    transition: background 0.2s;
+    flex-shrink: 0;
+}
+
+.rs-switch-container input[type="checkbox"]:checked {
+    background: #5090cc;
+}
+
+.rs-switch-container input[type="checkbox"]::before {
+    content: "";
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    background: #999;
+    border-radius: 50%;
+    top: 1px;
+    left: 1px;
+    transition: transform 0.2s;
+}
+
+.rs-switch-container input[type="checkbox"]:checked::before {
+    transform: translateX(20px);
+    background: #fff;
+}
+
+.rs-auto-unload-checkbox {
+    margin-right: 8px;
 }
 
 /* ==========================================

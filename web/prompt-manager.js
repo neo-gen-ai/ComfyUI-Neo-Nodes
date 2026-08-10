@@ -172,10 +172,12 @@ function createDownloadModal() {
     };
 }
 
+// ==========================================
+// Settings Modal - Simplified: single provider dropdown (Local GGUF + remote APIs)
+// ==========================================
+
 function createSettingsModal() {
-    // 遮罩层 - 真正的模态窗口需要
     const overlay = mkEl("div", "rs-settings-overlay");
-    
     const modal = mkEl("div", "rs-settings-modal");
     
     const wrapper = mkEl("div", "rs-settings-modal-wrapper");
@@ -192,73 +194,33 @@ function createSettingsModal() {
     
     const content = mkEl("div", "rs-settings-content");
     
-    // Tab navigation
+    // Tab navigation - LLM Settings + Templates (only 2 tabs)
     const tabNav = mkEl("div", "rs-tabs-nav");
     
-    const localTabBtn = mkEl("button", "rs-tab-btn active");
-    localTabBtn.textContent = "🏠 Local Model";
-    
-    const remoteTabBtn = mkEl("button", "rs-tab-btn");
-    remoteTabBtn.textContent = "🌐 Remote API";
+    const llmTabBtn = mkEl("button", "rs-tab-btn active");
+    llmTabBtn.textContent = "🤖 LLM Settings";
     
     const templateTabBtn = mkEl("button", "rs-tab-btn");
     templateTabBtn.textContent = "📝 Prompt Templates";
     
-    tabNav.appendChild(localTabBtn);
-    tabNav.appendChild(remoteTabBtn);
+    tabNav.appendChild(llmTabBtn);
     tabNav.appendChild(templateTabBtn);
     
-    // Tab content containers
-    const localTabContent = mkEl("div", "rs-tab-content rs-tab-content-local");
-    
-    const localInfoText = mkEl("div", "rs-settings-info");
-    localInfoText.innerHTML = `
-        <div class="rs-settings-title">Local LLM Model</div>
-        <div class="rs-settings-desc">Choose the local model to use for AI features (requires download)</div>
-    `;
-    
-    const modelList = mkEl("div", "rs-settings-model-list");
-    
-    const localStatusText = mkEl("div", "rs-settings-status");
-    localStatusText.textContent = "";
-    localStatusText.style.display = "none";
-    
-    localTabContent.append(localInfoText, modelList, localStatusText);
-    
-    // Remote API tab content
-    const remoteTabContent = mkEl("div", "rs-tab-content");
-    remoteTabContent.id = "rs-remote-api-content";
+    // ==========================================
+    // LLM Settings tab content (single form with provider dropdown)
+    // ==========================================
+    const llmTabContent = mkEl("div", "rs-llm-settings-content");
+
+    // Provider select - unified dropdown with all providers including Local GGUF
+    const remoteForm = mkEl("div", "rs-remote-form");
     
     const remoteInfoText = mkEl("div", "rs-settings-info");
     remoteInfoText.innerHTML = `
-        <div class="rs-settings-title">Remote LLM API</div>
-        <div class="rs-settings-desc">Use cloud-based AI models (OpenAI, Anthropic, Ollama, etc.)</div>
+        <div class="rs-settings-title">LLM Provider</div>
+        <div class="rs-settings-desc">Choose a provider for AI features. Local (GGUF) uses downloaded models.</div>
     `;
-    
-    // Remote config form
-    const remoteForm = mkEl("div", "rs-remote-form");
-    
-    // Enable switch
-    const enableRow = mkEl("div", "rs-config-row");
-    const enableLabel = mkEl("label", "rs-switch-container");
-    const enableCheckbox = mkEl("input", "rs-remote-enabled-checkbox");
-    enableCheckbox.type = "checkbox";
-    enableCheckbox.id = "rs-remote-enabled";
-    const enableText = mkEl("span", "rs-switch-label");
-    enableText.textContent = "Enable Remote LLM";
-    enableLabel.appendChild(enableCheckbox);
-    enableLabel.appendChild(enableText);
-    enableRow.appendChild(enableLabel);
-    
-    // Enable status indicator
-    const enableStatusText = mkEl("div", "rs-enable-status");
-    enableStatusText.textContent = "";
-    enableStatusText.style.display = "none";
-    enableStatusText.style.fontSize = "11px";
-    enableStatusText.style.color = "#999";
-    enableStatusText.style.marginTop = "2px";
-    
-    // Provider select
+
+    // Provider select row
     const providerRow = mkEl("div", "rs-config-row");
     const providerLabel = mkEl("label", "rs-form-label");
     providerLabel.textContent = "Provider";
@@ -266,6 +228,7 @@ function createSettingsModal() {
     const providerSelect = mkEl("select", "rs-form-input rs-remote-provider");
     providerSelect.id = "rs-remote-provider";
     providerSelect.innerHTML = `
+        <option value="local">Local (GGUF)</option>
         <option value="openai">OpenAI Compatible</option>
         <option value="lmstudio">LM Studio</option>
         <option value="ollama">Ollama</option>
@@ -273,26 +236,188 @@ function createSettingsModal() {
     
     providerRow.appendChild(providerLabel);
     providerRow.appendChild(providerSelect);
+
+    // Model input (text for OpenAI) - hidden by default, shown only for OpenAI
+    const modelInput = mkEl("input", "rs-form-input rs-remote-model");
+    modelInput.type = "text";
+    modelInput.id = "rs-remote-model";
+    modelInput.placeholder = "e.g., gpt-4o-mini";
+    modelInput.style.display = 'none';
+
+    // Model select (for LM Studio / Ollama - fetches from remote URL) - hidden by default
+    const modelSelectEl = document.createElement('select');
+    modelSelectEl.className = 'rs-form-input rs-remote-model';
+    modelSelectEl.id = 'rs-remote-model-select';
+    modelSelectEl.style.display = 'none';
+
+    // Model select (for Local GGUF - fetches from local filesystem) - hidden by default
+    const localModelSelectEl = document.createElement('select');
+    localModelSelectEl.className = 'rs-form-input rs-local-model-select';
+    localModelSelectEl.id = 'rs-local-model-select';
+    localModelSelectEl.style.cssText = 'width: 100%; padding: 6px 8px; background: #2a2a2a; border: 1px solid #444; color: #ccc; font-size: 12px; border-radius: 4px; outline: none; box-sizing: border-box; height: 32px;';
+    localModelSelectEl.style.display = 'none';
+
+    // API Key input row
+    const apiKeyRow = mkEl("div", "rs-config-row");
+    const apiKeyLabel = mkEl("label", "rs-form-label");
+    apiKeyLabel.textContent = "API Key";
     
-    // Provider change handler - 动态显示/隐藏字段 + 自动获取模型
-    // 所有在前向引用中的变量都需要提前用 let 声明
-    let modelSelectEl;  // 前向声明（在 provider change handler 中使用）
-    let baseUrlInput;   // 前向声明（在 blur handler 和 provider change handler 中使用）
-    let apiKeyInput;    // 前向声明（在 provider change handler 中使用）
-    let apiKeyRow;      // 前向声明（在 provider change handler 中使用）
-    let modelInput;     // 前向声明（在 provider change handler 中使用）
+    const apiKeyInput = mkEl("input", "rs-form-input rs-remote-api-key");
+    apiKeyInput.type = "password";
+    apiKeyInput.id = "rs-remote-api-key";
+    apiKeyInput.placeholder = "Optional for local services";
     
+    apiKeyRow.appendChild(apiKeyLabel);
+    apiKeyRow.appendChild(apiKeyInput);
+
+    // Base URL input row
+    const baseUrlRow = mkEl("div", "rs-config-row");
+    const baseUrlLabel = mkEl("label", "rs-form-label");
+    baseUrlLabel.textContent = "Base URL";
+    
+    const baseUrlInput = mkEl("input", "rs-form-input rs-remote-base-url");
+    baseUrlInput.type = "text";
+    baseUrlInput.id = "rs-remote-base-url";
+    baseUrlInput.placeholder = "Leave empty for default";
+    
+    baseUrlRow.appendChild(baseUrlLabel);
+    baseUrlRow.appendChild(baseUrlInput);
+
+    // Model row - contains text input, remote select, and local select
+    const modelRowWrapper = mkEl("div", "rs-config-row");
+    modelRowWrapper.id = "rs-model-input-wrapper";
+    const modelLabel = mkEl("label", "rs-form-label");
+    modelLabel.textContent = "Model";
+    modelRowWrapper.appendChild(modelLabel);
+    modelRowWrapper.appendChild(modelInput);
+    modelRowWrapper.appendChild(modelSelectEl);
+    // Append localModelSelectEl to DOM (hidden by default, shown for Local GGUF)
+    modelRowWrapper.appendChild(localModelSelectEl);
+
+    // Provider save status indicator
+    const providerSaveStatusText = mkEl("div", "rs-provider-save-status");
+    providerSaveStatusText.textContent = "";
+    providerSaveStatusText.style.display = "none";
+    providerSaveStatusText.style.fontSize = "11px";
+    providerSaveStatusText.style.color = "#999";
+
+    remoteForm.append(remoteInfoText, providerRow, modelRowWrapper, apiKeyRow, baseUrlRow, providerSaveStatusText);
+
+    // ==========================================
+    // Template Management Tab (Tab 2)
+    // ==========================================
+    const templateTabContent = mkEl("div", "rs-tab-content");
+    
+    const tplToolbar = mkEl("div", "rs-tpl-toolbar");
+    const tplSearchInput = mkEl("input", "rs-form-input rs-tpl-search");
+    tplSearchInput.placeholder = "🔍 Search templates...";
+    const newTplBtn = mkEl("button", "rs-btn rs-btn-local rs-tpl-new-btn");
+    newTplBtn.textContent = "+ New Template";
+    
+    const tplListBody = mkEl("div", "rs-tpl-list-body");
+    tplListBody.style.maxHeight = "200px";
+    tplListBody.style.overflowY = "auto";
+    
+    const tplEditorArea = mkEl("div", "rs-tpl-editor-area");
+    
+    const tplNameRow = mkEl("div", "rs-config-row");
+    const tplNameLabel = mkEl("label", "rs-form-label");
+    tplNameLabel.textContent = "Template Name";
+    const tplNameInput = mkEl("input", "rs-form-input rs-tpl-name");
+    tplNameInput.placeholder = "Enter template name...";
+    tplNameRow.appendChild(tplNameLabel);
+    tplNameRow.appendChild(tplNameInput);
+    
+    // Tags input removed - simplified template editor
+    
+    const tplContentRow = mkEl("div", "rs-config-row");
+    const tplContentLabel = mkEl("label", "rs-form-label");
+    tplContentLabel.textContent = "System Prompt Content";
+    const tplContentTextarea = document.createElement("textarea");
+    tplContentTextarea.className = "rs-form-input rs-tpl-content";
+    tplContentTextarea.style.minHeight = "120px";
+    tplContentTextarea.style.resize = "vertical";
+    tplContentTextarea.placeholder = "Enter the system prompt content...";
+    
+    const tplEditorBtns = mkEl("div", "rs-modal-btns");
+    const tplSaveBtn = mkEl("button", "rs-btn rs-btn-local rs-tpl-save-btn");
+    tplSaveBtn.textContent = "💾 Save";
+    const tplCancelBtn = mkEl("button", "rs-btn rs-delete-cancel-btn rs-tpl-cancel-btn");
+    tplCancelBtn.textContent = "✕ Cancel";
+    
+    tplEditorBtns.append(tplSaveBtn, tplCancelBtn);
+    tplEditorArea.append(tplNameRow, tplContentRow, tplEditorBtns);
+    tplContentRow.appendChild(tplContentTextarea);
+    
+    templateTabContent.append(tplToolbar, tplListBody, tplEditorArea);
+    tplToolbar.append(tplSearchInput, newTplBtn);
+
+    // ==========================================
+    // Assemble content
+    // ==========================================
+    llmTabContent.style.cssText = "display: block !important";
+    content.append(tabNav, llmTabContent, templateTabContent);
+    llmTabContent.appendChild(remoteForm);
+
+    const statusText = mkEl("div", "rs-settings-status");
+    statusText.textContent = "";
+    statusText.style.display = "none";
+    
+    wrapper.append(header, content);
+    modal.appendChild(wrapper);
+    
+    // ==========================================
+    // Tab switching logic
+    // ==========================================
+    const switchToTab = (tabBtn, contentEl) => {
+        llmTabBtn.classList.remove("active");
+        templateTabBtn.classList.remove("active");
+        tabBtn.classList.add("active");
+        
+        // Hide all tab contents first
+        llmTabContent.style.cssText = "display: none !important";
+        templateTabContent.style.cssText = "display: none !important";
+        
+        // Show the selected tab content
+        contentEl.style.cssText = "display: block !important";
+    };
+
+    // Initial state: LLM tab visible, Template tab hidden
+    llmTabContent.style.cssText = "display: block !important";
+    templateTabContent.style.cssText = "display: none !important";
+
+    let _templatesLoaded = false;
+    const handleLlmClick = (e) => { 
+        e.stopImmediatePropagation(); 
+        switchToTab(llmTabBtn, llmTabContent); 
+    };
+    
+    const handleTemplateClick = async (e) => { 
+        e.stopImmediatePropagation(); 
+        switchToTab(templateTabBtn, templateTabContent); 
+        if (!_templatesLoaded) {
+            await loadTemplatesList();
+            _templatesLoaded = true;
+        }
+    };
+
+    llmTabBtn.addEventListener("mousedown", handleLlmClick, true);
+    templateTabBtn.addEventListener("mousedown", handleTemplateClick, true);
+    llmTabBtn.addEventListener("click", handleLlmClick, true);
+    templateTabBtn.addEventListener("click", handleTemplateClick, true);
+
+    // ==========================================
+    // Provider change handler - show/hide fields dynamically
+    // ==========================================
     const fetchModelsFromUrl = async (baseUrl, targetSelect) => {
-        // 先清除旧选项，显示"获取中..."
         targetSelect.innerHTML = '';
         const loadingOpt = document.createElement('option');
         loadingOpt.value = '__loading__';
         loadingOpt.textContent = '⏳ Loading models...';
         targetSelect.appendChild(loadingOpt);
-        targetSelect.disabled = true;  // 禁用选择框防止干扰
+        targetSelect.disabled = true;
         
         try {
-            // 通过 ComfyUI 后端代理转发请求，避免 CORS 问题
             const proxyUrl = `/rs_prompts/fetch_remote_models`;
             const resp = await fetch(proxyUrl, {
                 method: 'POST',
@@ -323,11 +448,10 @@ function createSettingsModal() {
             console.warn('Failed to fetch models:', e);
             targetSelect.innerHTML = '<option value="">❌ Failed to load</option>';
         } finally {
-            targetSelect.disabled = false;  // 恢复选择框可用
+            targetSelect.disabled = false;
         }
     };
-    
-    // 辅助函数：在 select 中设置已保存的模型值（如果存在则选中，否则添加并选中）
+
     const setSelectedModelValue = (modelSelect, modelValue) => {
         if (!modelValue || !modelSelect) return;
         
@@ -340,7 +464,6 @@ function createSettingsModal() {
             }
         }
         
-        // 如果没找到，添加到列表并选中
         if (!found) {
             const opt = document.createElement('option');
             opt.value = modelValue;
@@ -349,243 +472,157 @@ function createSettingsModal() {
             modelSelect.value = modelValue;
         }
     };
-    
-    providerSelect.addEventListener("change", async () => {
+
+    const getModelValue = () => {
+        const provider = providerSelect.value;
+        if (provider === 'local') {
+            return localModelSelectEl.value || '';
+        } else if (provider === 'openai') {
+            return modelInput.value;
+        } else {
+            // LM Studio / Ollama
+            if (modelSelectEl && modelSelectEl.style.display !== 'none' && modelSelectEl.value) {
+                return modelSelectEl.value;
+            }
+            return modelInput.value;
+        }
+    };
+
+    const fetchLocalModels = async () => {
+        localModelSelectEl.innerHTML = '';
+        const loadingOpt = document.createElement('option');
+        loadingOpt.value = '__loading__';
+        loadingOpt.textContent = '⏳ Loading models...';
+        localModelSelectEl.appendChild(loadingOpt);
+        localModelSelectEl.disabled = true;
+
+        try {
+            const resp = await fetch('/rs_prompts/get_models');
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            const result = await resp.json();
+            
+            localModelSelectEl.innerHTML = '';
+            
+            if (result.models && result.models.length > 0) {
+                result.models.forEach(m => {
+                    const opt = document.createElement('option');
+                    opt.value = m.key;
+                    opt.textContent = m.name || m.key;
+                    if (m.key === result.current_model) {
+                        opt.selected = true;
+                    }
+                    localModelSelectEl.appendChild(opt);
+                });
+            } else {
+                const opt = document.createElement('option');
+                opt.value = '';
+                opt.textContent = 'No models found';
+                localModelSelectEl.appendChild(opt);
+            }
+        } catch (e) {
+            console.warn('Failed to fetch local models:', e);
+            localModelSelectEl.innerHTML = '<option value="">❌ Failed to load</option>';
+        } finally {
+            localModelSelectEl.disabled = false;
+        }
+    };
+
+    const handleProviderChange = async () => {
         const provider = providerSelect.value;
         
-        if (provider === 'openai') {
+        if (provider === 'local') {
+            // Local GGUF: show local model select, hide everything else
+            apiKeyRow.style.display = "none";
+            baseUrlRow.style.display = "none";
+            modelInput.style.setProperty('display', 'none', 'important');
+            modelSelectEl.style.setProperty('display', 'none', 'important');
+            localModelSelectEl.style.setProperty('display', 'block', 'important');
+            
+            // Fetch available local models
+            fetchLocalModels();
+        } else if (provider === 'openai') {
             apiKeyRow.style.display = "flex";
+            baseUrlRow.style.display = "flex";
             apiKeyInput.placeholder = "sk-... (optional for cloud)";
-            modelInput.style.display = 'block';
-            modelSelectEl.style.display = 'none';
+            modelInput.style.setProperty('display', '', '');
             modelInput.type = "text";
             modelInput.placeholder = "e.g., gpt-4o-mini";
-            // OpenAI Compatible 默认不设置 Base URL（留空使用默认 API）
-            baseUrlInput.value = "";
+            localModelSelectEl.style.setProperty('display', 'none', 'important');
+            modelSelectEl.style.setProperty('display', 'none', 'important');
         } else if (provider === 'lmstudio') {
             apiKeyRow.style.display = "none";
-            apiKeyInput.value = "";
             baseUrlInput.value = "http://localhost:1234/v1";
-            
-            modelInput.style.display = 'none';
-            // 使用 setProperty + important 确保覆盖内联样式
+            modelInput.style.setProperty('display', 'none', 'important');
+            localModelSelectEl.style.setProperty('display', 'none', 'important');
             modelSelectEl.style.setProperty('display', 'block', 'important');
-            
-            // 自动获取模型列表
             fetchModelsFromUrl("http://localhost:1234/v1", modelSelectEl);
         } else if (provider === 'ollama') {
             apiKeyRow.style.display = "none";
-            apiKeyInput.value = "";
             baseUrlInput.value = "http://localhost:11430/v1";
-            
-            modelInput.style.display = 'none';
-            // 使用 setProperty + important 确保覆盖内联样式
+            modelInput.style.setProperty('display', 'none', 'important');
+            localModelSelectEl.style.setProperty('display', 'none', 'important');
             modelSelectEl.style.setProperty('display', 'block', 'important');
-            
-            // 自动获取模型列表
             fetchModelsFromUrl("http://localhost:11430/v1", modelSelectEl);
         }
-    });
-    
-    // Enable change handler - show status + auto-save
-    let enableSaveTimeout = null;
-    const handleEnableChange = async () => {
-        enableStatusText.textContent = enableCheckbox.checked ? "✅ Remote LLM enabled" : "⚪ Remote LLM disabled";
-        enableStatusText.style.display = "block";
-        enableStatusText.style.color = "#16a34a";
-        
-        setTimeout(() => {
-            enableStatusText.style.display = "none";
-        }, 1500);
-        
-        // Trigger auto-save after status shown
-        if (enableSaveTimeout) clearTimeout(enableSaveTimeout);
-        enableSaveTimeout = setTimeout(autoSaveConfig, 200);
-    };
-    
-    enableCheckbox.addEventListener("change", handleEnableChange);
-    
-    // Model input (OpenAI Compatible 为输入框，LM Studio/Ollama 为下拉选择)
-    const modelRow = mkEl("div", "rs-config-row");
-    const modelLabel = mkEl("label", "rs-form-label");
-    modelLabel.textContent = "Model";
-    
-    modelInput = document.createElement('input');
-    modelInput.type = "text";
-    modelInput.className = "rs-form-input rs-remote-model";
-    modelInput.id = "rs-remote-model";
-    modelInput.placeholder = "e.g., gpt-4o-mini";
-    
-    // 创建 Model select（LM Studio/Ollama 时显示）
-    modelSelectEl = document.createElement('select');
-    modelSelectEl.className = 'rs-form-input rs-remote-model';
-    modelSelectEl.id = 'rs-remote-model-select';
-    modelSelectEl.style.display = 'none';
-    
-    modelRow.appendChild(modelLabel);
-    
-    // API Key input
-    apiKeyRow = mkEl("div", "rs-config-row");
-    const apiKeyLabel = mkEl("label", "rs-form-label");
-    apiKeyLabel.textContent = "API Key";
-    
-    apiKeyInput = mkEl("input", "rs-form-input rs-remote-api-key");
-    apiKeyInput.type = "password";
-    apiKeyInput.id = "rs-remote-api-key";
-    apiKeyInput.placeholder = "Optional for local services";
-    
-    apiKeyRow.appendChild(apiKeyLabel);
-    apiKeyRow.appendChild(apiKeyInput);
-    
-    // Base URL input
-    const baseUrlRow = mkEl("div", "rs-config-row");
-    const baseUrlLabel = mkEl("label", "rs-form-label");
-    baseUrlLabel.textContent = "Base URL";
-    
-    baseUrlInput = mkEl("input", "rs-form-input rs-remote-base-url");
-    baseUrlInput.type = "text";
-    baseUrlInput.id = "rs-remote-base-url";
-    baseUrlInput.placeholder = "Leave empty for default";
-    
-    baseUrlRow.appendChild(baseUrlLabel);
-    baseUrlRow.appendChild(baseUrlInput);
-    
-    // Remote form buttons row - 自动保存，不需要保存按钮
-    const remoteBtnRow = mkEl("div", "rs-remote-btn-row rs-modal-btns");
-    remoteBtnRow.style.display = "none";  // 隐藏按钮行
-    
-    // Provider save status indicator
-    const providerSaveStatusText = mkEl("div", "rs-provider-save-status");
-    providerSaveStatusText.textContent = "";
-    providerSaveStatusText.style.display = "none";
-    providerSaveStatusText.style.fontSize = "11px";
-    providerSaveStatusText.style.color = "#999";
-    providerSaveStatusText.style.marginTop = "4px";
-    
-    // 将 modelInput 和 modelSelect 都加入 DOM
-    modelRow.appendChild(modelInput);
-    
-    const modelRowWrapper = mkEl("div", "rs-config-row");
-    modelRowWrapper.id = "rs-model-input-wrapper";
-    modelRowWrapper.appendChild(modelInput);
-    modelRowWrapper.appendChild(modelSelectEl);
-    
-    remoteForm.append(enableRow, enableStatusText, providerRow, modelRowWrapper, apiKeyRow, baseUrlRow, remoteBtnRow, providerSaveStatusText);
-    
-    remoteTabContent.append(remoteInfoText, remoteForm);
-    
-    // ==========================================
-    // Template Management Tab (Tab 3)
-    // ==========================================
-    const templateTabContent = mkEl("div", "rs-tab-content");
-    
-    // Search + New button row
-    const tplToolbar = mkEl("div", "rs-tpl-toolbar");
-    const tplSearchInput = mkEl("input", "rs-form-input rs-tpl-search");
-    tplSearchInput.placeholder = "🔍 Search templates...";
-    const newTplBtn = mkEl("button", "rs-btn rs-btn-local rs-tpl-new-btn");
-    newTplBtn.textContent = "+ New Template";
-    
-    // Template list area
-    const tplListBody = mkEl("div", "rs-tpl-list-body");
-    
-    // Editor area
-    const tplEditorArea = mkEl("div", "rs-tpl-editor-area");
-    
-    const tplNameRow = mkEl("div", "rs-config-row");
-    const tplNameLabel = mkEl("label", "rs-form-label");
-    tplNameLabel.textContent = "Template Name";
-    const tplNameInput = mkEl("input", "rs-form-input rs-tpl-name");
-    tplNameInput.placeholder = "Enter template name...";
-    tplNameRow.appendChild(tplNameLabel);
-    tplNameRow.appendChild(tplNameInput);
-    
-    const tplTagsRow = mkEl("div", "rs-config-row");
-    const tplTagsLabel = mkEl("label", "rs-form-label");
-    tplTagsLabel.textContent = "Tags (comma separated)";
-    const tplTagsInput = mkEl("input", "rs-form-input rs-tpl-tags");
-    tplTagsInput.placeholder = "e.g., style, enhance";
-    tplTagsRow.appendChild(tplTagsLabel);
-    tplTagsRow.appendChild(tplTagsInput);
-    
-    const tplContentRow = mkEl("div", "rs-config-row");
-    const tplContentLabel = mkEl("label", "rs-form-label");
-    tplContentLabel.textContent = "System Prompt Content";
-    const tplContentTextarea = document.createElement("textarea");
-    tplContentTextarea.className = "rs-form-input rs-tpl-content";
-    tplContentTextarea.style.minHeight = "120px";
-    tplContentTextarea.style.resize = "vertical";
-    tplContentTextarea.placeholder = "Enter the system prompt content...";
-    tplContentRow.appendChild(tplContentLabel);
-    
-    const tplEditorBtns = mkEl("div", "rs-modal-btns");
-    const tplSaveBtn = mkEl("button", "rs-btn rs-btn-local rs-tpl-save-btn");
-    tplSaveBtn.textContent = "💾 Save";
-    const tplCancelBtn = mkEl("button", "rs-btn rs-delete-cancel-btn rs-tpl-cancel-btn");
-    tplCancelBtn.textContent = "✕ Cancel";
-    const tplCopyAsCustomBtn = mkEl("button", "rs-btn rs-btn-external rs-tpl-copy-btn");
-    tplCopyAsCustomBtn.textContent = "📋 Copy as Custom";
-    
-    tplEditorBtns.append(tplSaveBtn, tplCancelBtn);
-    tplEditorArea.append(tplNameRow, tplTagsRow, tplContentRow, tplEditorBtns, tplCopyAsCustomBtn);
-    tplContentRow.appendChild(tplContentTextarea);
-    
-    // Assemble template tab content
-    templateTabContent.append(tplToolbar, tplListBody, tplEditorArea);
-    tplToolbar.append(tplSearchInput, newTplBtn);
-    
-    // Add to content
-    content.append(tabNav, localTabContent, remoteTabContent, templateTabContent);
-    
-    const statusText = mkEl("div", "rs-settings-status");
-    statusText.textContent = "";
-    statusText.style.display = "none";
-    
-    wrapper.append(header, content);
-    modal.appendChild(wrapper);
-    
-    // ==========================================
-    // Tab switching logic - unified handler for all tabs
-    // ==========================================
-    const switchToTab = (tabBtn, contentEl) => {
-        localTabBtn.classList.remove("active");
-        remoteTabBtn.classList.remove("active");
-        templateTabBtn.classList.remove("active");
-        tabBtn.classList.add("active");
-        localTabContent.style.display = "none";
-        remoteTabContent.style.display = "none";
-        templateTabContent.style.display = "none";
-        contentEl.style.display = "block";
     };
 
-    // ==========================================
-    // Tab click event listeners - attach BEFORE using them
-    // ==========================================
-    const handleLocalClick = (e) => { e.stopImmediatePropagation(); switchToTab(localTabBtn, localTabContent); };
-    const handleRemoteClick = (e) => { e.stopImmediatePropagation(); switchToTab(remoteTabBtn, remoteTabContent); };
-    
-    let _templatesLoaded = false;
-    const handleTemplateClick = async (e) => { 
-        e.stopImmediatePropagation(); 
-        switchToTab(templateTabBtn, templateTabContent); 
-        if (!_templatesLoaded) {
-            await loadTemplatesList();
-            _templatesLoaded = true;
+    providerSelect.addEventListener("change", async () => {
+        await handleProviderChange();
+        // Small delay to allow local models to start loading before auto-saving
+        if (providerSelect.value === 'local') {
+            setTimeout(() => autoSaveConfig(), 200);
+        } else {
+            autoSaveConfig();
         }
-    };
-
-    // Attach using capture phase to fire before ComfyUI's global listeners
-    localTabBtn.addEventListener("mousedown", handleLocalClick, true);
-    remoteTabBtn.addEventListener("mousedown", handleRemoteClick, true);
-    templateTabBtn.addEventListener("mousedown", handleTemplateClick, true);
-
-    // Also attach click handlers for broader compatibility
-    localTabBtn.addEventListener("click", handleLocalClick, true);
-    remoteTabBtn.addEventListener("click", handleRemoteClick, true);
-    templateTabBtn.addEventListener("click", handleTemplateClick, true);
+    });
 
     // ==========================================
-    // Template management state and functions (MUST be defined before use in handlers)
+    // Auto-save on field changes (blur/change)
+    // ==========================================
+    let saveTimeout = null;
+    const autoSaveConfig = () => {
+        if (saveTimeout) clearTimeout(saveTimeout);
+        saveTimeout = setTimeout(async () => {
+            const modelValue = getModelValue();
+            const config = {
+                enabled: providerSelect.value !== 'local',
+                provider: providerSelect.value,
+                model: modelValue,
+                api_key: apiKeyInput.value,
+                base_url: baseUrlInput.value
+            };
+
+            const result = await window.NeoNodes?.saveRemoteLLMConfig?.(config);
+            
+            if (result && result.success) {
+                providerSaveStatusText.textContent = "✅ Saved";
+                providerSaveStatusText.style.display = "block";
+                providerSaveStatusText.style.color = "#16a34a";
+                
+                setTimeout(() => {
+                    providerSaveStatusText.style.display = "none";
+                }, 1500);
+            } else {
+                providerSaveStatusText.textContent = "❌ Save failed";
+                providerSaveStatusText.style.display = "block";
+                providerSaveStatusText.style.color = "#dc2626";
+                
+                setTimeout(() => {
+                    providerSaveStatusText.style.display = "none";
+                }, 2000);
+            }
+        }, 300);
+    };
+
+    // Auto-save on field changes (blur/change) - provider select already has its handler above
+    apiKeyInput.addEventListener("blur", autoSaveConfig);
+    baseUrlInput.addEventListener("blur", autoSaveConfig);
+    modelInput.addEventListener("blur", autoSaveConfig);
+    modelSelectEl.addEventListener("change", autoSaveConfig);
+    localModelSelectEl.addEventListener("change", autoSaveConfig);
+
+    // ==========================================
+    // Template management state and functions
     // ==========================================
     let currentTemplateId = null;
     
@@ -652,7 +689,6 @@ function createSettingsModal() {
     async function loadTemplateEditor(tpl) {
         currentTemplateId = tpl.id;
         tplNameInput.value = tpl.name || tpl.id;
-        tplTagsInput.value = (tpl.tags || []).join(", ");
         tplContentTextarea.value = tpl.content || "";
         tplEditorArea.style.display = "block";
     }
@@ -685,7 +721,6 @@ function createSettingsModal() {
         e.stopImmediatePropagation();
         currentTemplateId = null;
         tplNameInput.value = "";
-        tplTagsInput.value = "";
         tplContentTextarea.value = "";
         tplEditorArea.style.display = "block";
         tplNameInput.focus();
@@ -700,7 +735,6 @@ function createSettingsModal() {
         const name = tplNameInput.value.trim();
         if (!name) { alert("Template name is required"); return; }
         
-        const tagsStr = tplTagsInput.value.split(",").map(t => t.trim()).filter(Boolean);
         const content = tplContentTextarea.value;
         
         let id = currentTemplateId || name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
@@ -710,13 +744,12 @@ function createSettingsModal() {
             id,
             name,
             content,
-            tags: tagsStr,
+            tags: [],
             source: "custom"
         });
         
         if (result.success) {
             tplNameInput.value = "";
-            tplTagsInput.value = "";
             tplContentTextarea.value = "";
             currentTemplateId = null;
             loadTemplatesList();
@@ -732,7 +765,6 @@ function createSettingsModal() {
         e.stopPropagation();
         e.stopImmediatePropagation();
         tplNameInput.value = "";
-        tplTagsInput.value = "";
         tplContentTextarea.value = "";
         currentTemplateId = null;
         tplEditorArea.style.display = "none";
@@ -740,178 +772,166 @@ function createSettingsModal() {
     tplCancelBtn.addEventListener("mousedown", handleCancelTplClick, true);
     tplCancelBtn.addEventListener("click", handleCancelTplClick, true);
     
-    // Copy as custom button (from editor) - use capture phase
-    const handleCopyTplClick = async (e) => {
-        e.stopPropagation();
-        e.stopImmediatePropagation();
-        if (!currentTemplateId) return;
-        const templates = await listTemplates();
-        const tpl = templates.find(t => t.id === currentTemplateId);
-        if (tpl) tplCopyAsCustom(tpl);
-    };
-    tplCopyAsCustomBtn.addEventListener("mousedown", handleCopyTplClick, true);
-    tplCopyAsCustomBtn.addEventListener("click", handleCopyTplClick, true);
-    
-    // Provider save handler - 获取当前显示的 model 值
-    const getModelValue = () => {
-        const provider = providerSelect.value;
-        if (provider === 'openai') {
-            // OpenAI Compatible 使用 text input
-            return modelInput.value;
-        } else {
-            // LM Studio / Ollama 使用 select dropdown
-            if (modelSelectEl && modelSelectEl.style.display !== 'none') {
-                return modelSelectEl.value;
-            }
-            // Fallback to modelInput
-            return modelInput.value;
-        }
-    };
-    
-    // 自动保存函数 - 失去焦点时调用
-    let saveTimeout = null;
-    const autoSaveConfig = () => {
-        if (saveTimeout) clearTimeout(saveTimeout);
-        saveTimeout = setTimeout(async () => {
-            const modelValue = getModelValue();
-            const config = {
-                enabled: enableCheckbox.checked,
-                provider: providerSelect.value,
-                model: modelValue,
-                api_key: apiKeyInput.value,
-                base_url: baseUrlInput.value
-            };
-
-            const result = await window.NeoNodes?.saveRemoteLLMConfig?.(config);
-            
-            if (result && result.success) {
-                providerSaveStatusText.textContent = "✅ Saved";
-                providerSaveStatusText.style.display = "block";
-                providerSaveStatusText.style.color = "#16a34a";
-                
-                setTimeout(() => {
-                    providerSaveStatusText.style.display = "none";
-                }, 1500);
-            } else {
-                providerSaveStatusText.textContent = "❌ Save failed";
-                providerSaveStatusText.style.display = "block";
-                providerSaveStatusText.style.color = "#dc2626";
-                
-                setTimeout(() => {
-                    providerSaveStatusText.style.display = "none";
-                }, 2000);
-            }
-        }, 300);  // 防抖 300ms
-    };
-    
-    // 所有字段失去焦点时自动保存（enableCheckbox 已在 handleEnableChange 中调用 autoSaveConfig）
-    providerSelect.addEventListener("change", autoSaveConfig);
-    apiKeyInput.addEventListener("blur", autoSaveConfig);
-    baseUrlInput.addEventListener("blur", autoSaveConfig);
-    modelInput.addEventListener("blur", autoSaveConfig);
-    modelSelectEl.addEventListener("change", () => {
-        autoSaveConfig();
-    });
-    
-    
     return { 
         modal, 
-        overlay,  // 遮罩层引用
-        modelList, 
+        overlay,
+        modelList: null, // no longer used (model list is in the main UI)
         statusText, 
         closeBtn,
-        enableCheckbox,
+        enableCheckbox: null,  // removed - not needed anymore
         providerSelect,
         modelInput,
         modelSelectEl,
+        localModelSelectEl,
         apiKeyInput,
         apiKeyRow,
         baseUrlInput,
-        enableStatusText,
+        baseUrlRow,  // added for loadRemoteLLMConfig
+        enableStatusText: null,  // removed
         providerSaveStatusText,
-        localTabBtn,
-        remoteTabBtn,
-        localTabContent,
-        remoteTabContent,
-        autoSaveConfig,  // 导出供外部使用（关闭前保存）
-        fetchModelsFromUrl,  // 暴露给外部用于 loadRemoteLLMConfig 自动获取模型
-        setSelectedModelValue  // 暴露给外部用于加载后选中已保存的模型
+        autoSaveConfig,
+        fetchModelsFromUrl,
+        setSelectedModelValue,
+        fetchLocalModels,
+        _llmMode: "local",
+        _handleLocalModeClick: null,
+        _handleRemoteModeClick: null
     };
 }
 
+// ==========================================
+// Load Remote LLM Config into settings modal
+// Now simplified: just set provider/model values from saved config
+// ==========================================
+
 async function loadRemoteLLMConfig(settingsModal) {
     const config = await window.NeoNodes?.getRemoteLLMConfig?.();
+    
+    // Determine provider value - default to 'local' if no valid provider or no config
+    let providerValue = config ? (config.provider || 'local') : 'local';
+    if (!['local', 'openai', 'lmstudio', 'ollama'].includes(providerValue)) {
+        providerValue = 'openai';
+    }
+    
+    // If enabled is false, default to local
+    if (config && config.enabled === false) {
+        providerValue = 'local';
+    }
+    
+    settingsModal.providerSelect.value = providerValue;
     if (config) {
-        settingsModal.enableCheckbox.checked = config.enabled || false;
-        settingsModal.providerSelect.value = config.provider || 'openai';
         settingsModal.apiKeyInput.value = config.api_key === '***' ? '' : (config.api_key || '');
         if (config.base_url) {
             settingsModal.baseUrlInput.value = config.base_url;
         }
+    }
+
+    // Always apply provider change logic to show/hide fields correctly
+    const provider = settingsModal.providerSelect.value;
+    
+    if (provider === 'local') {
+        settingsModal.apiKeyRow.style.display = "none";
+        settingsModal.baseUrlRow.style.display = "none";
+        settingsModal.modelInput.style.setProperty('display', 'none', 'important');
+        settingsModal.modelSelectEl.style.setProperty('display', 'none', 'important');
         
-        // 直接调用 provider change handler（不触发事件，避免误触 autoSaveConfig）
-        const provider = settingsModal.providerSelect.value;
-        let targetBaseUrl = null;  // 记录要获取模型的 Base URL
-        
-        if (provider === 'openai') {
-            settingsModal.apiKeyRow.style.display = "flex";
-            settingsModal.modelInput.style.display = '';
-            settingsModal.modelSelectEl.style.display = 'none';
-            settingsModal.modelInput.type = "text";
-            settingsModal.modelInput.placeholder = "e.g., gpt-4o-mini";
+        // Show local model select and fetch models - use the element reference directly
+        const sel = settingsModal.localModelSelectEl;
+        if (sel) {
+            sel.style.setProperty('display', 'block', 'important');
             
-            // 设置 OpenAI Compatible 的 model value
-            if (config.model) {
-                setTimeout(() => {
-                    const modelInput = document.getElementById("rs-remote-model");
-                    if (modelInput) modelInput.value = config.model;
-                }, 50);
-            }
-        } else if (provider === 'lmstudio') {
-            settingsModal.apiKeyRow.style.display = "none";
-            settingsModal.apiKeyInput.value = "";
-            targetBaseUrl = "http://localhost:1234/v1";
-            settingsModal.baseUrlInput.value = targetBaseUrl;
-            settingsModal.modelInput.style.display = 'none';
-            // 使用 setProperty + important 确保覆盖内联样式
-            settingsModal.modelSelectEl.style.setProperty('display', 'block', 'important');
-        } else if (provider === 'ollama') {
-            settingsModal.apiKeyRow.style.display = "none";
-            settingsModal.apiKeyInput.value = "";
-            targetBaseUrl = "http://localhost:11430/v1";
-            settingsModal.baseUrlInput.value = targetBaseUrl;
-            settingsModal.modelInput.style.display = 'none';
-            // 使用 setProperty + important 确保覆盖内联样式
-            settingsModal.modelSelectEl.style.setProperty('display', 'block', 'important');
+            // Small delay to ensure DOM is ready before fetching
+            setTimeout(() => {
+                sel.innerHTML = '';
+                const loadingOpt = document.createElement('option');
+                loadingOpt.value = '__loading__';
+                loadingOpt.textContent = '⏳ Loading...';
+                sel.appendChild(loadingOpt);
+                sel.disabled = true;
+
+                fetch('/rs_prompts/get_models')
+                    .then(r => r.json())
+                    .then(data => {
+                        sel.innerHTML = '';
+                        (data.models || []).forEach(m => {
+                            const opt = document.createElement('option');
+                            opt.value = m.key;
+                            opt.textContent = m.name || m.key;
+                            if (m.key === data.current_model) opt.selected = true;
+                            sel.appendChild(opt);
+                        });
+                        if (!sel.options.length) {
+                            sel.innerHTML = '<option value="">No models found</option>';
+                        }
+                    }).catch(() => {
+                        sel.innerHTML = '<option value="">❌ Failed to load</option>';
+                    }).finally(() => {
+                        sel.disabled = false;
+                    });
+            }, 100);
         }
+    } else if (provider === 'openai') {
+        settingsModal.apiKeyRow.style.display = "flex";
+        settingsModal.baseUrlRow.style.display = "flex";
+        settingsModal.modelInput.style.setProperty('display', '', '');
+        settingsModal.modelSelectEl.style.setProperty('display', 'none', 'important');
+        settingsModal.localModelSelectEl?.style.setProperty('display', 'none', 'important');
         
-        // LM Studio / Ollama 需要自动获取模型列表，然后选中已保存的模型
-        if ((provider === 'lmstudio' || provider === 'ollama')) {
-            console.log('[prompt-manager] Auto-fetching models for', provider, 'with baseUrl:', targetBaseUrl);
-            const baseUrl = targetBaseUrl;
-            if (baseUrl) {
-                settingsModal.fetchModelsFromUrl(baseUrl, settingsModal.modelSelectEl).then(() => {
-                    console.log('[prompt-manager] Models fetched, selecting saved model:', config.model);
-                    // 模型列表加载完成后，自动选中已保存的模型值
-                    setTimeout(() => {
-                        settingsModal.setSelectedModelValue(settingsModal.modelSelectEl, config.model);
-                    }, 100);
-                }).catch(err => {
-                    console.error('[prompt-manager] Failed to fetch models:', err);
-                });
-            }
+        if (config && config.model) {
+            setTimeout(() => {
+                const mi = document.getElementById("rs-remote-model");
+                if (mi) mi.value = config.model;
+            }, 50);
         }
+    } else if (provider === 'lmstudio') {
+        settingsModal.apiKeyRow.style.display = "none";
+        settingsModal.baseUrlInput.value = "http://localhost:1234/v1";
+        settingsModal.modelInput.style.setProperty('display', 'none', 'important');
+        settingsModal.localModelSelectEl?.style.setProperty('display', 'none', 'important');
+        settingsModal.modelSelectEl.style.setProperty('display', 'block', 'important');
         
-        if (config.enabled) {
-            settingsModal.localTabBtn.classList.remove("active");
-            settingsModal.remoteTabBtn.classList.add("active");
-            settingsModal.localTabContent.style.display = "none";
-            settingsModal.remoteTabContent.style.display = "block";
-        }
+        setTimeout(() => {
+            if (settingsModal.fetchModelsFromUrl) {
+                settingsModal.fetchModelsFromUrl("http://localhost:1234/v1", settingsModal.modelSelectEl).then(() => {
+                    if (config?.model && settingsModal.modelSelectEl) {
+                        for (let i = 0; i < settingsModal.modelSelectEl.options.length; i++) {
+                            if (settingsModal.modelSelectEl.options[i].value === config.model) {
+                                settingsModal.modelSelectEl.value = config.model;
+                                break;
+                            }
+                        }
+                    }
+                }).catch(() => {});
+            }
+        }, 50);
+    } else if (provider === 'ollama') {
+        settingsModal.apiKeyRow.style.display = "none";
+        settingsModal.baseUrlInput.value = "http://localhost:11430/v1";
+        settingsModal.modelInput.style.setProperty('display', 'none', 'important');
+        settingsModal.localModelSelectEl?.style.setProperty('display', 'none', 'important');
+        settingsModal.modelSelectEl.style.setProperty('display', 'block', 'important');
+        
+        setTimeout(() => {
+            if (settingsModal.fetchModelsFromUrl) {
+                settingsModal.fetchModelsFromUrl("http://localhost:11430/v1", settingsModal.modelSelectEl).then(() => {
+                    if (config?.model && settingsModal.modelSelectEl) {
+                        for (let i = 0; i < settingsModal.modelSelectEl.options.length; i++) {
+                            if (settingsModal.modelSelectEl.options[i].value === config.model) {
+                                settingsModal.modelSelectEl.value = config.model;
+                                break;
+                            }
+                        }
+                    }
+                }).catch(() => {});
+            }
+        }, 50);
     }
 }
 
-// 快速输入功能使用提示 - 随机显示
+// ==========================================
+// Quick input tips rotation
+// ==========================================
+
 const QUICK_INPUT_TIPS = [
     "✨ 输入描述，AI 自动帮你生成提示词",
     "📝 输入改写需求，如：'去掉动漫风格，改成写实'",
@@ -934,6 +954,10 @@ function getRandomTip() {
     return QUICK_INPUT_TIPS[Math.floor(Math.random() * QUICK_INPUT_TIPS.length)];
 }
 
+// ==========================================
+// Status bars with toggle, template selector, action buttons
+// ==========================================
+
 function createStatusBars() {
     const statusBar = mkEl("div", "rs-status-bar");
     
@@ -954,12 +978,11 @@ function createStatusBars() {
     const statusText = mkEl("span");
     statusText.textContent = "🟢 LOCAL PROMPT";
     
-    // Template selector dropdown (will be appended to action row in init())
+    // Template selector dropdown
     const tplSelector = mkEl("select", "rs-tpl-selector");
     tplSelector.style.cssText = "background:#1a2a3a;color:#60a5fa;border:1px solid #3a6a9a;border-radius:4px;padding:2px 6px;font-size:11px;cursor:pointer;max-width:140px;height:22px;margin-right:auto !important;flex-grow:1 !important;";
     tplSelector.title = "Select system prompt template";
     
-    // Populate templates (defined here but called from init() to have access to actionRow)
     async function populateTemplateSelector() {
         const templates = await listTemplates();
         const currentVal = tplSelector.value;
@@ -982,7 +1005,6 @@ function createStatusBars() {
             });
         }
         
-        // Restore selection if still valid
         if (currentVal && [...tplSelector.options].some(o => o.value === currentVal)) {
             tplSelector.value = currentVal;
         }
@@ -1008,7 +1030,6 @@ function createStatusBars() {
     const quickInput = mkEl("input", "rs-quick-input");
     quickInput.placeholder = '🔍 Search presets or describe...';
     
-    // 定时器用于随机切换提示词
     let tipInterval = null;
     
     function startTipRotation() {
@@ -1017,7 +1038,7 @@ function createStatusBars() {
             if (!quickInput.value.trim()) {
                 quickInput.placeholder = getRandomTip();
             }
-        }, 5000); // 每 5 秒随机切换一次
+        }, 5000);
     }
     
     function stopTipRotation() {
@@ -1027,13 +1048,11 @@ function createStatusBars() {
         }
     }
     
-    // 随机显示提示词 - 聚焦时切换
     quickInput.addEventListener("focus", () => {
         quickInput.placeholder = getRandomTip();
         startTipRotation();
     });
     
-    // 失焦时恢复默认 placeholder
     quickInput.addEventListener("blur", () => {
         stopTipRotation();
         if (!quickInput.value.trim()) {
@@ -1057,7 +1076,6 @@ function createStatusBars() {
 
     const buttonsWrapper = mkEl("div", "rs-buttons-wrapper");
     
-    // Single combined row: template selector + action buttons
     const actionRow = mkEl("div", "rs-btn-row rs-action-row");
 
     const enhanceBtn = mkEl("button", "rs-btn rs-action-btn");
@@ -1076,6 +1094,10 @@ function createStatusBars() {
     return { statusBar, quickInputWrapper, randomBtn, listBtn, quickInput, generateBtn, customTextarea, buttonsWrapper, enhanceBtn, translateBtn, saveBtn, settingsBtn, toggleSwitch, toggleKnob, tplSelector, populateTemplateSelector, actionRow };
 }
 
+// ==========================================
+// Main UI factory
+// ==========================================
+
 function createPromptManagerUI() {
     const { statusBar, quickInputWrapper, randomBtn, listBtn, quickInput, generateBtn, customTextarea, buttonsWrapper, enhanceBtn, translateBtn, saveBtn, settingsBtn, toggleSwitch, toggleKnob, tplSelector, populateTemplateSelector, actionRow } = createStatusBars();
     const { overlay: presetListOverlay, body: presetListBody } = createOverlayWithSearch();
@@ -1093,7 +1115,7 @@ function createPromptManagerUI() {
     root.appendChild(presetNameInput);
     root.appendChild(deleteConfirmOverlay);
     root.appendChild(downloadModal.modal);
-    root.appendChild(settingsModal.overlay);  // Settings overlay (遮罩层)
+    root.appendChild(settingsModal.overlay);
     root.appendChild(settingsModal.modal);
 
     presetListBody.style.scrollbarWidth = "thin";
@@ -1103,10 +1125,8 @@ function createPromptManagerUI() {
     let context = null;
     let isLoading = false;
     let isListOpen = false;
-    let isSettingsBtnClicked = false;
 
 
-        // Helper: dispatch synthetic "input" event on customTextarea (triggers auto-switch from EXTERNAL to LOCAL)
         function triggerTextChange() {
             if (customTextarea) {
                 customTextarea.dispatchEvent(new Event("input", { bubbles: true }));
@@ -1117,7 +1137,7 @@ function createPromptManagerUI() {
         context = ctx;
         const { node, graph, textWidget } = ctx;
 
-        // Append template selector to action row (LEFT side), buttons stay on right
+        // Append template selector to action row
         if (!actionRow.contains(tplSelector)) {
             const firstChild = actionRow.children[0];
             if (firstChild) {
@@ -1127,7 +1147,6 @@ function createPromptManagerUI() {
             }
         }
 
-        // Populate template selector on init (AFTER appending to DOM)
         setTimeout(() => populateTemplateSelector(), 50);
 
         function handleSaveClick() {
@@ -1493,10 +1512,8 @@ function createPromptManagerUI() {
             handleSaveClick();
         }, true);
 
-        // 确保 presetListOverlay 在 quickInputWrapper 内部
         quickInputWrapper.appendChild(presetListOverlay);
 
-        // presetListOverlay 在 quickInput 下方的下拉样式
         presetListOverlay.style.top = "100%";
         presetListOverlay.style.left = "0";
         presetListOverlay.style.right = "";
@@ -1506,7 +1523,6 @@ function createPromptManagerUI() {
         presetListOverlay.style.maxHeight = "250px";
         presetListOverlay.style.marginTop = "2px";
 
-        // 输入框聚焦时关闭列表
         quickInput.addEventListener("focus", () => {
             if (isListOpen) {
                 presetListOverlay.style.display = "none";
@@ -1514,7 +1530,6 @@ function createPromptManagerUI() {
             }
         });
 
-        // 输入框输入 → 实时筛选
         quickInput.addEventListener("input", () => {
             const query = quickInput.value.trim();
             if (query) {
@@ -1525,7 +1540,6 @@ function createPromptManagerUI() {
             }
         });
 
-        // 输入框失焦时关闭 overlay（但点击列表项时不关闭）
         quickInput.addEventListener("blur", () => {
             if (!isListOpen) return;
             setTimeout(() => {
@@ -1536,7 +1550,6 @@ function createPromptManagerUI() {
             }, 100);
         });
 
-        // 列表按钮点击 → 更新 isListOpen 状态
         listBtn.addEventListener("click", (e) => {
             e.stopPropagation();
             e.preventDefault();
@@ -1550,7 +1563,6 @@ function createPromptManagerUI() {
             }
         });
 
-        // 点击外部时关闭 overlay（但点击 overlay 内部时不关闭）
         document.addEventListener("mousedown", (e) => {
             if (!quickInputWrapper.contains(e.target) && !presetListOverlay.contains(e.target)) {
                 presetListOverlay.style.display = "none";
@@ -1623,188 +1635,31 @@ function createPromptManagerUI() {
             }
         }
         
-        function startDownloadPolling() {
-            stopDownloadPolling();
-            downloadPollInterval = setInterval(async () => {
-                try {
-                    const status = await checkModel();
-                    if (status.download_status?.model?.downloading) {
-                        const progress = status.download_status.model.progress || 0;
-                        const progressFill = settingsModal.modelList.querySelector(".rs-download-progress-fill");
-                        if (progressFill) {
-                            progressFill.style.width = progress + "%";
-                        }
-                        const statusIndicator = settingsModal.modelList.querySelector(".rs-settings-download-status");
-                        if (statusIndicator) {
-                            statusIndicator.textContent = `⏳ Downloading ${progress}%`;
-                            statusIndicator.style.color = "#fbbf24";
-                        }
-                    } else {
-                        stopDownloadPolling();
-                        loadModelsIntoSettings();
-                    }
-                } catch (e) {
-                    console.error("Failed to check download status:", e);
-                }
-            }, 500);
-        }
-        
         async function loadModelsIntoSettings() {
             try {
                 stopDownloadPolling();
                 const modelsData = await getAvailableModels();
                 const allModelsStatus = await checkAllModels();
                 const currentModelStatus = await checkModel();
-                settingsModal.modelList.innerHTML = "";
                 
-                const modelStatusMap = {};
-                allModelsStatus.models.forEach(m => {
-                    modelStatusMap[m.key] = m.available;
-                });
-                
-                modelsData.models.forEach(model => {
-                    const modelItem = mkEl("div", "rs-settings-model-item");
-                    const isCurrentModel = model.key === modelsData.current_model;
-                    if (isCurrentModel) {
-                        modelItem.classList.add("active");
-                    }
-                    
-                    const modelInfo = mkEl("div", "rs-settings-model-info");
-                    
-                    const isModelAvailable = modelStatusMap[model.key] || false;
-                    const isDownloading = modelStatusMap[model.key] === undefined && isCurrentModel && currentModelStatus.download_status?.model?.downloading;
-                    const downloadProgress = currentModelStatus.download_status?.model?.progress || 0;
-                    
-                    const modelName = mkEl("div", "rs-settings-model-name");
-                    
-                    const statusIcon = mkEl("span", "rs-model-status-icon");
-                    if (isDownloading) {
-                        statusIcon.textContent = "⏳";
-                        statusIcon.title = `Downloading ${downloadProgress}%`;
-                    } else if (isModelAvailable) {
-                        statusIcon.textContent = "✅";
-                        statusIcon.title = "Downloaded";
-                    } else {
-                        statusIcon.textContent = "⬇";
-                        statusIcon.title = "Not downloaded";
-                    }
-                    modelName.appendChild(statusIcon);
-                    
-                    const nameText = mkEl("span");
-                    nameText.textContent = model.name;
-                    modelName.appendChild(nameText);
-                    
-                    const modelSize = mkEl("span", "rs-model-size");
-                    modelSize.textContent = model.size || "";
-                    modelName.appendChild(modelSize);
-                    
-                    modelInfo.appendChild(modelName);
-                    
-                    if (!isModelAvailable) {
-                        const modelFilename = mkEl("div", "rs-settings-model-filename");
-                        modelFilename.textContent = model.filename;
-                        modelInfo.appendChild(modelFilename);
-                    }
-                    
-                    const rightSection = mkEl("div", "rs-settings-model-right");
-                    
-                    if (!isModelAvailable) {
-                        const downloadBtn = mkEl("button", "rs-download-btn-small");
-                        downloadBtn.textContent = "⬇";
-                        downloadBtn.title = "Download this model";
-                        downloadBtn.addEventListener("click", async (e) => {
-                            e.stopPropagation();
-                            downloadBtn.disabled = true;
-                            downloadBtn.textContent = "⏳";
-                            
-                            if (!isCurrentModel) {
-                                const switchResult = await setCurrentModel(model.key);
-                                if (!switchResult.success) {
-                                    downloadBtn.disabled = false;
-                                    downloadBtn.textContent = "⬇";
-                                    settingsModal.statusText.style.display = "block";
-                                    settingsModal.statusText.textContent = "Switch failed: " + (switchResult.error || "Unknown error");
-                                    settingsModal.statusText.className = "rs-settings-status";
-                                    return;
-                                }
-                            }
-                            
-                            const downloadResult = await downloadModel("model");
-                            if (downloadResult.error) {
-                                downloadBtn.disabled = false;
-                                downloadBtn.textContent = "⬇";
-                                settingsModal.statusText.style.display = "block";
-                                settingsModal.statusText.textContent = "Download failed: " + downloadResult.error;
-                                settingsModal.statusText.className = "rs-settings-status";
-                            } else {
-                                const progressBar = mkEl("div", "rs-download-progress-bar");
-                                const progressFill = mkEl("div", "rs-download-progress-fill");
-                                progressFill.style.width = "0%";
-                                progressBar.appendChild(progressFill);
-                                
-                                const progressText = mkEl("div", "rs-download-progress-text");
-                                progressText.textContent = "Starting download...";
-                                
-                                modelItem.appendChild(progressBar);
-                                modelItem.appendChild(progressText);
-                                
-                                startDownloadPolling();
-                            }
-                        });
-                        rightSection.appendChild(downloadBtn);
-                    }
-                    
-                    const indicator = mkEl("div", "rs-settings-model-check");
-                    indicator.textContent = "✓";
-                    rightSection.appendChild(indicator);
-                    
-                    modelItem.appendChild(modelInfo);
-                    modelItem.appendChild(rightSection);
-                    
-                    modelItem.addEventListener("click", async () => {
-                        if (model.key === modelsData.current_model) return;
-                        
-                        settingsModal.statusText.style.display = "block";
-                        settingsModal.statusText.textContent = "Switching model...";
-                        settingsModal.statusText.className = "rs-settings-status";
-                        
-                        const result = await setCurrentModel(model.key);
-                        
-                        if (result.success) {
-                            settingsModal.statusText.textContent = "Model switched successfully!";
-                            settingsModal.statusText.className = "rs-settings-status success";
-                            
-                            loadModelsIntoSettings();
-                            
-                            setTimeout(() => {
-                                settingsModal.statusText.style.display = "none";
-                            }, 1000);
-                        } else {
-                            settingsModal.statusText.textContent = "Failed to switch model: " + (result.error || "Unknown error");
-                            settingsModal.statusText.className = "rs-settings-status";
-                        }
-                    });
-                    
-                    settingsModal.modelList.appendChild(modelItem);
-                });
+                // Update settings modal status text if it exists
+                if (settingsModal && settingsModal.statusText) {
+                    settingsModal.modelList = settingsModal.modelList || document.createElement('div');
+                }
             } catch (e) {
                 console.error("Failed to load models:", e);
-                settingsModal.modelList.textContent = "Failed to load models";
             }
         }
 
         settingsBtn.addEventListener("click", (e) => {
             e.stopPropagation();
-            isSettingsBtnClicked = true;
             
-            // Toggle settings modal
             if (settingsModal.modal.style.display === "flex") {
                 settingsModal.modal.style.display = "none";
                 settingsModal.overlay.style.display = "none";
                 return;
             }
             
-            // 使用 offsetParent 累加计算按钮在页面中的精确位置
             let accumulatedTop = 0;
             let accumulatedLeft = 0;
             let currentEl = settingsBtn;
@@ -1815,12 +1670,10 @@ function createPromptManagerUI() {
                 currentEl = currentEl.offsetParent;
             }
             
-            // 垂直居中：按钮位置 + 按钮高度一半 - modal 高度一半
             const btnHeight = settingsBtn.offsetHeight || 24;
             const modalHeight = settingsModal.modal.offsetHeight || 400;
             const topPos = accumulatedTop + (btnHeight / 2) - (modalHeight / 2);
             
-            // 水平位置：按钮右侧 + 5px 偏移
             const leftPos = accumulatedLeft + settingsBtn.offsetWidth + 5;
             
             settingsModal.modal.style.position = "absolute";
@@ -1834,7 +1687,6 @@ function createPromptManagerUI() {
             settingsModal.modal.style.opacity = "1";
             settingsModal.modal.style.visibility = "visible";
             
-            // 显示遮罩层 + modal（真正的模态窗口）
             settingsModal.overlay.style.display = "block";
             settingsModal.modal.style.display = "flex";
             
@@ -1842,32 +1694,25 @@ function createPromptManagerUI() {
             loadRemoteLLMConfig(settingsModal);
         });
         
-        // 点击遮罩层不关闭（真正的模态行为）- 阻止事件冒泡防止 ComfyUI 全局处理
         settingsModal.overlay.addEventListener("click", (e) => {
             e.stopPropagation();
             e.stopImmediatePropagation();
-            // 什么都不做，只阻止默认行为和冒泡
         });
         
-        // 确保 modal 内部点击也不冒泡到 document
         settingsModal.modal.addEventListener("click", (e) => {
             e.stopPropagation();
             e.stopImmediatePropagation();
         }, true);
         
-        // 关闭前自动保存 Remote API 配置
         const closeSettingsModal = async () => {
-            // 先触发自动保存（通过 settingsModal.autoSaveConfig）
             if (settingsModal.autoSaveConfig) {
                 settingsModal.autoSaveConfig();
             }
-            // 等待一下让保存请求发出
             await new Promise(resolve => setTimeout(resolve, 350));
             settingsModal.modal.style.display = "none";
             settingsModal.overlay.style.display = "none";
         };
         
-        // 使用 capture 阶段捕获 mousedown + click，防止 ComfyUI 全局事件拦截
         const handleCloseClick = (e) => {
             e.stopPropagation();
             e.stopImmediatePropagation();
@@ -1878,7 +1723,6 @@ function createPromptManagerUI() {
         settingsModal.closeBtn.addEventListener("mousedown", handleCloseClick, true);
         settingsModal.closeBtn.addEventListener("click", handleCloseClick, true);
 
-        // ESC 键关闭 settings modal + overlay（关闭前自动保存）
         document.addEventListener("keydown", (e) => {
             if (e.key === "Escape" && settingsModal.modal.style.display === "flex") {
                 closeSettingsModal();

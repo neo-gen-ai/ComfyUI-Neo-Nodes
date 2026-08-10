@@ -48,9 +48,11 @@ except Exception as e:
 # LLM Configuration & Management
 # ==========================================
 
-def _load_model_config():
+def _load_model_config(config_dir: str | None = None):
     """从 model_config.json 加载用户模型配置"""
-    config_path = os.path.join(_CONFIGS_DIR, "model_config.json")
+    if config_dir is None:
+        config_dir = _CONFIGS_DIR
+    config_path = os.path.join(config_dir, "model_config.json")
     try:
         with open(config_path, "r", encoding="utf-8") as f:
             config = json.load(f)
@@ -59,9 +61,11 @@ def _load_model_config():
         logger.error(f"Failed to load model config: {e}")
         return {}
 
-def _load_presets():
+def _load_presets(config_dir: str | None = None):
     """从 model_presets.json 加载预设模型"""
-    presets_path = os.path.join(_CONFIGS_DIR, "model_presets.json")
+    if config_dir is None:
+        config_dir = _CONFIGS_DIR
+    presets_path = os.path.join(config_dir, "model_presets.json")
     try:
         with open(presets_path, "r", encoding="utf-8") as f:
             return json.load(f)
@@ -69,10 +73,10 @@ def _load_presets():
         logger.error(f"Failed to load model presets: {e}")
         return {}
 
-_CONFIGS_DIR = os.path.join(os.path.dirname(__file__), "configs")
+_CONFIGS_DIR: str = os.path.join(os.path.dirname(__file__), "configs")
 
-_MODEL_CONFIG: Dict[str, Any] = _load_model_config()
-_MODEL_PRESETS: Dict[str, Any] = _load_presets()
+_MODEL_CONFIG: Dict[str, Any] = _load_model_config(_CONFIGS_DIR)
+_MODEL_PRESETS: Dict[str, Any] = _load_presets(_CONFIGS_DIR)
 
 def get_model_config():
     """获取模型配置"""
@@ -182,7 +186,8 @@ def _load_remote_config() -> Dict[str, Any]:
         "model": "gpt-4o-mini",
         "max_tokens": 500,
         "temperature": 0.0,
-        "timeout": 60
+        "timeout": 60,
+        "auto_unload_local": False
     }
 
 def _save_remote_config(config: Dict[str, Any]):
@@ -207,11 +212,12 @@ LLM_MODE_LOCAL = "local"
 LLM_MODE_REMOTE = "remote"
 
 def get_current_mode() -> str:
-    """获取当前 LLM 模式：local 或 remote"""
+    """获取当前 LLM 模式：local 或 remote（基于 provider 值判断）"""
     config = _load_remote_config()
-    if config.get("enabled", False):
-        return LLM_MODE_REMOTE
-    return LLM_MODE_LOCAL
+    provider = config.get("provider", "local")
+    if provider == "local":
+        return LLM_MODE_LOCAL
+    return LLM_MODE_REMOTE
 
 
 # ==========================================
@@ -294,6 +300,23 @@ def _ensure_model_in_config(model_key: str, model_dir: str, filename: str) -> No
         logger.info(f"Auto-added model to config: {model_key}")
 
 
+def unload_local_model():
+    """卸载本地 LLM 模型（释放显存）"""
+    global LLMSingleton
+    if LLMSingleton._instance is not None:
+        try:
+            if hasattr(LLMSingleton._instance, 'model') and LLMSingleton._instance.model is not None:
+                del LLMSingleton._instance.model
+            LLMSingleton._instance = None
+            logger.info("Local LLM model unloaded successfully")
+            return {"success": True, "message": "Model unloaded"}
+        except Exception as e:
+            logger.error(f"Failed to unload local model: {e}")
+            return {"success": False, "error": str(e)}
+    logger.info("No local model loaded, nothing to unload")
+    return {"success": True, "message": "No model was loaded"}
+
+
 def __reload_llm_singleton():
     """销毁并重建 LLM 单例，以加载新模型"""
     global LLMSingleton
@@ -355,7 +378,7 @@ def get_available_models() -> Dict[str, Any]:
     seen_keys: set = set()
 
     for key, cfg in all_models.items():
-        cfg_dict: Dict[str, str] = cfg
+        cfg_dict: Dict[str, Any] = cfg  # type: ignore[assignment]
         model_list.append({
             "key": key,
             "name": key,
@@ -461,7 +484,7 @@ def check_all_models_status():
     seen_keys: set = set()
 
     for key, config in all_models.items():
-        config_dict: Dict[str, Any] = config
+        config_dict: Dict[str, Any] = config  # type: ignore[assignment]
         model_dir: str = config_dict.get("model_dir", "")
         filename: str = config_dict.get("filename", "")
 
@@ -759,7 +782,7 @@ class RemoteLLMClient:
             }]
         }
 
-    def _stream_response_generator(self, url: str, headers: Dict[str, str], payload: Dict[str, Any]):
+    def _stream_response_generator(self, url: str, headers: Dict[str, str], payload: Dict[str, Any]):  # type: ignore[misc, empty-body]
         """流式响应生成器"""
         import requests
 
@@ -919,7 +942,7 @@ def get_llm_instance():
 
 def _run_llm_inference(system_prompt: str, user_text: str, max_tokens: int,
                        images: Optional[Any] = None, use_remote: bool = False,
-                       stream: bool = False):
+                       stream: bool = False) -> Any:  # type: ignore[return-type]
     """
     执行 LLM 推理，支持本地和远程模式
 
@@ -945,7 +968,7 @@ def _run_llm_inference(system_prompt: str, user_text: str, max_tokens: int,
 
 
 def _run_local_inference(system_prompt: str, user_text: str, max_tokens: int,
-                         images: Optional[Any] = None, stream: bool = False):
+                         images: Optional[Any] = None, stream: bool = False) -> Any:  # type: ignore[return-type]
     """执行本地 LLM 推理"""
     llm = get_llm_instance()
     messages = [
@@ -1000,7 +1023,7 @@ def _run_local_inference(system_prompt: str, user_text: str, max_tokens: int,
 
 
 def _run_remote_inference(system_prompt: str, user_text: str, max_tokens: int,
-                          images: Optional[Any] = None, stream: bool = False):
+                          images: Optional[Any] = None, stream: bool = False) -> Any:  # type: ignore[return-type]
     """执行远程 LLM 推理"""
     config = _load_remote_config()
 

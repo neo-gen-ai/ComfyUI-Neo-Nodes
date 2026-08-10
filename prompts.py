@@ -6,6 +6,7 @@ from __future__ import annotations
 import os
 import json
 import asyncio
+import datetime
 import server
 import torch
 from aiohttp import web
@@ -200,6 +201,7 @@ from .llm import (
     start_download,
     get_available_models,
     set_current_model,
+    unload_local_model,
     get_remote_llm_config,
     set_remote_llm_config,
     get_current_mode,
@@ -592,6 +594,20 @@ async def rs_prompts_get_llm_mode(request):
         return web.Response(status=500, text=str(e))
 
 
+@server.PromptServer.instance.routes.post("/rs_prompts/unload_local_model")
+async def rs_prompts_unload_local_model(request):
+    """卸载本地 LLM 模型（释放显存）"""
+    try:
+        result = unload_local_model()
+        if result.get("success"):
+            return web.json_response(result)
+        else:
+            return web.json_response(result, status=400)
+    except Exception as e:
+        logger.error(f"Error unloading local model: {e}")
+        return web.json_response({"success": False, "error": str(e)}, status=500)
+
+
 # ==========================================
 # API Routes Registration (LLM API)
 # ==========================================
@@ -960,13 +976,15 @@ async def rs_prompts_save_template(request):
         
         # 加载现有数据以保留 created_at
         existing_data = _load_template_file(filepath) if os.path.exists(filepath) else {}
+        # _load_template_file can return None on JSON parse errors, ensure we have a dict
+        existing_data = existing_data or {}
         template_data = {
             "id": template_id,
             "name": name,
             "source": source,
             "tags": tags,
             "content": content,
-            "created_at": existing_data.get("created_at", __import__('datetime').datetime.now(__import__('datetime').timezone.utc).isoformat()),
+            "created_at": existing_data.get("created_at", datetime.datetime.now(datetime.timezone.utc).isoformat()),
         }
         
         with _templates_lock:
