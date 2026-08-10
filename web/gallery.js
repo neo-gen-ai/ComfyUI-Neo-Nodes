@@ -224,9 +224,11 @@ class NeoGallery {
         }
     }
 
+    // ====== Cover Image Cache ======
+
     // ====== Data Loading & Caching ======
 
-    _getCacheKey() {
+    _getCacheKey(){
         return 'neo_gallery_cache';
     }
 
@@ -235,9 +237,9 @@ class NeoGallery {
             const cacheData = {
                 directories: data.directories || [],
                 timestamp: Date.now(),
-                // 保存每个目录的文件数量用于检测变化
-                dirCounts: (data.directories || []).reduce((acc, d) => {
-                    acc[d.name] = d.items ? d.items.length : 0;
+            // 保存每个目录的文件数量用于检测变化（lazy mode uses root_count）
+            dirCounts: (data.directories || []).reduce((acc, d) => {
+                    acc[d.name] = d.root_count || (d.items ? d.items.length : 0);
                     return acc;
                 }, {})
             };
@@ -270,8 +272,8 @@ class NeoGallery {
     
     async loadGallery() {
         try {
-            // Use lazy loading for faster initial load
-            const resp = await api.fetchApi('/neo_gallery/list?lazy=1');
+            // Use fields parameter to get dirs, items and covers
+            const resp = await api.fetchApi('/neo_gallery/list?fields=dirs,items,covers');
             if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
             const data = await resp.json();
             
@@ -283,10 +285,17 @@ class NeoGallery {
                 path: dir.path,
                 subdirs: dir.subdirs || {},
                 read_only: dir.read_only || false,
-                lazy: dir.lazy || false,
-                root_count: dir.root_count || 0
+                root_count: dir.root_count || 0,
+                items: dir.items || [] // Include items for presets (no lazy mode anymore)
             }));
             this.filteredDirectories = this.allDirectories;
+
+            // Use covers from list response (no separate request needed)
+            // FIX: Merge with existing cache instead of replacing to preserve covers when navigating back
+            if (data.covers && Object.keys(data.covers).length > 0) {
+                this._dirCovers = { ...this._dirCovers, ...data.covers };
+                console.log('[Neo Gallery] Merged cover images from list response:', Object.keys(this._dirCovers).length, 'directories');
+            }
         } catch (error) {
             console.error('Error loading gallery:', error);
             // 如果网络失败，尝试使用缓存
@@ -298,8 +307,8 @@ class NeoGallery {
                     path: dir.path,
                     subdirs: dir.subdirs || {},
                     read_only: dir.read_only || false,
-                    lazy: dir.lazy || false,
-                    root_count: dir.root_count || 0
+                    root_count: dir.root_count || 0,
+                    items: dir.items || []
                 }));
             } else {
                 this.allDirectories = [];
@@ -317,8 +326,8 @@ class NeoGallery {
                 path: dir.path,
                 subdirs: dir.subdirs || {},
                 read_only: dir.read_only || false,
-                lazy: dir.lazy || false,
-                root_count: dir.root_count || 0
+                root_count: dir.root_count || 0,
+                items: dir.items || []
             }));
             this.filteredDirectories = this.allDirectories;
             return true;
@@ -396,7 +405,13 @@ class NeoGallery {
             const hasContent = (dir.subdirs && Object.keys(dir.subdirs).length > 0) ||
                                (dir.root_count && dir.root_count > 0);
             if (!hasContent) continue;
-            const card = await this.components.createDirCard(this, dir.name, dir.path, dir.items, dir.subdirs, dir.read_only);
+            
+            // FIX: For presets, only show the card as a directory entry (no root items displayed directly)
+            // This prevents mixing root-level files with subdirectory cards on the home page
+            const isPresets = dir.name.toLowerCase() === 'presets';
+            const displayItems = isPresets ? [] : (dir.items || []);
+            
+            const card = await this.components.createDirCard(this, dir.name, dir.path, displayItems, dir.subdirs, dir.read_only);
             container.appendChild(card);
         }
 
@@ -413,36 +428,17 @@ class NeoGallery {
         }
         
         try {
-            // Use lazy loading for faster initial load
-            const resp = await api.fetchApi(`/neo_gallery/dir_structure_lazy?dir_name=${encodeURIComponent(dirName)}&path=${encodeURIComponent(relPath)}`);
+            // Use /neo_gallery/list with fields=dirs,items,covers to get directory structure, items, and covers
+            const resp = await api.fetchApi(`/neo_gallery/list?fields=dirs,items,covers&dir_name=${encodeURIComponent(dirName)}&path=${encodeURIComponent(relPath)}`);
             if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
             
-            const structure = await resp.json();
+            const data = await resp.json();
+            let structure = data.directories[0] || {};
             
-            // Also fetch image entries for the current directory
-            if (pathSegments.length > 0) {
-                // Subdirectory: use dir_structure endpoint for accurate per-path results
-                const structResp = await api.fetchApi(`/neo_gallery/dir_structure?dir_name=${encodeURIComponent(dirName)}&path=${encodeURIComponent(relPath)}`);
-                if (structResp.ok) {
-                    const structData = await structResp.json();
-                    if (structData.images && structData.images.length > 0) {
-                        structure.images = structData.images;
-                        structure.image_count = structData.image_count;
-                    }
-                }
-            } else {
-                // Root level: use the already-loaded list
-                const listResp = await api.fetchApi(`/neo_gallery/list`);
-                if (listResp.ok) {
-                    const listData = await listResp.json();
-                    const dir = listData.directories?.find(d => 
-                        d.path === structure.path || d.name === structure.dir_name
-                    );
-                    if (dir && dir.items && dir.items.length > 0) {
-                        structure.images = dir.items;
-                        structure.image_count = dir.items.length;
-                    }
-                }
+            // Update covers cache if provided (merge to preserve parent dir covers when navigating back)
+            if (data.covers && Object.keys(data.covers).length > 0) {
+                this._dirCovers = { ...this._dirCovers, ...data.covers };
+                console.log('[Neo Gallery] Merged cover images from directory response:', Object.keys(this._dirCovers).length, 'directories');
             }
             
             this.currentView.mode = 'directory';
@@ -466,63 +462,85 @@ class NeoGallery {
         }
     }
 
-    renderDirectoryStructure(structure, dirName, pathSegments) {
+    async _fetchLazyImages(structure, dirName, pathSegments) {
+        // Fetch full image list using /neo_gallery/list with dir_name parameter
+        const relPath = pathSegments.join("/");
+        
+        try {
+            // Use /neo_gallery/list with dir_name to get specific directory data
+            const listResp = await api.fetchApi(`/neo_gallery/list?fields=items&dir_name=${encodeURIComponent(dirName)}&path=${encodeURIComponent(relPath)}`);
+            if (!listResp.ok) throw new Error(`HTTP ${listResp.status}`);
+            
+            const listData = await listResp.json();
+            
+            // Get the directory from response
+            const matchedDir = listData.directories[0];
+            
+            if (matchedDir && matchedDir.items) {
+                this.renderImagesFromStructure(matchedDir.items, dirName, pathSegments);
+                return;
+            }
+            
+            // Fallback: show no files message
+            showNoFilesMessage(this.accordion, "No images found in this folder");
+        } catch (error) {
+            console.error('[Gallery] Error loading directory structure:', error);
+            showToast(this.app, 'error', 'Error', 'Failed to load directory structure');
+        }
+    }
+
+    async renderDirectoryStructure(structure, dirName, pathSegments) {
         this.accordion.innerHTML = "";
         
-        const { subdirs, images, has_subdirs, image_count, total_images, root_count } = structure;
+        // New structure: { subdirs: object, items: array, root_count: number }
+        const { subdirs, items, root_count } = structure;
         
-        // Handle lazy-loaded structure (images may be undefined, has_subdirs may be undefined)
-        const imageArray = images || [];
-        const subdirArray = Array.isArray(subdirs) ? subdirs : Object.values(subdirs || {});
+        // Convert items to images for compatibility
+        const imageArray = items || [];
+        // Convert subdirs object to array for compatibility
+        const subdirArray = Object.keys(subdirs || {}).map(name => ({
+            name,
+            path: subdirs[name].path || name,
+            image_count: subdirs[name].image_count || 0
+        }));
         
-        // For lazy-loaded: has_subdirs may be undefined, but subdirs has content
-        // For normal: has_subdirs is boolean, subdirs is array of strings
-        const hasSubdirs = has_subdirs || subdirArray.length > 0;
+        // Filter out empty subdirectories (no media files)
+        const nonEmptySubdirs = subdirArray.filter(s => s.image_count > 0);
+        const hasSubdirs = nonEmptySubdirs.length > 0;
         
         if (hasSubdirs) {
-            this.renderSubdirCards(structure, dirName, pathSegments);
+            this.renderSubdirCards(structure, dirName, pathSegments, nonEmptySubdirs);
         } else if (imageArray.length > 0) {
             this.renderImagesFromStructure(imageArray, dirName, pathSegments);
+        } else if (root_count && root_count > 0) {
+            // Lazy-loaded: has images but no image data yet — fetch them now
+            await this._fetchLazyImages(structure, dirName, pathSegments);
+            return; // Don't show anything yet, _fetchLazyImages will render
         } else {
             showNoFilesMessage(this.accordion, "No images found in this folder");
         }
     }
 
-    async renderSubdirCards(structure, dirName, pathSegments) {
-        const { subdirs, images, image_count, total_images, root_count } = structure;
+    async renderSubdirCards(structure, dirName, pathSegments, filteredSubdirs = null) {
+        // New structure: { subdirs: object, items: array, root_count: number }
+        const { subdirs, items, root_count } = structure;
         const dir = this.allDirectories.find(d => d.name === dirName);
         
-        // Handle lazy-loaded structure (only has root_count and subdirs)
-        const displayTotal = total_images || root_count || 0;
-        const displaySubdirs = Array.isArray(subdirs) ? subdirs : Object.keys(subdirs || {});
+        // Use filtered subdirs if provided (non-empty only), otherwise use all
+        const displaySubdirs = filteredSubdirs || Object.keys(subdirs || {});
         
-        // For lazy-loaded, subdirArray is object values; for normal, it's string array
-        const subdirArray = Array.isArray(subdirs) ? subdirs : Object.values(subdirs || {});
+        const subdirArray = Array.isArray(displaySubdirs) 
+            ? displaySubdirs 
+            : Object.keys(subdirs || {}).map(name => ({ name, path: subdirs[name].path || name, image_count: subdirs[name].image_count || 0 }));
         
         const container = $el("div", {
             className: "neo-gallery-category-grid",
             style: { gridTemplateColumns: `repeat(auto-fill, ${this.maxThumbnailSize}px)` }
         });
         
-        const subdirList = Array.isArray(subdirs) ? subdirs : Object.values(subdirs || {});
-        for (const subdir of subdirList) {
-            // Handle both string (old format) and object (new lazy format)
-            const subdirName = typeof subdir === 'string' ? subdir : subdir.path || subdir.name;
-            const subdirParts = subdirName.split("/");
-            const fullPath = [...pathSegments, ...subdirParts];
-            
-            // Check if subdir has content before creating card
-            const subdirResp = await api.fetchApi(`/neo_gallery/dir_structure_lazy?dir_name=${encodeURIComponent(dirName)}&path=${encodeURIComponent(fullPath.join('/'))}`);
-            if (subdirResp.ok) {
-                const subdirData = await subdirResp.json();
-                const subdirCount = subdirData.root_count || 0;
-                const subdirSubdirs = subdirData.subdirs || {};
-                
-                // Skip empty directories
-                if (subdirCount === 0 && Object.keys(subdirSubdirs).length === 0) {
-                    continue;
-                }
-            }
+        for (const subdir of subdirArray) {
+            const subdirName = typeof subdir === 'string' ? subdir : subdir.name;
+            const fullPath = [...pathSegments, subdirName];
             
             const card = await this.components.createSubdirCard(this, subdirName, dirName, fullPath);
             container.appendChild(card);
@@ -533,7 +551,7 @@ class NeoGallery {
         }
         
         // Only show images section if we have actual image data (not lazy-loaded)
-        if (images && images.length > 0) {
+        if (items && items.length > 0) {
             
             const imageGrid = $el("div", { className: "neo-gallery-image-grid" });
             
@@ -545,7 +563,7 @@ class NeoGallery {
             }
             
             // Use render queue for lazy loading
-            this._renderQueue = [...sortByMtime(images)];
+            this._renderQueue = [...sortByMtime(items)];
             this._renderedCount = 0;
             
             const renderPage = (count) => {
@@ -570,7 +588,7 @@ class NeoGallery {
             }
             
             // Save images for lightbox navigation (lazy mode fallback)
-            this._currentDirImages = [...sortByMtime(images)];
+            this._currentDirImages = [...sortByMtime(items)];
         }
     }
 
@@ -661,14 +679,21 @@ class NeoGallery {
         let subfolder = source;
 
         const dir = this.allDirectories.find(d => d.name === source);
+        // In lazy mode, dir.items is undefined - use _currentDirImages as fallback
+        const dirItems = (dir && Array.isArray(dir.items)) ? dir.items : [];
         if (dir) {
             subfolder = source;
             if (categoryPath.length > 0) {
                 const catKey = categoryPath[0];
-                items = dir.items.filter(i => i.category === catKey || !i.category);
+                items = dirItems.filter(i => i.category === catKey || !i.category);
             } else {
-                items = [...dir.items];
+                items = [...dirItems];
             }
+        }
+
+        // Fallback to _currentDirImages if dir.items is empty (lazy mode)
+        if (items.length === 0 && this._currentDirImages && this._currentDirImages.length > 0) {
+            items = [...this._currentDirImages];
         }
 
         if (items.length === 0) {
@@ -938,20 +963,33 @@ class NeoGallery {
                 showToast(this.app, 'success', 'Deleted', `Removed: ${name}`);
                 
                 // Remove from data source immediately
+                // In lazy mode, use _currentDirImages as fallback since dir.items is undefined
                 for (const dir of this.allDirectories) {
-                    if (dir.items) {
-                        const before = dir.items.length;
-                        dir.items = dir.items.filter(item => item.name !== name || item.subfolder !== subfolder);
+                    const items = Array.isArray(dir.items) ? dir.items : [];
+                    if (items.length > 0) {
+                        const before = items.length;
+                        dir.items = items.filter(item => item.name !== name || item.subfolder !== subfolder);
                         if (before !== dir.items.length) break;
                     }
                 }
                 
                 // Also remove from filtered directories (search results)
                 for (const dir of this.filteredDirectories) {
-                    if (dir.items) {
-                        const before = dir.items.length;
-                        dir.items = dir.items.filter(item => item.name !== name || item.subfolder !== subfolder);
+                    const items = Array.isArray(dir.items) ? dir.items : [];
+                    if (items.length > 0) {
+                        const before = items.length;
+                        dir.items = items.filter(item => item.name !== name || item.subfolder !== subfolder);
                         if (before !== dir.items.length) break;
+                    }
+                }
+                
+                // Also remove from _currentDirImages (lazy mode fallback)
+                if (this._currentDirImages && this._currentDirImages.length > 0) {
+                    const before = this._currentDirImages.length;
+                    this._currentDirImages = this._currentDirImages.filter(item => item.name !== name || item.subfolder !== subfolder);
+                    if (before !== this._currentDirImages.length) {
+                        // Re-render current view to reflect deletion
+                        await this.sortAndDisplayImages();
                     }
                 }
                 
@@ -1016,40 +1054,26 @@ class NeoGallery {
         searchTerm = searchTerm.toLowerCase();
         this.isSearchActive = searchTerm.length > 0;
         
-        // In lazy mode, load items for directories that match
-        const dirsToSearch = this.allDirectories.filter(d => d.lazy);
-        if (dirsToSearch.length > 0) {
-            const promises = dirsToSearch.map(async (dir) => {
-                try {
-                    const resp = await api.fetchApi(`/neo_gallery/dir_structure?dir_name=${encodeURIComponent(dir.name)}&path=&samples=0`);
-                    if (resp.ok) {
-                        const data = await resp.json();
-                        return { dir, items: data.images || [] };
-                    }
-                } catch(e) {}
-                return { dir, items: [] };
-            });
-            const results = await Promise.all(promises);
-            this.filteredDirectories = results
-                .map(({dir, items}) => ({
-                    ...dir,
-                    items: items.filter(img =>
-                        (img.name && img.name.toLowerCase().includes(searchTerm)) ||
-                        (img.style && img.style.toLowerCase().includes(searchTerm)) ||
-                        (img.content && img.content.toLowerCase().includes(searchTerm))
-                    )
-                }))
-                .filter(d => d.items.length > 0);
-        } else {
-            this.filteredDirectories = this.allDirectories.map(dir => ({
+        // Use list?search_mode=1 to get lightweight searchable data (style + content only, no full txt parsing)
+        const resp = await api.fetchApi('/neo_gallery/list?search_mode=1');
+        if (!resp.ok) {
+            console.error('[Gallery] Search failed: could not fetch search data');
+            this.filteredDirectories = [];
+            await this.sortAndDisplayImages();
+            return;
+        }
+        
+        const data = await resp.json();
+        this.filteredDirectories = (data.directories || [])
+            .map(dir => ({
                 ...dir,
-                items: dir.items.filter(img =>
+                items: (dir.items || []).filter(img =>
                     (img.name && img.name.toLowerCase().includes(searchTerm)) ||
                     (img.style && img.style.toLowerCase().includes(searchTerm)) ||
                     (img.content && img.content.toLowerCase().includes(searchTerm))
                 )
-            })).filter(dir => dir.items.length > 0);
-        }
+            }))
+            .filter(d => d.items.length > 0);
         
         this.currentView.mode = 'categories';
         this.currentView.source = null;

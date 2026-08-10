@@ -728,72 +728,74 @@ export class GalleryComponents {
         card.appendChild(coverWrapper);
         card.appendChild(info);
 
-        // Fetch sample images from subdirectories asynchronously (skips empty intermediate dirs)
-            try {
-                const resp = await api.fetchApi(`/neo_gallery/dir_structure?dir_name=${encodeURIComponent(name)}&path=&samples=2`);
-                if (!resp.ok) throw new Error('Failed to fetch');
-
-                const structure = await resp.json();
-                
-                const countEl = card.querySelector('.neo-gallery-card-count');
-                if (countEl) {
-                    countEl.textContent = `${structure.total_images} items`;
-                }
-
-                // Update cover with sample images
-                let finalCoverImages = [];
-                if (structure.sample_images && structure.sample_images.length > 0) {
-                    finalCoverImages = structure.sample_images.slice(0, 2);
-                } else if (structure.images && structure.images.length > 0) {
-                    finalCoverImages = structure.images.slice(0, 2);
-                }
-
-                if (finalCoverImages.length > 0) {
-                    coverWrapper.innerHTML = '';
-                    const coverGrid = $el("div", { className: "neo-gallery-card-cover-grid" });
-
-                    let loadedCount = 0;
-                    const displayImages = finalCoverImages.slice(0, 2);
-
-                    displayImages.forEach((imgData) => {
-                        const imgSubfolder = imgData.subfolder || "";
-                        const imgItem = $el("div", { className: "neo-gallery-card-cover-grid-item" });
-
-                        const img = $el("img", {
-                            src: getThumbnailSrc(imgData, imgSubfolder),
-                            alt: name,
-                            loading: "lazy"
-                        });
-
-                        img.onload = () => {
-                            loadedCount++;
-                            if (loadedCount === displayImages.length) {
-                                const height = getCoverHeight(coverWrapper, gallery);
-                                coverGrid.style.height = `${height * 2}px`;
-                            }
-                        };
-
-                        img.onerror = () => {
-                            imgItem.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#555;font-size:24px;">\uD83D\uDCCB</div>';
-                        };
-
-                        imgItem.appendChild(img);
-                        coverGrid.appendChild(imgItem);
-                    });
-
-                    coverWrapper.appendChild(coverGrid);
-                } else {
-                    coverWrapper.innerHTML = '';
-                    coverWrapper.appendChild($el("div", {
-                        className: "neo-gallery-card-cover neo-gallery-card-placeholder",
-                        textContent: "\uD83D\uDCCB"
-                    }));
-                }
-            } catch (e) {
-                console.error('[Gallery] Error fetching dir sample images:', e);
-            }
+        // Fetch cover images from cache or lazy-load if not available yet
+        this._applyCoverImages(card, coverWrapper, gallery, name, name);
 
         return card;
+    }
+
+    /**
+     * Apply cover images to a directory card from the global cache.
+     */
+    _applyCoverImages(card, coverWrapper, gallery, dirName, displayLabel, onCountUpdate) {
+        // Use cached cover images from batch fetch
+        // Case-insensitive lookup: backend uses lowercase keys (e.g. "presets")
+        // but frontend passes the directory name as displayed (e.g. "Presets")
+        const covers = (gallery._dirCovers && gallery._dirCovers[dirName]) || 
+                       (gallery._dirCovers && Object.entries(gallery._dirCovers).find(([k]) => k.toLowerCase() === dirName.toLowerCase())?.[1]) || [];
+
+        if (covers.length > 0) {
+            this._renderCoverGrid(coverWrapper, covers, dirName, displayLabel, gallery);
+            if (onCountUpdate) onCountUpdate(covers.length);
+        } else {
+            // No cover images available - show placeholder
+            coverWrapper.innerHTML = '';
+            coverWrapper.appendChild($el("div", {
+                className: "neo-gallery-card-cover neo-gallery-card-placeholder",
+                textContent: "\uD83D\uDCCB"
+            }));
+        }
+    }
+
+    /**
+     * Render a cover grid from an array of image entries.
+     */
+    _renderCoverGrid(coverWrapper, images, dirName, displayLabel, gallery) {
+        const displayImages = images.slice(0, 2);
+        if (displayImages.length === 0) return;
+
+        coverWrapper.innerHTML = '';
+        const coverGrid = $el("div", { className: "neo-gallery-card-cover-grid" });
+
+        let loadedCount = 0;
+
+        displayImages.forEach((imgData) => {
+            const imgSubfolder = imgData.subfolder || "";
+            const imgItem = $el("div", { className: "neo-gallery-card-cover-grid-item" });
+
+            const img = $el("img", {
+                src: getThumbnailSrc(imgData, imgSubfolder),
+                alt: displayLabel,
+                loading: "lazy"
+            });
+
+            img.onload = () => {
+                loadedCount++;
+                if (loadedCount === displayImages.length) {
+                    const height = getCoverHeight(coverWrapper, gallery);
+                    coverGrid.style.height = `${height * 2}px`;
+                }
+            };
+
+            img.onerror = () => {
+                imgItem.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#555;font-size:24px;">\uD83D\uDCCB</div>';
+            };
+
+            imgItem.appendChild(img);
+            coverGrid.appendChild(imgItem);
+        });
+
+        coverWrapper.appendChild(coverGrid);
     }
 
     async createSubdirCard(gallery, subdirName, parentDir, fullPath) {
@@ -829,82 +831,40 @@ export class GalleryComponents {
         card.appendChild(coverWrapper);
         card.appendChild(info);
 
-        // Fetch directory structure asynchronously with sample images for cover thumbnails
-        setTimeout(async () => {
-            try {
-                const resp = await api.fetchApi(`/neo_gallery/dir_structure?dir_name=${encodeURIComponent(parentDir)}&path=${encodeURIComponent(fullPath.join("/"))}&samples=2`);
-                if (!resp.ok) throw new Error('Failed to fetch');
-
-                const structure = await resp.json();
-                
-                const countEl = card.querySelector('.neo-gallery-card-count');
-                const typeBadge = card.querySelector('.neo-gallery-card-type-badge');
-
-                if (countEl) {
-                    countEl.textContent = `${structure.total_images} items`;
-                }
-
-                if (typeBadge) {
-                    typeBadge.className = 'neo-gallery-card-type-badge neo-gallery-card-type-loading type-directory';
-                    typeBadge.title = 'Directory';
-                    typeBadge.textContent = '\uD83D\uDCC1';
-                }
-
-                // Update cover with sample images
-                let coverImages = [];
-                if (structure.sample_images && structure.sample_images.length > 0) {
-                    coverImages = structure.sample_images.slice(0, 2);
-                } else if (structure.images && structure.images.length > 0) {
-                    coverImages = structure.images.slice(0, 2);
-                }
-
-                if (coverImages.length > 0) {
-                    coverWrapper.innerHTML = '';
-                    const coverGrid = $el("div", { className: "neo-gallery-card-cover-grid" });
-
-                    let loadedCount = 0;
-                    const displayImages = coverImages.slice(0, 2);
-
-                    displayImages.forEach((imgData) => {
-                        const imgSubfolder = imgData.subfolder || "";
-                        const imgItem = $el("div", { className: "neo-gallery-card-cover-grid-item" });
-
-                        const img = $el("img", {
-                            src: getThumbnailSrc(imgData, imgSubfolder),
-                            alt: subdirName,
-                            loading: "lazy"
-                        });
-
-                        img.onload = () => {
-                            loadedCount++;
-                            if (loadedCount === displayImages.length) {
-                                const height = getCoverHeight(coverWrapper, gallery);
-                                coverGrid.style.height = `${height * 2}px`;
-                            }
-                        };
-
-                        img.onerror = () => {
-                            imgItem.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#555;font-size:24px;">\uD83D\uDCCB</div>';
-                        };
-
-                        imgItem.appendChild(img);
-                        coverGrid.appendChild(imgItem);
-                    });
-
-                    coverWrapper.appendChild(coverGrid);
-                } else {
-                    coverWrapper.innerHTML = '';
-                    coverWrapper.appendChild($el("div", {
-                        className: "neo-gallery-card-cover neo-gallery-card-placeholder",
-                        textContent: "\uD83D\uDCCB"
-                    }));
-                }
-            } catch (e) {
-                console.error('[Gallery] Error fetching subdir info:', e);
-            }
-        }, 0);
+        // Try to apply cover images from cache first, then fallback to lazy fetch
+        const subdirKey = `${parentDir}/${fullPath.join("/")}`;
+        this._applySubdirCover(card, coverWrapper, gallery, subdirKey, parentDir, fullPath, subdirName);
 
         return card;
+    }
+
+    /**
+     * Apply cover images to a subdirectory card from the global cache.
+     */
+    _applySubdirCover(card, coverWrapper, gallery, subdirKey, parentDir, fullPath, subdirName) {
+        // Case-insensitive lookup for consistency
+        const covers = (gallery._dirCovers && gallery._dirCovers[subdirKey]) || 
+                       (gallery._dirCovers && Object.entries(gallery._dirCovers).find(([k]) => k.toLowerCase() === subdirKey.toLowerCase())?.[1]) || [];
+
+        if (covers.length > 0) {
+            this._renderCoverGrid(coverWrapper, covers, subdirKey, subdirName, gallery);
+            // Update card state from cache
+            const countEl = card.querySelector('.neo-gallery-card-count');
+            const typeBadge = card.querySelector('.neo-gallery-card-type-badge');
+            if (countEl) countEl.textContent = `${covers.length} items`;
+            if (typeBadge) {
+                typeBadge.className = 'neo-gallery-card-type-badge neo-gallery-card-type-loading type-directory';
+                typeBadge.title = 'Directory';
+                typeBadge.textContent = '\uD83D\uDCC1';
+            }
+        } else {
+            // No cover images available - show placeholder
+            coverWrapper.innerHTML = '';
+            coverWrapper.appendChild($el("div", {
+                className: "neo-gallery-card-cover neo-gallery-card-placeholder",
+                textContent: "\uD83D\uDCCB"
+            }));
+        }
     }
 
     /**
@@ -1185,10 +1145,12 @@ export class GalleryComponents {
 
         let siblings = [];
         try {
-            const resp = await api.fetchApi(`/neo_gallery/dir_structure?dir_name=${encodeURIComponent(rootDirName)}&path=${encodeURIComponent(parentPath.join("/"))}`);
+            const resp = await api.fetchApi(`/neo_gallery/list?fields=dirs&dir_name=${encodeURIComponent(rootDirName)}&path=${encodeURIComponent(parentPath.join("/"))}`);
             if (resp.ok) {
-                const structure = await resp.json();
-                siblings = (structure.subdirs || []).map(s => ({ name: s, path: [...parentPath, s] }));
+                const data = await resp.json();
+                const structure = data.directories[0] || {};
+                // /neo_gallery/list returns subdirs as object {name: {image_count, path}}
+                siblings = Object.keys(structure.subdirs || {}).map(name => ({ name, path: [...parentPath, name] }));
             }
         } catch (e) {
             console.error('[Gallery] Error fetching sibling directories:', e);
@@ -1198,7 +1160,7 @@ export class GalleryComponents {
 
         const dropdown = $el("div", {
             id: "neo-gallery-sibling-dropdown",
-            className: "neo-gallery-sibling-dropdown"
+            className: "neo-galleryibling-dropdown"
         });
 
         const rect = event.target.getBoundingClientRect();
