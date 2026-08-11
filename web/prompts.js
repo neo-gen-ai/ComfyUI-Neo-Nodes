@@ -214,6 +214,12 @@ app.registerExtension({
                 return node.inputs?.some(i => i.name === "text_input" && i.link !== null) || false;
             };
 
+            // Hide status bar if no text_input connection (no external input possible)
+            let _hasTextInput = hasTextInputConnection();
+            if (!_hasTextInput) {
+                statusBar.style.display = "none";
+            }
+
             // NeoPromptGenerator UI update function (with toggle support)
             const updateStatusAndUI = (() => {
                 const applyTheme = (isExternal) => {
@@ -242,6 +248,16 @@ app.registerExtension({
                     translateBtn.disabled = false;
                     translateBtn.style.opacity = "1";
                     customTextarea.style.border = "1px solid #444";
+
+                    // Update status bar visibility based on text_input connection
+                    const hasConn = hasTextInputConnection();
+                    if (hasConn && !statusBar.style.display) {
+                        statusBar.style.display = "";
+                        _hasTextInput = true;
+                    } else if (!hasConn && statusBar.style.display !== "none") {
+                        statusBar.style.display = "none";
+                        _hasTextInput = false;
+                    }
 
                     applyTheme(!isDisabled);
 
@@ -292,6 +308,23 @@ app.registerExtension({
                 });
             }
 
+
+            // Connection change handler - show/hide status bar when text_input is connected/disconnected
+            node.onConnectionsChange = function(type, inputInfo) {
+                // Always defer to next tick so link property has time to update
+                setTimeout(() => {
+                    const hasConn = node.inputs?.some(i => i.name === "text_input" && i.link !== null);
+                    if (hasConn && statusBar.style.display === "none") {
+                        statusBar.style.display = "";
+                        _hasTextInput = true;
+                        updateStatusAndUI();
+                    } else if (!hasConn && statusBar.style.display !== "none") {
+                        statusBar.style.display = "none";
+                        _hasTextInput = false;
+                        updateStatusAndUI();
+                    }
+                }, 0);
+            };
 
             // Node removal cleanup
             node.onRemoved = function() {
@@ -615,6 +648,12 @@ app.registerExtension({
                 return node.inputs?.some(i => i.name === "text_input" && i.link !== null) || false;
             };
 
+            // Hide status bar if no text_input connection (no external input possible)
+            let _hasTextInput = hasTextInputConnection();
+            if (!_hasTextInput) {
+                statusBar.style.display = "none";
+            }
+
             // 保存引用用于清理
             node._promptUIElements = { presetListOverlay, presetNameInput, deleteConfirmOverlay };
 
@@ -647,6 +686,16 @@ app.registerExtension({
                     translateBtn.disabled = false;
                     translateBtn.style.opacity = "1";
                     customTextarea.style.border = "1px solid #444";
+
+                    // Update status bar visibility based on text_input connection
+                    const hasConn = hasTextInputConnection();
+                    if (hasConn && !statusBar.style.display) {
+                        statusBar.style.display = "";
+                        _hasTextInput = true;
+                    } else if (!hasConn && statusBar.style.display !== "none") {
+                        statusBar.style.display = "none";
+                        _hasTextInput = false;
+                    }
 
                     applyTheme(!isDisabled);
 
@@ -720,7 +769,24 @@ app.registerExtension({
             }
 
 
-            // 节点移除清理
+            // Connection change handler - show/hide status bar when text_input is connected/disconnected
+            node.onConnectionsChange = function(type, inputInfo) {
+                // Always defer to next tick so link property has time to update
+                setTimeout(() => {
+                    const hasConn = node.inputs?.some(i => i.name === "text_input" && i.link !== null);
+                    if (hasConn && statusBar.style.display === "none") {
+                        statusBar.style.display = "";
+                        _hasTextInput = true;
+                        updateStatusAndUI();
+                    } else if (!hasConn && statusBar.style.display !== "none") {
+                        statusBar.style.display = "none";
+                        _hasTextInput = false;
+                        updateStatusAndUI();
+                    }
+                }, 0);
+            };
+
+            // Node removal cleanup
             node.onRemoved = function() {
                 stopEnforcement();
                 presetListOverlay.remove();
