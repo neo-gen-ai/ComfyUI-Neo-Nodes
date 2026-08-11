@@ -697,11 +697,9 @@ export class GalleryComponents {
             style: { minHeight: `${Math.max(gallery.maxThumbnailSize * 0.5, 80)}px`, maxHeight: `${gallery.maxThumbnailSize}px` }
         });
 
-        coverWrapper.appendChild($el("div", {
-            className: "neo-gallery-card-cover neo-gallery-card-placeholder",
-            textContent: "\uD83D\uDCC1"
-        }));
-
+        // Mark card as lazy-load target with data attributes
+        card.dataset.lazyCovers = name;
+        
         const info = $el("div", { className: "neo-gallery-card-info" }, [
             $el("span", { className: "neo-gallery-card-name", textContent: name }),
             $el("span", { className: "neo-gallery-card-count", textContent: `${(items || []).length} items` })

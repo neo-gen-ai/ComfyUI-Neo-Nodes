@@ -232,11 +232,12 @@ class NeoGallery {
         return 'neo_gallery_cache';
     }
 
-    _saveToCache(data) {
+    _saveToCache(data, serverHash) {
         try {
             const cacheData = {
                 directories: data.directories || [],
                 timestamp: Date.now(),
+                serverHash: serverHash || null, // Server-side hash for freshness checking
             // 保存每个目录的文件数量用于检测变化（lazy mode uses root_count）
             dirCounts: (data.directories || []).reduce((acc, d) => {
                     acc[d.name] = d.root_count || (d.items ? d.items.length : 0);
@@ -269,17 +270,86 @@ class NeoGallery {
         }
     }
 
+    /**
+     * Check if server-side gallery hash matches cached hash.
+     * Returns true if cache is fresh, false if we need a full refresh.
+     */
+    async _checkCacheFreshness() {
+        try {
+            const resp = await api.fetchApi('/neo_gallery/cache_status');
+            if (!resp.ok) return null;
+            const status = await resp.json();
+            
+            // Get cached hash from localStorage
+            const cached = localStorage.getItem(this._getCacheKey());
+            if (!cached) return null;
+            
+            const cacheData = JSON.parse(cached);
+            const cachedHash = cacheData.serverHash;
+            
+            console.log('[Neo Gallery] Cache check: server=', status.hash, 'local=', cachedHash, 'match=', status.hash === cachedHash);
+            
+            // Return true if hashes match (cache is fresh)
+            return status.hash === cachedHash && cachedHash !== undefined;
+        } catch (e) {
+            console.warn('[Neo Gallery] Cache check failed:', e);
+            return null;
+        }
+    }
+
     
     async loadGallery() {
         try {
-            // PERFORMANCE: Only request dirs + covers on home page (no items).
-            // Items are loaded lazily when user clicks into a directory.
+            // PERFORMANCE: Check cache freshness first via lightweight API (<1KB response)
+            const isFresh = await this._checkCacheFreshness();
+            
+            if (isFresh === true) {
+                console.log('[Neo Gallery] Cache is fresh, using localStorage');
+                const cached = this._loadFromCache();
+                if (cached && cached.directories) {
+                    this.allDirectories = cached.directories.map(dir => ({
+                        name: dir.name,
+                        path: dir.path,
+                        subdirs: dir.subdirs || {},
+                        read_only: dir.read_only || false,
+                        root_count: dir.root_count || 0,
+                        items: dir.items || []
+                    }));
+                    this.filteredDirectories = this.allDirectories;
+                    
+                    // Restore covers from cache if available
+                    if (cached.covers && Object.keys(cached.covers).length > 0) {
+                        this._dirCovers = cached.covers;
+                        console.log('[Neo Gallery] Restored covers from cache:', Object.keys(this._dirCovers).length, 'directories');
+                    }
+                    return;
+                }
+            } else if (isFresh === false) {
+                console.log('[Neo Gallery] Cache is stale or missing hash, fetching fresh data');
+            } else {
+                // First load - no cache yet
+                console.log('[Neo Gallery] No cached hash found, fetching full gallery data');
+            }
+            
+            // Fetch full gallery listing (dirs + covers)
             const resp = await api.fetchApi('/neo_gallery/list?fields=dirs,covers');
             if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
             const data = await resp.json();
             
-            // 保存到前端缓存
-            this._saveToCache(data);
+            // Get server hash for future freshness checks
+            let serverHash = null;
+            try {
+                const statusResp = await api.fetchApi('/neo_gallery/cache_status');
+                if (statusResp.ok) {
+                    const statusData = await statusResp.json();
+                    serverHash = statusData.hash || null;
+                }
+            } catch (e) {
+                console.warn('[Neo Gallery] Failed to get cache status:', e);
+            }
+            
+            // Save to localStorage with server hash for future freshness checks
+            this._saveToCache(data, serverHash);
             
             this.allDirectories = (data.directories || []).map(dir => ({
                 name: dir.name,
@@ -299,7 +369,7 @@ class NeoGallery {
             }
         } catch (error) {
             console.error('Error loading gallery:', error);
-            // 如果网络失败，尝试使用缓存
+            // 如果网络失败，尝试使用缓存作为 fallback
             const cached = this._loadFromCache();
             if (cached && cached.directories) {
                 console.log('[Neo Gallery] Using cache as fallback');
@@ -386,6 +456,9 @@ class NeoGallery {
         if (cardContainer) {
             this.accordion.appendChild(cardContainer);
         }
+
+        // Setup IntersectionObserver for lazy-loading cover images on directory cards
+        this._setupCoverLazyLoad();
 
         // Restore scroll position after rendering completes
         requestAnimationFrame(() => {
@@ -1501,6 +1574,54 @@ class NeoGallery {
             this._scrollListener = null;
             this._scrollTarget = null;
         }
+    }
+
+    /**
+     * Setup IntersectionObserver for lazy-loading cover images on directory cards.
+     * Only loads covers when cards scroll into the viewport.
+     */
+    _setupCoverLazyLoad() {
+        // Disconnect old observer if exists
+        if (this._coverLazyObserver) {
+            this._coverLazyObserver.disconnect();
+        }
+
+        const options = {
+            root: null, // viewport
+            rootMargin: '200px', // Start loading 200px before card enters viewport
+            threshold: 0.1
+        };
+
+        const observer = new IntersectionObserver((entries) => {
+            for (const entry of entries) {
+                if (entry.isIntersecting) {
+                    const card = entry.target;
+                    const dirName = card.dataset.lazyCovers;
+                    
+                    if (dirName && !card.dataset._lazyLoaded) {
+                        // Mark as loaded to avoid duplicate requests
+                        card.dataset._lazyLoaded = 'true';
+                        
+                        // Get the coverWrapper - skeleton is applied directly on it
+                        const coverWrapper = card._coverWrapper || card.querySelector('.neo-gallery-card-cover-wrapper');
+                        if (coverWrapper) {
+                            // Remove skeleton shimmer by clearing inline styles and loading covers
+                            this.components._applyCoverImages(card, coverWrapper, this, dirName, dirName);
+                        }
+                    }
+                    
+                    observer.unobserve(card);
+                }
+            }
+        }, options);
+
+        // Observe all directory cards with lazy data attribute
+        const cards = document.querySelectorAll('.neo-gallery-category-card[data-lazy-covers]');
+        for (const card of cards) {
+            observer.observe(card);
+        }
+
+        this._coverLazyObserver = observer;
     }
 }
 

@@ -522,6 +522,61 @@ def _process_single_directory(dir_path: Path, dir_name: str, rel_path: str, read
 # Routes
 # ---------------------------------------------------------------------------
 
+def _compute_cache_hash():
+    """Compute a lightweight hash of all gallery directories for cache freshness checking.
+    
+    Returns a dict with:
+    - hash: MD5 hex digest of directory names + counts (changes when content changes)
+    - updated_at: ISO format timestamp of last scan
+    """
+    import hashlib
+    dirs_info = []
+    
+    # Presets
+    if PRESETS_DIR.exists():
+        preset_count = sum(1 for p in PRESETS_DIR.iterdir() if p.is_file())
+        dirs_info.append(f"presets:{preset_count}")
+        for sd in sorted(PRESETS_DIR.iterdir()):
+            if sd.is_dir():
+                count = sum(1 for p in sd.rglob("*") if p.is_file())
+                dirs_info.append(f"{sd.name}:{count}")
+    
+    # Custom dirs
+    for dir_path in _get_user_custom_dirs():
+        d_name = dir_path.name if dir_path.name else str(dir_path)
+        count = sum(1 for p in dir_path.iterdir() if p.is_file())
+        dirs_info.append(f"{d_name}:{count}")
+    
+    hash_str = "|".join(sorted(dirs_info))
+    cache_hash = hashlib.md5(hash_str.encode()).hexdigest()[:8]
+    
+    return {
+        "hash": cache_hash,
+        "updated_at": _format_iso_now(),
+    }
+
+
+def _format_iso_now():
+    """Return current time as ISO format string."""
+    from datetime import datetime
+    return datetime.now().isoformat(timespec="seconds")
+
+
+@PromptServer.instance.routes.get("/neo_gallery/cache_status")
+async def get_cache_status(request):
+    """Return lightweight cache status for freshness checking.
+    
+    Response: {hash: "abc123", updated_at: "..."}
+    The hash changes when directory contents change, allowing frontend to detect stale cache.
+    """
+    try:
+        status = _compute_cache_hash()
+        return web.json_response(status)
+    except Exception as e:
+        print(f"[Neo Gallery] Error computing cache status: {e}")
+        return web.json_response({"hash": "error", "updated_at": "", "error": str(e)})
+
+
 @PromptServer.instance.routes.get("/neo_gallery/list")
 async def get_gallery_list(request):
     """Return unified gallery listing (all directories, presets subdirs treated as read-only dirs).

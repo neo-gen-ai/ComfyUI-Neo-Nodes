@@ -191,7 +191,9 @@
     overflow: hidden;
     background-color: #111;
     min-height: 80px;
+    position: relative;
 }
+
 
 .neo-gallery-card-cover {
     width: 100%;
