@@ -277,7 +277,7 @@ def _scan_gallery_entries(directory: Path, subfolder: str = "") -> list[dict]:
     The 'filename' field always contains the media filename, not .txt.
     Video entries have 'type': 'video', image entries have 'type': 'image'.
     
-    NOTE: Does NOT parse .txt files - only returns filename + type info for performance.
+    NOTE: Parses .txt files to include txt_content for lightbox display.
     
     Args:
         directory: The directory to scan.
@@ -306,6 +306,7 @@ def _scan_gallery_entries(directory: Path, subfolder: str = "") -> list[dict]:
     for stem, files in sorted(stems.items()):
         media_file = None
         media_type = None
+        txt_file = None
         for f in files:
             if f.suffix.lower() in VIDEO_EXTENSIONS:
                 media_file = f
@@ -314,12 +315,23 @@ def _scan_gallery_entries(directory: Path, subfolder: str = "") -> list[dict]:
                 if media_file is None:
                     media_file = f
                     media_type = "image"
+            elif f.suffix.lower() == ".txt":
+                txt_file = f
 
         # Only create entry if we found a media file
         if not media_file:
             continue
 
-        # Lightweight entry - no txt parsing for performance
+        # Parse .txt file for lightbox display (only when txt exists)
+        raw_txt = ""
+        if txt_file and txt_file.exists():
+            try:
+                with open(txt_file, "r", encoding="utf-8") as tf:
+                    raw_txt = tf.read()
+            except Exception:
+                pass
+
+        # Build entry with txt_content when available
         entry: dict[str, object] = {
             "name": media_file.stem,
             "filename": media_file.name,
@@ -327,12 +339,27 @@ def _scan_gallery_entries(directory: Path, subfolder: str = "") -> list[dict]:
             "category": category,
             "subfolder": subfolder,
         }
+        if raw_txt:
+            cleaned_lines = [""] * 8
+            try:
+                lines = raw_txt.strip().splitlines()
+                for i, line in enumerate(lines):
+                    if i >= 8:
+                        break
+                    m = re.match(r"^\d+\s*\|\s*(.*)", line)
+                    cleaned_lines[i] = m.group(1) if m else line
+            except Exception:
+                pass
+            txt_content = "\n".join(cleaned_lines).strip()
+            if txt_content:
+                entry["txt_content"] = txt_content
+
         entries.append(entry)
 
     return entries
 
 
-def _scan_gallery_entries_with_subdirs(directory: Path) -> dict:
+def _scan_gallery_entries_with_subdirs(directory: Path, subfolder: str = "") -> dict:
     """Scan directory and return entries grouped by FIRST-LEVEL subdirectory only.
     
     Only returns immediate children directories (one level), does NOT recurse into nested dirs.

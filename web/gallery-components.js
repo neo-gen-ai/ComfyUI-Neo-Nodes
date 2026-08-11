@@ -788,7 +788,6 @@ export class GalleryComponents {
             });
 
             img.onload = () => {
-                loadedCount++;
                 if (loadedCount === displayImages.length) {
                     const height = getCoverHeight(coverWrapper, gallery);
                     coverGrid.style.height = `${height * 2}px`;
@@ -1207,6 +1206,36 @@ export class GalleryComponents {
 
     injectAnimations() { }
 
+    toggleFullscreen(gallery, lightbox) {
+        const container = document.querySelector('#neo-gallery-lightbox-container');
+        
+        if (!document.fullscreenElement && container) {
+            // Entering fullscreen: add fullscreen-mode class for CSS styling
+            container.classList.add('fullscreen-mode');
+            
+            // Also enter native browser fullscreen on the lightbox element
+            if (lightbox.requestFullscreen) {
+                lightbox.requestFullscreen();
+            } else if (lightbox.webkitRequestFullscreen) {
+                lightbox.webkitRequestFullscreen();
+            } else if (lightbox.msRequestFullscreen) {
+                lightbox.msRequestFullscreen();
+            }
+        } else if (document.fullscreenElement && container) {
+            // Exiting fullscreen: remove fullscreen-mode class
+            container.classList.remove('fullscreen-mode');
+            
+            // Exit native browser fullscreen
+            if (document.exitFullscreen) {
+                document.exitFullscreen();
+            } else if (document.webkitExitFullscreen) {
+                document.webkitExitFullscreen();
+            } else if (document.msExitFullscreen) {
+                document.msExitFullscreen();
+            }
+        }
+    }
+
     _applyLightboxTransform(gallery, mediaEl) {
         if (gallery._lightboxScale === 1) {
             mediaEl.style.transform = 'none';
@@ -1401,6 +1430,7 @@ export class GalleryComponents {
         }
 
         const imageInfo = document.createElement('div');
+        imageInfo.className = 'neo-gallery-lightbox-image-info';
         if (!isVideo) {
             mediaEl.onload = () => {
                 if (imageInfo) {
@@ -1498,6 +1528,23 @@ export class GalleryComponents {
         }, ["\u203A"]);
         imgWrapper.appendChild(nextBtn);
 
+        // Fullscreen toggle button (bottom center of image)
+        const fullscreenBtn = $el("div", {
+            id: "neo-gallery-lightbox-fullscreen-btn",
+            className: "neo-gallery-lightbox-nav-arrow neo-gallery-lightbox-fullscreen-btn",
+            style: {
+                cursor: "pointer",
+                opacity: "0.8",
+                fontSize: "14px"
+            },
+            title: "Toggle fullscreen (F)",
+            onclick: (e) => {
+                e.stopPropagation();
+                this.toggleFullscreen(gallery, lightbox);
+            }
+        }, ["⛶"]);
+        imgWrapper.appendChild(fullscreenBtn);
+
         let promptSection = null;
         if (image.txt_content) {
             promptSection = $el("div", {
@@ -1579,6 +1626,9 @@ export class GalleryComponents {
             container.appendChild(reverseBtn);
         }
 
+        // Add no-prompt class when there's no txt_content to remove border/background
+        container.classList.toggle('no-prompt', !image.txt_content);
+
         container.appendChild(imgWrapper);
         if (promptSection) container.appendChild(promptSection);
         container.appendChild(closeBtn);
@@ -1598,12 +1648,30 @@ export class GalleryComponents {
                     gallery.navigateLightboxImage(1);
                     break;
                 case 'Escape':
-                    gallery.closeLightbox();
+                    if (document.fullscreenElement) {
+                        document.exitFullscreen();
+                    } else {
+                        gallery.closeLightbox();
+                    }
+                    break;
+                case 'f':
+                case 'F':
+                    this.toggleFullscreen(gallery, lightbox);
                     break;
             }
         };
         document.addEventListener('keydown', handleKeyDown);
         gallery.currentLightboxKeyboardHandler = handleKeyDown;
+
+        // Listen for native fullscreen change to clean up class when exiting via Escape/ESC
+        const onFullscreenChange = () => {
+            if (!document.fullscreenElement) {
+                const c = document.querySelector('#neo-gallery-lightbox-container');
+                if (c) c.classList.remove('fullscreen-mode');
+            }
+        };
+        document.addEventListener('fullscreenchange', onFullscreenChange);
+        gallery._fullscreenChangeListener = onFullscreenChange;
     }
 
     closeLightbox(gallery) {
@@ -1877,10 +1945,15 @@ export class GalleryComponents {
             promptBtnsContainer.appendChild(copyBtn);
             promptSection.appendChild(promptBtnsContainer);
 
-            // 将新的 promptSection 追加到 container（在 imgWrapper 之后）
+            // 将新的 promptSection 追加到 container（在 imgWrapper 之后，closeBtn 之前）
             const imgWrapper = container.querySelector('#neo-gallery-lightbox-img-wrapper');
-            if (imgWrapper && imgWrapper.nextSibling) {
-                container.insertBefore(promptSection, imgWrapper.nextSibling);
+            if (imgWrapper) {
+                const closeBtn = container.querySelector('.neo-gallery-lightbox-close-btn');
+                if (closeBtn && closeBtn !== imgWrapper.nextSibling) {
+                    container.insertBefore(promptSection, closeBtn);
+                } else {
+                    container.appendChild(promptSection);
+                }
             } else {
                 container.appendChild(promptSection);
             }
@@ -1955,6 +2028,9 @@ export class GalleryComponents {
                 nextBtn.onclick = null;
             }
         }
+
+        // Toggle no-prompt class for border/background removal
+        container.classList.toggle('no-prompt', !image.txt_content);
 
         this.gallery.currentLightboxIndex = currentIndex;
     }

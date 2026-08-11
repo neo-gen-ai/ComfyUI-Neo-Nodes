@@ -567,6 +567,106 @@
     animation: neoGallerySlideUp 0.3s ease-out;
 }
 
+/* When no prompt section — show image only with no border/background */
+.neo-gallery-lightbox-container.no-prompt {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    gap: 0 !important;
+}
+
+/* When no prompt section — remove image border/shadow */
+.neo-gallery-lightbox-container.no-prompt .neo-gallery-lightbox-image {
+    border-radius: 0 !important;
+    box-shadow: none !important;
+}
+
+/* Fullscreen mode: make lightbox fill the entire viewport, image fills available space */
+.neo-gallery-lightbox-container.fullscreen-mode {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    max-width: none !important;
+    max-height: none !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+    z-index: 99999 !important;
+}
+
+/* Fullscreen: image fills the available space */
+.neo-gallery-lightbox-container.fullscreen-mode .neo-gallery-lightbox-img-wrapper {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 100% !important;
+    height: 100% !important;
+}
+
+.neo-gallery-lightbox-container.fullscreen-mode .neo-gallery-lightbox-image {
+    max-width: 100vw !important;
+    max-height: 100vh !important;
+    width: auto !important;
+    height: auto !important;
+    object-fit: contain !important;
+}
+
+/* Hide image size info only in fullscreen mode */
+.neo-gallery-lightbox-container.fullscreen-mode #neo-gallery-lightbox-img-wrapper .neo-gallery-lightbox-image-info {
+    display: none !important;
+}
+
+/* Fullscreen prompt section: scrollable, fixed width */
+.neo-gallery-lightbox-container.fullscreen-mode .neo-gallery-lightbox-prompt-section {
+    position: absolute !important;
+    right: 0 !important;
+    top: 0 !important;
+    height: 100vh !important;
+    max-width: 45vw !important;
+    overflow-y: auto !important;
+}
+
+/* Fullscreen close button */
+.neo-gallery-lightbox-container.fullscreen-mode .neo-gallery-lightbox-close-btn {
+    top: 18px !important;
+    right: 18px !important;
+    z-index: 100000 !important;
+}
+
+/* Fullscreen nav arrows - show on hover only */
+.neo-gallery-lightbox-container.fullscreen-mode .neo-gallery-lightbox-nav-arrow {
+    opacity: 0 !important;
+    transition: opacity 0.3s ease !important;
+}
+
+.neo-gallery-lightbox-container.fullscreen-mode:hover .neo-gallery-lightbox-nav-arrow,
+.neo-gallery-lightbox-container.fullscreen-mode:hover #neo-gallery-lightbox-prev-btn,
+.neo-gallery-lightbox-container.fullscreen-mode:hover #neo-gallery-lightbox-next-btn {
+    opacity: 0.6 !important;
+}
+
+.neo-gallery-lightbox-container.fullscreen-mode .neo-gallery-lightbox-nav-arrow:hover {
+    opacity: 1 !important;
+}
+
+/* Fullscreen button - always visible in fullscreen mode */
+#neo-gallery-lightbox-fullscreen-btn.neo-gallery-lightbox-nav-arrow {
+    opacity: 0.6 !important;
+    transition: opacity 0.3s ease !important;
+}
+
+.neo-gallery-lightbox-container.fullscreen-mode:hover #neo-gallery-lightbox-fullscreen-btn.neo-gallery-lightbox-nav-arrow,
+#neo-gallery-lightbox-fullscreen-btn.neo-gallery-lightbox-nav-arrow:hover {
+    opacity: 1 !important;
+}
+
+/* Hide nav arrows in fullscreen when no-prompt */
+.neo-gallery-lightbox-container.fullscreen-mode.no-prompt .neo-gallery-lightbox-nav-arrow:not(.neo-gallery-lightbox-fullscreen-btn) {
+    display: none !important;
+}
+
 /* Lightbox Image Wrapper (Left panel) */
 .neo-gallery-lightbox-img-wrapper {
     position: relative;
@@ -760,6 +860,25 @@
 #neo-gallery-lightbox-next-btn.neo-gallery-lightbox-nav-arrow {
     left: auto;
     right: 0px;
+}
+
+/* Fullscreen toggle button - bottom right of image */
+#neo-gallery-lightbox-fullscreen-btn.neo-gallery-lightbox-nav-arrow {
+    left: auto;
+    right: 8px;
+    top: auto;
+    transform: none;
+    bottom: 10px;
+    width: 32px;
+    height: 32px;
+    font-size: 14px;
+    opacity: 0.6;
+}
+
+#neo-gallery-lightbox-fullscreen-btn.neo-gallery-lightbox-nav-arrow:hover {
+    opacity: 1;
+    background-color: rgba(255, 106, 0, 0.7);
+    border-color: #FF6A00;
 }
 
 /* Lightbox Buttons (Send, Copy) */

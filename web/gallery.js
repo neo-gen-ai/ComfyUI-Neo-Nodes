@@ -332,8 +332,8 @@ class NeoGallery {
                 console.log('[Neo Gallery] No cached hash found, fetching full gallery data');
             }
             
-            // Fetch full gallery listing (dirs + covers)
-            const resp = await api.fetchApi('/neo_gallery/list?fields=dirs,covers');
+            // Fetch directory structure only (covers loaded lazily per card via IntersectionObserver)
+            const resp = await api.fetchApi('/neo_gallery/list?fields=dirs');
             if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
             const data = await resp.json();
             
