@@ -5,7 +5,7 @@
 .rs-delete-confirm-overlay, .rs-download-modal, .rs-settings-modal-wrapper {
     box-sizing: border-box;
 }
-
+ 
 /* Waiting overlay */
 .rs-waiting-overlay {
     position: absolute;
@@ -26,29 +26,50 @@
     text-align: center;
 }
 
-/* Preset list - dropdown style (below quickInput) */
+/* Preset list - centered panel (not dropdown) */
 .rs-preset-list-overlay {
-    position: absolute;
+    position: fixed;
     display: none;
-    top: 100%;
-    left: 0;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
     flex-direction: column;
     background: #2a2a2a;
     border: 1px solid #5090cc;
-    border-radius: 0 0 8px 8px;
-    border-top: none;
+    border-radius: 8px;
     z-index: 9999;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.8);
-    width: 100%;
-    min-width: 260px;
-    max-width: 350px;
-    max-height: 250px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.8);
+    width: 400px;
+    max-width: 500px;
+    height: auto;
+    max-height: 60vh;
     overflow: hidden;
-    margin-top: 2px;
+}
+
+/* Search input at top of preset list panel */
+.rs-preset-search-input {
+    width: 100%;
+    padding: 8px 12px;
+    background: #1a1a1a;
+    color: #ccc;
+    border: none;
+    border-bottom: 1px solid #3a5a7a;
+    font-size: 13px;
+    outline: none;
+    box-sizing: border-box;
+}
+
+.rs-preset-search-input::placeholder {
+    color: #666;
+}
+
+.rs-preset-search-input:focus {
+    background: #222;
+    border-bottom-color: #5090cc;
 }
 
 .rs-preset-list-body {
-    max-height: 250px;
+    max-height: 40vh;
     overflow-y: auto;
     padding: 4px 0;
     flex: 1;
@@ -352,22 +373,72 @@
     box-sizing: border-box;
 }
 
+/* Top-right button group (random, presets, save) - flex row below status bar */
+.rs-top-right-btn-group {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    padding: 2px 8px;
+    margin-bottom: 2px;
+}
+
+/* Spacer to push buttons to the right */
+.rs-top-right-btn-group .rs-spacer {
+    flex: 1;
+}
+
+.rs-top-right-btn-group .rs-random-btn,
+.rs-top-right-btn-group .rs-list-btn,
+.rs-top-right-btn-group .rs-action-btn {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 4px 8px !important;
+    font-size: 14px !important;
+    background: #1a3a5a !important;
+    color: #60a5fa !important;
+    border: 1px solid #3a6a9a !important;
+    border-radius: 4px !important;
+    cursor: pointer !important;
+    white-space: nowrap !important;
+    flex-shrink: 0 !important;
+    height: 28px !important;
+    min-width: auto !important;
+    max-width: 28px !important;
+    width: 28px !important;
+    transition: all 0.2s !important;
+}
+
+.rs-top-right-btn-group .rs-random-btn:hover,
+.rs-top-right-btn-group .rs-list-btn:hover,
+.rs-top-right-btn-group .rs-action-btn:hover {
+    background: #2a4a6a !important;
+    color: #fff !important;
+}
+
 .rs-quick-input {
     flex: 1;
-    padding: 4px 8px;
+    padding: 6px 8px;
     font-size: 12px;
     background: #1a1a1a;
     color: #ccc;
     border: 1px solid #444;
     outline: none;
     min-width: 0;
+    resize: vertical;
+    min-height: 36px;
+    line-height: 1.4;
 }
 
 .rs-quick-input:focus {
     border-color: #5090cc;
+    box-shadow: 0 0 0 2px rgba(80, 144, 204, 0.2);
 }
 
-.rs-quick-input::placeholder { color: #666; }
+.rs-quick-input::placeholder { 
+    color: #666; 
+    white-space: nowrap;
+}
 
 /* Generate / Random / Settings / List buttons - unified top row */
 .rs-generate-btn,

@@ -45,9 +45,14 @@ function mkEl(tag, className, styles = '') {
 
 function createOverlayWithSearch() {
     const overlay = mkEl("div", "rs-preset-list-overlay");
+    // Search input at top of the panel
+    const searchBar = mkEl("input", "rs-preset-search-input");
+    searchBar.type = "text";
+    searchBar.placeholder = "🔍 Search presets...";
     const body = mkEl("div", "rs-preset-list-body");
+    overlay.appendChild(searchBar);
     overlay.appendChild(body);
-    return { overlay, body };
+    return { overlay, body, searchBar };
 }
 
 function createInputModal() {
@@ -1017,8 +1022,6 @@ function createStatusBars() {
     statusBar.appendChild(toggleWrapper);
     statusBar.appendChild(statusText);
 
-    const quickInputWrapper = mkEl("div", "rs-quick-input-wrapper");
-
     const randomBtn = mkEl("button", "rs-random-btn");
     randomBtn.textContent = "🎲";
     randomBtn.setAttribute("data-rs-tooltip", "Random prompt");
@@ -1027,8 +1030,15 @@ function createStatusBars() {
     listBtn.textContent = "☰";
     listBtn.setAttribute("data-rs-tooltip", "Preset list");
 
-    const quickInput = mkEl("input", "rs-quick-input");
-    quickInput.placeholder = '🔍 Search presets or describe...';
+    const quickInputWrapper = mkEl("div", "rs-quick-input-wrapper");
+
+    // Note: randomBtn, listBtn are NOT added to quickInputWrapper here.
+    // They will be placed in topRightBtnGroup by createPromptManagerUI().
+
+    const quickInput = document.createElement("textarea");
+    quickInput.className = "rs-quick-input";
+    quickInput.placeholder = '🔍 Search presets or describe...\n(e.g., "a beautiful sunset over the ocean")';
+    quickInput.rows = 2;
     
     let tipInterval = null;
     
@@ -1064,8 +1074,8 @@ function createStatusBars() {
     generateBtn.textContent = "✨";
     generateBtn.setAttribute("data-rs-tooltip", "Generate from description");
 
-    quickInputWrapper.appendChild(randomBtn);
-    quickInputWrapper.appendChild(listBtn);
+    // Note: randomBtn and listBtn are NOT added to quickInputWrapper here.
+    // They will be placed in topRightBtnGroup by createPromptManagerUI().
     quickInputWrapper.appendChild(quickInput);
     quickInputWrapper.appendChild(generateBtn);
     quickInputWrapper.appendChild(settingsBtn);
@@ -1088,7 +1098,9 @@ function createStatusBars() {
     saveBtn.textContent = "💾";
     saveBtn.setAttribute("data-rs-tooltip", "Save as preset");
 
-    actionRow.append(enhanceBtn, translateBtn, saveBtn);
+    // Note: saveBtn is NOT added to actionRow here.
+    // It will be placed in topRightBtnGroup by createPromptManagerUI().
+    actionRow.append(enhanceBtn, translateBtn);
     buttonsWrapper.appendChild(actionRow);
 
     return { statusBar, quickInputWrapper, randomBtn, listBtn, quickInput, generateBtn, customTextarea, buttonsWrapper, enhanceBtn, translateBtn, saveBtn, settingsBtn, toggleSwitch, toggleKnob, tplSelector, populateTemplateSelector, actionRow };
@@ -1100,17 +1112,30 @@ function createStatusBars() {
 
 function createPromptManagerUI() {
     const { statusBar, quickInputWrapper, randomBtn, listBtn, quickInput, generateBtn, customTextarea, buttonsWrapper, enhanceBtn, translateBtn, saveBtn, settingsBtn, toggleSwitch, toggleKnob, tplSelector, populateTemplateSelector, actionRow } = createStatusBars();
-    const { overlay: presetListOverlay, body: presetListBody } = createOverlayWithSearch();
+    const { overlay: presetListOverlay, body: presetListBody, searchBar: presetSearchBar } = createOverlayWithSearch();
     const { modal: presetNameInput, aiStatus, field: inputField, tagsContainer, selectedTags, okBtn: inputOk, cancelBtn: inputCancel } = createInputModal();
     const { modal: deleteConfirmOverlay, textDiv: deleteText, okBtn: deleteOk, cancelBtn: deleteCancel } = createDeleteModal();
     const downloadModal = createDownloadModal();
     const settingsModal = createSettingsModal();
 
     const root = mkEl("div", "rs-root");
+
+    // Create a top-right button group: random, presets, save (pushed to right by spacer)
+    const topRightBtnGroup = mkEl("div", "rs-top-right-btn-group");
+    const spacer = mkEl("div", "rs-spacer");
+    topRightBtnGroup.appendChild(spacer);
+    topRightBtnGroup.appendChild(randomBtn);
+    topRightBtnGroup.appendChild(listBtn);
+    topRightBtnGroup.appendChild(saveBtn);
+
     root.appendChild(statusBar);
-    root.appendChild(quickInputWrapper);
+    root.appendChild(topRightBtnGroup);
+    // Preset list overlay - positioned as a centered panel (not dropdown)
+    root.appendChild(presetListOverlay);
     root.appendChild(customTextarea);
     root.appendChild(buttonsWrapper);
+    // quickInputWrapper at the bottom of the node
+    root.appendChild(quickInputWrapper);
 
     root.appendChild(presetNameInput);
     root.appendChild(deleteConfirmOverlay);
@@ -1512,42 +1537,20 @@ function createPromptManagerUI() {
             handleSaveClick();
         }, true);
 
-        quickInputWrapper.appendChild(presetListOverlay);
-
-        presetListOverlay.style.top = "100%";
-        presetListOverlay.style.left = "0";
-        presetListOverlay.style.right = "";
-        presetListOverlay.style.bottom = "";
-        presetListOverlay.style.transform = "none";
-        presetListOverlay.style.maxWidth = "100%";
-        presetListOverlay.style.maxHeight = "250px";
-        presetListOverlay.style.marginTop = "2px";
-
-        quickInput.addEventListener("focus", () => {
-            if (isListOpen) {
-                presetListOverlay.style.display = "none";
-                isListOpen = false;
+        // Preset list search bar - filter items in real-time
+        presetSearchBar.addEventListener("input", () => {
+            const query = presetSearchBar.value.trim().toLowerCase();
+            if (!query) {
+                // Show all items
+                const items = presetListBody.querySelectorAll(".rs-preset-item");
+                items.forEach(item => item.style.display = "");
+                return;
             }
-        });
-
-        quickInput.addEventListener("input", () => {
-            const query = quickInput.value.trim();
-            if (query) {
-                filterDropdownByInput(query);
-                presetListOverlay.style.display = "flex";
-            } else {
-                presetListOverlay.style.display = "none";
-            }
-        });
-
-        quickInput.addEventListener("blur", () => {
-            if (!isListOpen) return;
-            setTimeout(() => {
-                if (!quickInputWrapper.contains(document.activeElement)) {
-                    presetListOverlay.style.display = "none";
-                    isListOpen = false;
-                }
-            }, 100);
+            const items = presetListBody.querySelectorAll(".rs-preset-item");
+            items.forEach(item => {
+                const name = (item.querySelector(".rs-preset-content")?.textContent || "").toLowerCase();
+                item.style.display = name.includes(query) ? "" : "none";
+            });
         });
 
         listBtn.addEventListener("click", (e) => {
@@ -1564,7 +1567,7 @@ function createPromptManagerUI() {
         });
 
         document.addEventListener("mousedown", (e) => {
-            if (!quickInputWrapper.contains(e.target) && !presetListOverlay.contains(e.target)) {
+            if (!topRightBtnGroup.contains(e.target) && !presetListOverlay.contains(e.target)) {
                 presetListOverlay.style.display = "none";
                 isListOpen = false;
             }
