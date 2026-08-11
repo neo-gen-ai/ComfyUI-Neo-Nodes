@@ -1375,6 +1375,28 @@ async def handle_llm_api_request(task_name, request):
         return web.json_response({"error": str(e)}, status=500)
 
 
+async def _load_template_content(template_id):
+    """加载模板内容"""
+    if not template_id:
+        return None
+    
+    from .prompts import (
+        TEMPLATES_DIR, TEMPLATE_PRESETS_DIR, TEMPLATE_CUSTOM_DIR,
+        _load_template_file
+    )
+    
+    # 按优先级搜索模板文件
+    search_dirs = [TEMPLATE_CUSTOM_DIR, TEMPLATE_PRESETS_DIR]
+    for base_dir in search_dirs:
+        filepath = os.path.join(base_dir, f"{template_id}.json")
+        data = _load_template_file(filepath)
+        if data and data.get("content"):
+            return data["content"]
+    
+    logger.warning(f"Template not found or has no content: {template_id}")
+    return None
+
+
 async def handle_llm_api_stream(task_name, request):
     """
     处理流式 LLM API 请求（SSE）
@@ -1394,18 +1416,41 @@ async def handle_llm_api_stream(task_name, request):
     try:
         data = await request.json()
         text = data.get("text", "")
+        template_id = data.get("templateId", data.get("template_id", ""))
+        auto_unload = data.get("autoUnload", data.get("auto_unload", False))
 
-        logger.info(f"LLM API stream request: task={task_name}, text='{text[:100]}...'")
+        logger.info(f"LLM API stream request: task={task_name}, text='{text[:100]}...', templateId='{template_id}', autoUnload={auto_unload}")
 
         if not text or not text.strip():
             return web.Response(text="data: [ERROR] text content is empty\n\n", content_type="text/event-stream")
 
+        # 加载模板内容作为 extra_system_prompt
+        extra_system_prompt = None
+        if template_id:
+            extra_system_prompt = await _load_template_content(template_id)
+            if extra_system_prompt:
+                logger.info(f"Loaded template '{template_id}' for task {task_name}")
+
         async def event_stream():
             try:
                 import asyncio
-                for chunk in run_llm_task_stream(task_name, text):
+                # 将模板内容传递给流式任务
+                gen = run_llm_task_stream(task_name, text, extra_system_prompt=extra_system_prompt)
+                for chunk in gen:
                     yield (f"data: {chunk}\n\n").encode()
                     await asyncio.sleep(0.01)  # 10ms 延迟，让浏览器逐字显示
+                
+                # 流式输出完成后，如果需要自动卸载则执行
+                if get_current_mode() == LLM_MODE_LOCAL:
+                    config = _load_remote_config()
+                    enable_auto_unload = config.get("auto_unload_local", False)
+                    if auto_unload or enable_auto_unload:
+                        try:
+                            unload_local_model()
+                            logger.info("Auto-unloaded local model after stream completion")
+                        except Exception as e:
+                            logger.warning(f"Failed to auto-unload local model: {e}")
+                
                 yield b"data: [DONE]\n\n"
             except Exception as e:
                 logger.error(f"Stream error for task {task_name}: {e}")

@@ -277,6 +277,8 @@ def _scan_gallery_entries(directory: Path, subfolder: str = "") -> list[dict]:
     The 'filename' field always contains the media filename, not .txt.
     Video entries have 'type': 'video', image entries have 'type': 'image'.
     
+    NOTE: Does NOT parse .txt files - only returns filename + type info for performance.
+    
     Args:
         directory: The directory to scan.
         subfolder: Optional relative path from the custom directory root.
@@ -303,7 +305,6 @@ def _scan_gallery_entries(directory: Path, subfolder: str = "") -> list[dict]:
 
     for stem, files in sorted(stems.items()):
         media_file = None
-        txt_file = None
         media_type = None
         for f in files:
             if f.suffix.lower() in VIDEO_EXTENSIONS:
@@ -313,27 +314,20 @@ def _scan_gallery_entries(directory: Path, subfolder: str = "") -> list[dict]:
                 if media_file is None:
                     media_file = f
                     media_type = "image"
-            elif f.suffix.lower() == ".txt":
-                txt_file = f
 
         # Only create entry if we found a media file
         if not media_file:
             continue
 
-        txt_path = txt_file if txt_file else (media_file.with_suffix(".txt"))
-        raw_txt = ""
-        if txt_path.exists():
-            try:
-                raw_txt = txt_path.read_text(encoding="utf-8")
-            except Exception:
-                raw_txt = ""
-
-        entry = _make_entry(media_file, txt_path, raw_txt)
-        if entry:
-            entry["type"] = media_type
-            entry["category"] = category
-            entry["subfolder"] = subfolder
-            entries.append(entry)
+        # Lightweight entry - no txt parsing for performance
+        entry: dict[str, object] = {
+            "name": media_file.stem,
+            "filename": media_file.name,
+            "type": media_type,
+            "category": category,
+            "subfolder": subfolder,
+        }
+        entries.append(entry)
 
     return entries
 
@@ -343,6 +337,8 @@ def _scan_gallery_entries_with_subdirs(directory: Path) -> dict:
     
     Only returns immediate children directories (one level), does NOT recurse into nested dirs.
     This ensures the presets home page shows only one level of subdirectories.
+    
+    NOTE: Does NOT parse .txt files - only returns filename + type info for performance.
     
     Supports both image and video files.
     """
@@ -359,7 +355,6 @@ def _scan_gallery_entries_with_subdirs(directory: Path) -> dict:
 
     for stem, files in sorted(root_stems.items()):
         media_file = None
-        txt_file = None
         media_type = None
         for f in files:
             if f.suffix.lower() in VIDEO_EXTENSIONS:
@@ -369,26 +364,18 @@ def _scan_gallery_entries_with_subdirs(directory: Path) -> dict:
                 if media_file is None:
                     media_file = f
                     media_type = "image"
-            elif f.suffix.lower() == ".txt":
-                txt_file = f
 
         if not media_file:
             continue
 
-        txt_path = txt_file if txt_file else (media_file.with_suffix(".txt"))
-        raw_txt = ""
-        if txt_path.exists():
-            try:
-                raw_txt = txt_path.read_text(encoding="utf-8")
-            except Exception:
-                raw_txt = ""
-
-        entry = _make_entry(media_file, txt_path, raw_txt)
-        if entry:
-            entry["type"] = media_type
-            entry["category"] = ""
-            entry["subfolder"] = ""
-            result["root"].append(entry)
+        # Lightweight entry - no txt parsing for performance
+        result["root"].append({
+            "name": media_file.stem,
+            "filename": media_file.name,
+            "type": media_type,
+            "category": "",
+            "subfolder": "",
+        })
 
     # Only scan FIRST-LEVEL subdirectories (no recursion)
     for p in directory.iterdir():
@@ -402,6 +389,8 @@ def _scan_gallery_entries_with_subdirs(directory: Path) -> dict:
 
 def _scan_gallery_entries_recursive(directory: Path) -> list[dict]:
     """Walk directory recursively and return gallery entries.
+    
+    NOTE: Does NOT parse .txt files - only returns filename + type info for performance.
     
     Supports both image and video files.
     """
@@ -429,7 +418,6 @@ def _scan_gallery_entries_recursive(directory: Path) -> list[dict]:
 
     for (category, stem), files in sorted(stems.items()):
         media_file = None
-        txt_file = None
         media_type = None
         for f in files:
             if f.suffix.lower() in VIDEO_EXTENSIONS:
@@ -439,26 +427,18 @@ def _scan_gallery_entries_recursive(directory: Path) -> list[dict]:
                 if media_file is None:
                     media_file = f
                     media_type = "image"
-            elif f.suffix.lower() == ".txt":
-                txt_file = f
 
         if not media_file:
             continue
 
-        txt_path = txt_file if txt_file else (media_file.with_suffix(".txt"))
-        raw_txt = ""
-        if txt_path.exists():
-            try:
-                raw_txt = txt_path.read_text(encoding="utf-8")
-            except Exception:
-                raw_txt = ""
-
-        entry = _make_entry(media_file, txt_path, raw_txt)
-        if entry:
-            entry["type"] = media_type
-            entry["category"] = category
-            entry["subfolder"] = subfolder or ""
-            entries.append(entry)
+        # Lightweight entry - no txt parsing for performance
+        entries.append({
+            "name": media_file.stem,
+            "filename": media_file.name,
+            "type": media_type,
+            "category": category,
+            "subfolder": subfolder or "",
+        })
 
     return entries
 
@@ -646,6 +626,16 @@ async def get_gallery_list(request):
             # Use the full path as the key for covers
             full_key = f"{dir_name_param}/{rel_path_param}" if rel_path_param else dir_name_param
             _collect_all_dir_covers(covers, target_dir, full_key, 2)
+            
+            # Also collect covers for immediate child subdirectories (like homepage does)
+            # This ensures subdir cards show cover images when entering a directory
+            if include_dirs and "subdirs" in resp_dir:
+                for subdir_name, subdir_info in resp_dir.get("subdirs", {}).items():
+                    subdir_path = target_dir / subdir_name
+                    child_key = f"{full_key}/{subdir_name}"
+                    # Pass the subdir name as base_subfolder so thumbnails resolve correctly
+                    _collect_all_dir_covers(covers, subdir_path, child_key, 2, base_subfolder=subdir_name)
+            
             return web.json_response({
                 "directories": [resp_dir],
                 "total": len(resp_dir.get("items", [])),
@@ -668,24 +658,35 @@ async def get_gallery_list(request):
 
     # Presets: process root and subdirs using unified function
     if include_dirs or include_items:
-        presets_structure = _scan_gallery_entries_with_subdirs(PRESETS_DIR)
+        # PERFORMANCE: When lazy-loaded (no items), use lightweight scan that only returns structure + counts.
+        # This avoids scanning all .txt files on home page load.
+        if include_items:
+            presets_structure = _scan_gallery_entries_with_subdirs(PRESETS_DIR)
+        else:
+            # Lightweight mode: only directory names and image counts, no txt parsing
+            lightweight_result = _scan_directory_structure_only(PRESETS_DIR)
+            presets_structure = {"root": [], "subdirs": {}}
+            for sd in lightweight_result.get("subdirs", []):
+                presets_structure["subdirs"][sd["name"]] = []  # Empty list triggers card display
+        
         presets_root = presets_structure.get("root", [])
         presets_subdirs = presets_structure.get("subdirs", {})
 
-        # Root-level presets items go into a "Presets" read-only directory
+        # Root-level presets items go into a "Presets" read-only directory (lazy-loaded too when no items requested)
         resp_dir = _process_single_directory(PRESETS_DIR, "Presets", "", True, 
                                               include_dirs, include_items, search_mode)
         directories.append(resp_dir)
 
         # Each presets subdir becomes its own read-only directory (only first-level subdirs)
+        # NOTE: Only show presets subdirectory cards when include_items=True.
+        # When lazy-loaded (include_items=False), only show the root "Presets" dir.
         for subdir_name in sorted(presets_subdirs.keys()):
             subdir_items = presets_subdirs[subdir_name]
-            if subdir_items:
-                # For presets subdirectories, only return items (no nested subdirs structure)
-                # This prevents showing two levels of subdirectory cards on the home page
+            if subdir_items or include_items:
+                # For presets subdirectories, only return items when requested
                 resp_dir = _process_single_directory(PRESETS_DIR, 
                                                       f"Presets/{subdir_name}", subdir_name, True,
-                                                      include_dirs=False, include_items=True, search_mode=search_mode)
+                                                      include_dirs=False, include_items=include_items, search_mode=search_mode)
                 # Ensure no subdirs are shown for presets children
                 if "subdirs" not in resp_dir:
                     resp_dir["subdirs"] = {}
@@ -698,6 +699,8 @@ async def get_gallery_list(request):
     
     if include_covers:
         covers: dict[str, list[dict]] = {}
+        # Collect cover images for all directories (max 2 per directory).
+        # _collect_all_dir_covers scans root level first, then first subdir with media.
         _collect_all_dir_covers(covers, PRESETS_DIR, "presets", 2)
         for dir_path in user_custom_dirs:
             dir_name = dir_path.name if dir_path.name else str(dir_path)
@@ -984,39 +987,90 @@ def _collect_cover_recursive(parent_dir: Path, current_subfolder: str, needed: i
             _collect_cover_recursive(subdir, new_subfolder, needed, result)
 
 
-def _collect_all_dir_covers(covers: dict, base_dir: Path, dir_name: str, sample_count: int):
-    """Collect cover images for a directory and all its subdirectories recursively.
+def _collect_all_dir_covers(covers: dict, base_dir: Path, dir_name: str, sample_count: int, base_subfolder: str = ""):
+    """Collect cover images for a directory.
+    
+    Scans root level first, then recursively descends into subdirectories if needed.
+    Total cover images limited to sample_count (default 2).
     
     Args:
-        covers: Dict to populate with results (keyed by "dir_name/subpath")
+        covers: Dict to populate with results (keyed by "dir_name")
         base_dir: Root directory path
         dir_name: Display name of the root directory
-        sample_count: Number of samples per directory
+        sample_count: Number of samples per directory (max cover images)
+        base_subfolder: Base subfolder prefix for correct thumbnail URL resolution
     """
     if not base_dir.exists():
         return
     
-    # Collect cover images for root level
-    root_covers = _collect_cover_entries(base_dir, "", sample_count)
-    covers[f"{dir_name}"] = root_covers
+    result: list[dict] = []
     
-    # Recursively collect cover images for all subdirectories
-    def _collect_recursive(current_dir: Path, current_key: str):
-        for subdir in sorted(current_dir.iterdir()):
-            if not subdir.is_dir():
-                continue
-            
-            subdir_name = subdir.name
-            subdir_key = f"{current_key}/{subdir_name}"
-            
-            # Collect covers for this subdirectory
-            subdir_covers = _collect_cover_entries(subdir, subdir_key, sample_count)
-            covers[subdir_key] = subdir_covers
-            
-            # Recurse into nested subdirectories
-            _collect_recursive(subdir, subdir_key)
+    # Level 1: Scan root level files first
+    for p in sorted(base_dir.iterdir()):
+        if len(result) >= sample_count:
+            break
+        if p.is_file() and p.suffix.lower() in ALL_MEDIA_EXTENSIONS:
+            result.append({
+                "filename": p.name,
+                "name": p.stem,
+                "subfolder": base_subfolder,
+            })
     
-    _collect_recursive(base_dir, dir_name)
+    # Level 2+: Recursively scan subdirectories if not enough at root level
+    _collect_covers_recursive(base_dir, sample_count - len(result), result, sample_count, base_subfolder)
+    
+    covers[f"{dir_name}"] = result
+
+
+def _collect_covers_recursive(parent_dir: Path, needed: int, result: list[dict], sample_count: int, base_subfolder: str = ""):
+    """Recursively scan subdirectories for cover media (images + videos).
+    
+    Args:
+        parent_dir: Directory to scan
+        needed: How many more samples we need (decrements with recursion)
+        result: List to append results to
+        sample_count: Maximum number of samples total (CONSTANT, never changes during recursion)
+        base_subfolder: Base subfolder prefix for correct thumbnail URL resolution
+    """
+    if needed <= 0 or len(result) >= sample_count or not parent_dir.exists():
+        return
+    
+    for subdir in sorted(parent_dir.iterdir()):
+        if len(result) >= sample_count:
+            break
+        
+        if not subdir.is_dir():
+            continue
+        
+        # Build full subfolder path by prepending base_subfolder
+        if base_subfolder:
+            new_subfolder = f"{base_subfolder}/{subdir.name}"
+        else:
+            new_subfolder = subdir.name
+        
+        # Check direct media files at this subdirectory level (limit per-subdir contribution)
+        found_direct = []
+        remaining = sample_count - len(result)
+        for f in sorted(subdir.iterdir()):
+            if len(found_direct) >= remaining:
+                break
+            if f.is_file() and f.suffix.lower() in ALL_MEDIA_EXTENSIONS:
+                found_direct.append({
+                    "filename": f.name,
+                    "name": f.stem,
+                    "subfolder": new_subfolder,
+                })
+        
+        # If we found media at this level, add them and stop recursing deeper for this subdir
+        if found_direct:
+            result.extend(found_direct)
+        else:
+            # No direct media - recurse into nested subdirectory (pass base_subfolder through)
+            _collect_covers_recursive(subdir, max(needed - 1, 0), result, sample_count, base_subfolder)
+        
+        # Check if we've collected enough after processing this subdir
+        if len(result) >= sample_count:
+            break
 
 
 def _collect_subdirs_with_media(directory: Path, prefix: str = "") -> list[str]:

@@ -272,8 +272,9 @@ class NeoGallery {
     
     async loadGallery() {
         try {
-            // Use fields parameter to get dirs, items and covers
-            const resp = await api.fetchApi('/neo_gallery/list?fields=dirs,items,covers');
+            // PERFORMANCE: Only request dirs + covers on home page (no items).
+            // Items are loaded lazily when user clicks into a directory.
+            const resp = await api.fetchApi('/neo_gallery/list?fields=dirs,covers');
             if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
             const data = await resp.json();
             
