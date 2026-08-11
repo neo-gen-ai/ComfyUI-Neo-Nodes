@@ -693,7 +693,7 @@ export class GalleryComponents {
         });
 
         const coverWrapper = $el("div", {
-            className: "neo-gallery-card-cover-wrapper",
+            className: "neo-gallery-card-cover-wrapper skeleton-loading",
             style: { minHeight: `${Math.max(gallery.maxThumbnailSize * 0.5, 80)}px`, maxHeight: `${gallery.maxThumbnailSize}px` }
         });
 
@@ -726,7 +726,10 @@ export class GalleryComponents {
         card.appendChild(coverWrapper);
         card.appendChild(info);
 
-        // Fetch cover images from cache or lazy-load if not available yet
+        // Store cover wrapper reference for lazy loading
+        card._coverWrapper = coverWrapper;
+
+        // Try to load cover images from cache immediately
         this._applyCoverImages(card, coverWrapper, gallery, name, name);
 
         return card;
@@ -745,13 +748,20 @@ export class GalleryComponents {
         if (covers.length > 0) {
             this._renderCoverGrid(coverWrapper, covers, dirName, displayLabel, gallery);
             if (onCountUpdate) onCountUpdate(covers.length);
+            // Remove skeleton loading state
+            coverWrapper.classList.remove('skeleton-loading');
+            coverWrapper.classList.add('skeleton-loaded');
         } else {
-            // No cover images available - show placeholder
-            coverWrapper.innerHTML = '';
-            coverWrapper.appendChild($el("div", {
-                className: "neo-gallery-card-cover neo-gallery-card-placeholder",
-                textContent: "\uD83D\uDCCB"
-            }));
+            // No cover images available - keep skeleton loading for lazy loading
+            // Don't remove skeleton-loading here, let IntersectionObserver handle it
+            // Only show placeholder if skeleton is not active
+            if (!coverWrapper.classList.contains('skeleton-loading')) {
+                coverWrapper.innerHTML = '';
+                coverWrapper.appendChild($el("div", {
+                    className: "neo-gallery-card-cover neo-gallery-card-placeholder",
+                    textContent: "\uD83D\uDCCB"
+                }));
+            }
         }
     }
 
@@ -806,19 +816,14 @@ export class GalleryComponents {
         });
 
         const typeBadge = $el("div", {
-            className: "neo-gallery-card-type-badge neo-gallery-card-type-loading",
-            title: "Loading..."
+            className: "neo-gallery-card-type-badge type-directory",
+            title: "Directory"
         }, ["\uD83D\uDCC1"]);
 
         const coverWrapper = $el("div", {
-            className: "neo-gallery-card-cover-wrapper",
+            className: "neo-gallery-card-cover-wrapper skeleton-loading",
             style: { minHeight: `${Math.max(gallery.maxThumbnailSize * 0.5, 80)}px`, maxHeight: `${gallery.maxThumbnailSize}px` }
         });
-
-        coverWrapper.appendChild($el("div", {
-            className: "neo-gallery-card-cover neo-gallery-card-placeholder",
-            textContent: "\uD83D\uDCC1"
-        }));
 
         const info = $el("div", { className: "neo-gallery-card-info" }, [
             $el("span", { className: "neo-gallery-card-name", textContent: subdirName }),
@@ -848,13 +853,10 @@ export class GalleryComponents {
             this._renderCoverGrid(coverWrapper, covers, subdirKey, subdirName, gallery);
             // Update card state from cache
             const countEl = card.querySelector('.neo-gallery-card-count');
-            const typeBadge = card.querySelector('.neo-gallery-card-type-badge');
             if (countEl) countEl.textContent = `${covers.length} items`;
-            if (typeBadge) {
-                typeBadge.className = 'neo-gallery-card-type-badge neo-gallery-card-type-loading type-directory';
-                typeBadge.title = 'Directory';
-                typeBadge.textContent = '\uD83D\uDCC1';
-            }
+            // Remove skeleton loading state
+            coverWrapper.classList.remove('skeleton-loading');
+            coverWrapper.classList.add('skeleton-loaded');
         } else {
             // No cover images available - show placeholder
             coverWrapper.innerHTML = '';
@@ -862,6 +864,9 @@ export class GalleryComponents {
                 className: "neo-gallery-card-cover neo-gallery-card-placeholder",
                 textContent: "\uD83D\uDCCB"
             }));
+            // Remove skeleton loading state even for placeholder
+            coverWrapper.classList.remove('skeleton-loading');
+            coverWrapper.classList.add('skeleton-loaded');
         }
     }
 

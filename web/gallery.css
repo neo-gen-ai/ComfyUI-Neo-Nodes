@@ -16,6 +16,11 @@
     to { transform: rotate(360deg); }
 }
 
+@keyframes neoGalleryShimmer {
+    0% { background-position: -200px 0; }
+    100% { background-position: 200px 0; }
+}
+
 /* Loading overlay */
 .neo-gallery-loading-overlay {
     display: flex;
@@ -27,6 +32,65 @@
     min-height: 200px;
 }
 
+.neo-gallery-loading-skeleton {
+    width: 100%;
+    max-width: 1000px;
+    height: auto;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    justify-content: center;
+    align-items: center;
+    padding: 20px;
+}
+
+.neo-gallery-loading-skeleton[data-size="320"] .skeleton-card {
+    width: 320px;
+    height: 250px;
+}
+
+.neo-gallery-loading-skeleton[data-size="320"] .skeleton-card::before {
+    bottom: 50px;
+}
+
+.neo-gallery-loading-skeleton .skeleton-card {
+    width: 120px;
+    height: 100px;
+    background: linear-gradient(90deg, #252525 25%, #353535 50%, #252525 75%);
+    background-size: 200px 100%;
+    animation: neoGalleryShimmer 1.5s ease-in-out infinite;
+    border-radius: 6px;
+    position: relative;
+}
+
+/* Simulate cover image area in skeleton card */
+.neo-gallery-loading-skeleton .skeleton-card::before {
+    content: '';
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    right: 4px;
+    bottom: 30px;
+    background: linear-gradient(90deg, #1a1a1a 25%, #2a2a2a 50%, #1a1a1a 75%);
+    background-size: 200px 100%;
+    animation: neoGalleryShimmer 1.5s ease-in-out infinite;
+    border-radius: 4px;
+}
+
+/* Simulate text area in skeleton card */
+.neo-gallery-loading-skeleton .skeleton-card::after {
+    content: '';
+    position: absolute;
+    bottom: 8px;
+    left: 8px;
+    right: 8px;
+    height: 12px;
+    background: linear-gradient(90deg, #2a2a2a 25%, #3a3a3a 50%, #2a2a2a 75%);
+    background-size: 200px 100%;
+    animation: neoGalleryShimmer 1.5s ease-in-out infinite;
+    border-radius: 2px;
+}
+
 .neo-gallery-loading-spinner {
     width: 32px;
     height: 32px;
@@ -34,6 +98,7 @@
     border-top-color: #FF6A00;
     border-radius: 50%;
     animation: neoGallerySpin 0.8s linear infinite;
+    display: none; /* Hidden - using skeleton instead */
 }
 
 .neo-gallery-loading-text {
@@ -185,6 +250,11 @@
     text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
 }
 
+/* Remove loading animation from type badge - skeleton screen handles loading */
+.neo-gallery-card-type-badge.neo-gallery-card-type-loading {
+    animation: none;
+}
+
 /* Card cover image area */
 .neo-gallery-card-cover-wrapper {
     width: 100%;
@@ -232,6 +302,70 @@
     font-size: 48px;
     color: #555;
     background-color: #222;
+}
+
+/* Skeleton screen for loading cards */
+.neo-gallery-card-skeleton {
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, #1a1a1a 25%, #2a2a2a 50%, #1a1a1a 75%);
+    background-size: 200px 100%;
+    animation: neoGalleryShimmer 1.5s ease-in-out infinite;
+    border-radius: 4px;
+}
+
+.neo-gallery-card-cover-wrapper.skeleton-loading {
+    position: relative;
+}
+
+.neo-gallery-card-cover-wrapper.skeleton-loading::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(90deg, #1a1a1a 25%, #2a2a2a 50%, #1a1a1a 75%);
+    background-size: 200px 100%;
+    animation: neoGalleryShimmer 1.5s ease-in-out infinite;
+    z-index: 1;
+    border-radius: 4px;
+}
+
+/* Simulate cover grid structure in skeleton */
+.neo-gallery-card-cover-wrapper.skeleton-loading::after {
+    content: '';
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    right: 4px;
+    bottom: 4px;
+    background: linear-gradient(90deg, #252525 25%, #353535 50%, #252525 75%);
+    background-size: 200px 100%;
+    animation: neoGalleryShimmer 1.5s ease-in-out infinite;
+    z-index: 2;
+    border-radius: 2px;
+    /* Simulate the split between two images in the grid */
+    background-image: 
+        linear-gradient(90deg, #252525 25%, #353535 50%, #252525 75%),
+        linear-gradient(to right, transparent 49%, #1a1a1a 49%, #1a1a1a 51%, transparent 51%);
+    background-size: 200px 100%, 100% 100%;
+}
+
+.neo-gallery-card-cover-wrapper.skeleton-loading .neo-gallery-card-cover,
+.neo-gallery-card-cover-wrapper.skeleton-loading .neo-gallery-card-cover-grid {
+    opacity: 0;
+}
+
+.neo-gallery-card-cover-wrapper.skeleton-loaded::before,
+.neo-gallery-card-cover-wrapper.skeleton-loaded::after {
+    display: none;
+}
+
+.neo-gallery-card-cover-wrapper.skeleton-loaded .neo-gallery-card-cover,
+.neo-gallery-card-cover-wrapper.skeleton-loaded .neo-gallery-card-cover-grid {
+    opacity: 1;
+    transition: opacity 0.3s ease;
 }
 
 /* Card info area (name + count) */

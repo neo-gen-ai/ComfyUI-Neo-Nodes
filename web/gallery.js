@@ -236,6 +236,7 @@ class NeoGallery {
         try {
             const cacheData = {
                 directories: data.directories || [],
+                covers: data.covers || {}, // Save covers to cache
                 timestamp: Date.now(),
                 serverHash: serverHash || null, // Server-side hash for freshness checking
             // 保存每个目录的文件数量用于检测变化（lazy mode uses root_count）
@@ -1518,7 +1519,7 @@ class NeoGallery {
 
     async loadAndDisplay() {
         this.accordion.innerHTML = '';
-        const loadingEl = showLoadingOverlay(this.accordion);
+        const loadingEl = showLoadingOverlay(this.accordion, this.maxThumbnailSize);
         
         // 直接加载（不额外增加延迟）
         await this.loadGallery();

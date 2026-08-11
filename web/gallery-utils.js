@@ -233,9 +233,15 @@ export function showNoFilesMessage(container, message = "No images found") {
 /**
  * Show loading overlay
  */
-export function showLoadingOverlay(container) {
+export function showLoadingOverlay(container, size = 320) {
+    const skeletonCards = [];
+    // Create 6 skeleton cards to simulate a grid
+    for (let i = 0; i < 6; i++) {
+        skeletonCards.push($el("div", { className: "skeleton-card" }));
+    }
+    
     const loadingEl = $el("div", { className: "neo-gallery-loading-overlay" }, [
-        $el("div", { className: "neo-gallery-loading-spinner" }),
+        $el("div", { className: "neo-gallery-loading-skeleton", dataset: { size: size.toString() } }, skeletonCards),
         $el("span", { className: "neo-gallery-loading-text", textContent: "Loading gallery..." })
     ]);
     container.appendChild(loadingEl);
