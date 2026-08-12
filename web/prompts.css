@@ -443,7 +443,7 @@
     display: flex !important;
     flex-direction: column !important;
     gap: 4px;
-    padding: 8px;
+    padding: 8px 0;
     background: transparent;
     border: none;
     border-radius: 0;
@@ -507,7 +507,7 @@
     font-size: 11px;
     background: #2a2a2a;
     color: #60a5fa;
-    border: 1px solid #555;
+    border: none !important;
     border-radius: 4px;
     cursor: pointer;
     outline: none;
@@ -527,9 +527,9 @@
 .rs-input-toolbar .rs-generate-btn {
     padding: 4px 10px;
     font-size: 12px;
-    background: #3a6a9a;
-    color: #fff;
-    border: 1px solid #5090cc;
+    background: #2a2a2a;
+    color: #999;
+    border: none !important;
     border-radius: 4px;
     cursor: pointer;
     white-space: nowrap;
@@ -540,8 +540,8 @@
 }
 
 .rs-input-toolbar .rs-generate-btn:hover {
-    background: #4a7aba;
-    border-color: #60a5fa;
+    background: #3a3a3a;
+    color: #ccc;
 }
 
 .rs-input-toolbar .rs-generate-btn:active {
@@ -554,7 +554,7 @@
     font-size: 12px;
     background: #2a2a2a;
     color: #999;
-    border: 1px solid #555;
+    border: none !important;
     border-radius: 4px;
     cursor: pointer;
     transition: all 0.2s;
@@ -636,14 +636,67 @@
     border-radius: 0 !important;
 }
 
+/* Custom textarea wrapper - provides positioning context for buttons */
+.rs-custom-textarea-wrapper {
+    flex: 1 !important;
+    min-height: 0 !important;
+    position: relative !important;
+    display: flex !important;
+    flex-direction: column !important;
+}
+
 /* Ensure custom textarea doesn't overlap buttons */
-.rs-root > .comfy-multiline-input {
+.rs-custom-textarea-wrapper > .comfy-multiline-input {
     flex: 1 !important;
     min-height: 0 !important;
     max-height: none !important;
     overflow: auto !important;
     z-index: 1 !important;
     pointer-events: auto !important;
+    padding-bottom: 36px !important;
+}
+
+/* Position button group wrapper at bottom-right */
+.rs-custom-textarea-wrapper > .rs-button-group {
+    position: absolute;
+    bottom: 4px;
+    right: 30px;
+    z-index: 100;
+    display: flex;
+    gap: 0;
+    border-radius: 4px;
+    overflow: hidden;
+    background: rgba(42, 42, 42, 0.8);
+}
+
+/* Style buttons within button group */
+.rs-button-group > .rs-random-btn,
+.rs-button-group > .rs-list-btn,
+.rs-button-group > .rs-action-btn {
+    padding: 4px 8px !important;
+    font-size: 12px !important;
+    background: #2a2a2a !important;
+    color: #999 !important;
+    border: none !important;
+    outline: none !important;
+    border-radius: 0 !important;
+    cursor: pointer !important;
+    transition: all 0.2s !important;
+    height: 24px !important;
+    line-height: 1 !important;
+    min-width: 24px !important;
+    box-shadow: none !important;
+}
+
+.rs-button-group > .rs-random-btn:hover,
+.rs-button-group > .rs-list-btn:hover,
+.rs-button-group > .rs-action-btn:hover {
+    background: #3a3a3a !important;
+    color: #ccc !important;
+}
+
+.rs-button-group > .rs-action-btn {
+    filter: grayscale(50%);
 }
 
 .rs-status-bar {

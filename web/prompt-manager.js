@@ -1120,19 +1120,23 @@ function createPromptManagerUI() {
 
     const root = mkEl("div", "rs-root");
 
-    // Create a top-right button group: random, presets, save (pushed to right by spacer)
-    const topRightBtnGroup = mkEl("div", "rs-top-right-btn-group");
-    const spacer = mkEl("div", "rs-spacer");
-    topRightBtnGroup.appendChild(spacer);
-    topRightBtnGroup.appendChild(randomBtn);
-    topRightBtnGroup.appendChild(listBtn);
-    topRightBtnGroup.appendChild(saveBtn);
-
     root.appendChild(statusBar);
-    root.appendChild(topRightBtnGroup);
     // Preset list overlay - positioned as a centered panel (not dropdown)
     root.appendChild(presetListOverlay);
-    root.appendChild(customTextarea);
+
+    // Create wrapper for custom textarea and buttons
+    const customTextareaWrapper = mkEl("div", "rs-custom-textarea-wrapper");
+    customTextareaWrapper.appendChild(customTextarea);
+    
+    // Create button group wrapper
+    const buttonGroup = mkEl("div", "rs-button-group");
+    buttonGroup.appendChild(randomBtn);
+    buttonGroup.appendChild(listBtn);
+    buttonGroup.appendChild(saveBtn);
+    customTextareaWrapper.appendChild(buttonGroup);
+    
+    root.appendChild(customTextareaWrapper);
+
     root.appendChild(buttonsWrapper);
     // quickInputWrapper at the bottom of the node
     root.appendChild(quickInputWrapper);
