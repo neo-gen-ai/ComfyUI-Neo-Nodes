@@ -943,16 +943,14 @@ const QUICK_INPUT_TIPS = [
     "🌐 输入翻译需求，如：'翻译成中文'",
     "🎨 输入风格要求，如：'改成赛博朋克风格'",
     "📷 输入场景描述，如：'夕阳下的海边日落'",
-    "🔍 输入搜索关键词，查找已有提示词",
-    "🎲 点击骰子按钮，随机生成提示词",
-    "📋 点击列表按钮，浏览所有预设提示词",
-    "💾 点击保存按钮，将提示词保存为预设",
-    "⚙️ 点击设置按钮，切换 AI 模型",
-    "🚀 输入描述后点击生成，快速创建提示词",
+    "🔍 输入关键词搜索已有提示词",
+    "🚀 输入描述后按 Ctrl+Enter 或点击 ✨ 生成",
     "🔄 输入修改指令，如：'增加细节描述'",
     "🎭 输入角色描述，如：'一个穿着汉服的女孩'",
     "🌅 输入时间场景，如：'清晨的森林，阳光穿透树叶'",
-    "🏙️ 输入城市描述，如：'未来科幻城市，高楼林立'"
+    "🏙️ 输入城市描述，如：'未来科幻城市，高楼林立'",
+    "💾 点击保存按钮将提示词存为预设",
+    "⚙️ 设置中可切换 AI 模型和模板"
 ];
 
 function getRandomTip() {
@@ -1036,7 +1034,7 @@ function createStatusBars() {
 
     const quickInput = document.createElement("textarea");
     quickInput.className = "rs-quick-input";
-    quickInput.placeholder = '🔍 Search presets or describe...\n(e.g., "a beautiful sunset over the ocean")';
+    quickInput.placeholder = 'Describe what you want... (Ctrl+Enter to generate)';
     quickInput.rows = 2;
 
     let tipInterval = null;
@@ -1065,7 +1063,7 @@ function createStatusBars() {
     quickInput.addEventListener("blur", () => {
         stopTipRotation();
         if (!quickInput.value.trim()) {
-            quickInput.placeholder = '🔍 Search presets or describe...';
+            quickInput.placeholder = getRandomTip();
         }
     });
 

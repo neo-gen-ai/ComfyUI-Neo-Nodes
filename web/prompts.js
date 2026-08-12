@@ -426,8 +426,12 @@ app.registerExtension({
             const handleGeneratePrompt = NodeBehaviors.createGenerateHandler(
                 { ...promptUIRef, quickInput, tplSelector });
             generateBtn.addEventListener("click", handleGeneratePrompt);
+            // Ctrl/Cmd+Enter to generate, plain Enter for newline
             quickInput.addEventListener("keydown", (e) => {
-                if (e.key === "Enter") { e.preventDefault(); handleGeneratePrompt(); }
+                if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                    e.preventDefault();
+                    handleGeneratePrompt();
+                }
             });
 
             randomBtn.addEventListener("click", NodeBehaviors.createRandomHandler(promptUIRef));
@@ -879,8 +883,12 @@ app.registerExtension({
             const handleGeneratePrompt = NodeBehaviors.createGenerateHandler(
                 { ...promptUIRef, quickInput, tplSelector });
             generateBtn.addEventListener("click", handleGeneratePrompt);
+            // Ctrl/Cmd+Enter to generate, plain Enter for newline
             quickInput.addEventListener("keydown", (e) => {
-                if (e.key === "Enter") { e.preventDefault(); handleGeneratePrompt(); }
+                if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                    e.preventDefault();
+                    handleGeneratePrompt();
+                }
             });
 
             randomBtn.addEventListener("click", NodeBehaviors.createRandomHandler(promptUIRef));
