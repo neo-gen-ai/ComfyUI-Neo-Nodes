@@ -113,6 +113,20 @@ DEFAULT_TEMPLATES = [
             "- Output ONLY the enhanced prompt text, nothing else\n"
         ),
     },
+    {
+        "id": "translate",
+        "name": "\u7ffb\u8bd1",
+        "source": "presets",
+        "tags": ["\u7ffb\u8bd1", "\u5de5\u5177"],
+        "content": (
+            "You are an expert translator for AI image prompts. Your task is to translate the user's prompt to English.\n\n"
+            "Rules:\n"
+            "- Translate the input text to natural, fluent English suitable for AI image generation\n"
+            "- Preserve the original meaning and artistic intent\n"
+            "- Use appropriate terminology for AI image prompts\n"
+            "- Output ONLY the translated text, nothing else\n"
+        ),
+    },
 ]
 
 
@@ -636,20 +650,26 @@ async def rs_prompts_smart_prompt(request):
         data = await request.json()
         original_text = data.get("text", "")  # 原始提示词（可选）
         user_description = data.get("description", "")  # 用户描述
-        
-        logger.info(f"Smart prompt request: original='{original_text[:100]}...', description='{user_description[:100]}...'")
-        
+        template = data.get("template", "")  # 可选的系统提示词模板
+
+        logger.info(f"Smart prompt request: original='{original_text[:100]}...', description='{user_description[:100]}...', template='{template[:100] if template else 'None'}...'")
+
         if not user_description or not user_description.strip():
             return web.json_response({"error": "description is required"}, status=400)
-        
+
         # 组合输入文本
         if original_text and original_text.strip():
             combined_text = f"{original_text}\n\n---\n\n{user_description}"
         else:
             combined_text = user_description
-        
+
         from .llm import run_llm_task, get_current_mode, LLM_MODE_REMOTE
-        result_data = run_llm_task("smart_prompt", combined_text)
+
+        # 如果提供了模板，使用模板作为系统提示词
+        if template and template.strip():
+            result_data = run_llm_task("template_prompt", combined_text, system_prompt=template)
+        else:
+            result_data = run_llm_task("smart_prompt", combined_text)
         
         if "error" in result_data:
             error_msg = result_data["error"]

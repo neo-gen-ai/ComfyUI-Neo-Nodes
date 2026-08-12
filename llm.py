@@ -1177,6 +1177,12 @@ LLM_TASKS = {
         "result_key": "prompt",
         "description": "智能判断并生成/改写提示词"
     },
+    "template_prompt": {
+        "system": "",  # Will be replaced by custom template content
+        "max_tokens": 500,
+        "result_key": "prompt",
+        "description": "使用自定义模板生成提示词"
+    },
     "reverse_prompt": {
         "system": (
             "你是一个专业的图像反推提示词助手。请仔细观察给定的图像，反推出用于生成该图像的文生图提示词。\n\n"
@@ -1199,7 +1205,7 @@ LLM_TASKS = {
 # ==========================================
 
 def run_llm_task(task_name: str, text: str, extra_system_prompt: Optional[str] = None,
-                 images: Optional[Any] = None) -> Dict[str, Any]:
+                 images: Optional[Any] = None, system_prompt: Optional[str] = None) -> Dict[str, Any]:
     """
     执行 LLM 任务
 
@@ -1208,6 +1214,7 @@ def run_llm_task(task_name: str, text: str, extra_system_prompt: Optional[str] =
         text: 输入文本
         extra_system_prompt: 额外的系统提示词（可选）
         images: 图像数据列表（可选，用于多模态任务）
+        system_prompt: 完全自定义的系统提示词（可选，会覆盖默认系统提示词）
 
     Returns:
         dict: 包含 status 和结果的数据，或错误信息
@@ -1216,7 +1223,14 @@ def run_llm_task(task_name: str, text: str, extra_system_prompt: Optional[str] =
         return {"error": f"Invalid task: {task_name}"}
 
     task_config = LLM_TASKS[task_name]
-    system_prompt = task_config["system"]
+
+    # 如果提供了自定义 system_prompt，使用它（用于 template_prompt 任务）
+    if system_prompt is None:
+        system_prompt = task_config["system"]
+    # 如果是 template_prompt 且没有提供自定义 system_prompt，使用 extra_system_prompt
+    elif task_name == "template_prompt" and not system_prompt and extra_system_prompt:
+        system_prompt = extra_system_prompt
+
     max_tokens = task_config["max_tokens"]
     result_key = task_config["result_key"]
 
@@ -1238,7 +1252,7 @@ def run_llm_task(task_name: str, text: str, extra_system_prompt: Optional[str] =
             logger.info(f"Translation cache HIT for: '{text[:20]}...'")
             return {"status": "success", result_key: result}
 
-    if extra_system_prompt:
+    if extra_system_prompt and system_prompt is not None:
         system_prompt = system_prompt + extra_system_prompt
 
     try:

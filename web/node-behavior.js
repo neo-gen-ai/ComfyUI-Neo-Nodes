@@ -103,132 +103,12 @@ function createBasicNodeInitializer(node) {
 // ==========================================
 
 /**
- * 创建增强提示词的处理函数
- */
-function createEnhanceHandler(promptUI) {
-    return async () => {
-        const { enhanceBtn, customTextarea, textWidget, node, graph, downloadModal, statusBar } = promptUI;
-        
-        const currentText = customTextarea.value.trim();
-        if (!currentText) {
-            alert("Please enter a prompt first.");
-            return;
-        }
-
-        const modelOk = await checkModelAndPrompt(downloadModal, statusBar);
-        if (!modelOk) return;
-
-        enhanceBtn.disabled = true;
-        enhanceBtn.textContent = "⏳ Enhancing...";
-        customTextarea.classList.add("rs-textarea-streaming");
-
-        let rafId = null;
-        try {
-            let accumulated = "";
-            await enhancePromptStream(currentText, {
-                onChunk: (chunk) => {
-                    if (chunk.text) {
-                        accumulated += chunk.text;
-                        if (!rafId) {
-                            rafId = requestAnimationFrame(() => {
-                                customTextarea.value = accumulated;
-                                customTextarea.scrollTop = customTextarea.scrollHeight;
-                                rafId = null;
-                            });
-                        }
-                    }
-                },
-                onDone: () => {
-                    if (rafId) cancelAnimationFrame(rafId);
-                    if (textWidget) textWidget.value = accumulated;
-                    saveTextToStorage(node, textWidget, customTextarea);
-                    customTextarea.classList.remove("rs-textarea-streaming");
-                },
-                onError: (err) => {
-                    console.error("Enhance stream error:", err);
-                    alert("Failed to enhance prompt: " + err);
-                    customTextarea.classList.remove("rs-textarea-streaming");
-                }
-            });
-        } catch (e) {
-            console.error("Network Error:", e);
-            alert("Network error during enhancement.");
-            customTextarea.classList.remove("rs-textarea-streaming");
-        } finally {
-            enhanceBtn.disabled = false;
-            enhanceBtn.textContent = "✨ Enhance";
-            customTextarea.classList.remove("rs-textarea-streaming");
-        }
-    };
-}
-
-/**
- * 创建翻译提示词的处理函数
- */
-function createTranslateHandler(promptUI) {
-    return async () => {
-        const { translateBtn, customTextarea, textWidget, node, graph, downloadModal, statusBar } = promptUI;
-        
-        const currentText = customTextarea.value.trim();
-        if (!currentText) {
-            alert("Please enter a prompt first.");
-            return;
-        }
-
-        const modelOk = await checkModelAndPrompt(downloadModal, statusBar);
-        if (!modelOk) return;
-
-        translateBtn.disabled = true;
-        translateBtn.textContent = "⏳ Translating...";
-        customTextarea.classList.add("rs-textarea-streaming");
-
-        let rafId = null;
-        try {
-            let accumulated = "";
-            await translatePromptStream(currentText, {
-                onChunk: (chunk) => {
-                    if (chunk.text) {
-                        accumulated += chunk.text;
-                        if (!rafId) {
-                            rafId = requestAnimationFrame(() => {
-                                customTextarea.value = accumulated;
-                                customTextarea.scrollTop = customTextarea.scrollHeight;
-                                rafId = null;
-                            });
-                        }
-                    }
-                },
-                onDone: () => {
-                    if (rafId) cancelAnimationFrame(rafId);
-                    if (textWidget) textWidget.value = accumulated;
-                    saveTextToStorage(node, textWidget, customTextarea);
-                    customTextarea.classList.remove("rs-textarea-streaming");
-                },
-                onError: (err) => {
-                    console.error("Translate stream error:", err);
-                    alert("Failed to translate prompt: " + err);
-                    customTextarea.classList.remove("rs-textarea-streaming");
-                }
-            });
-        } catch (e) {
-            console.error("Network Error:", e);
-            alert("Network error during translation.");
-            customTextarea.classList.remove("rs-textarea-streaming");
-        } finally {
-            translateBtn.disabled = false;
-            translateBtn.textContent = "🌐 Translate";
-            customTextarea.classList.remove("rs-textarea-streaming");
-        }
-    };
-}
-
-/**
- * 创建生成提示词的处理函数 - 使用 LLM 智能判断
+ * 创建生成提示词的处理函数 - 使用选中的模板或 LLM 智能判断
  */
 function createGenerateHandler(promptUI) {
     return async () => {
-        const { generateBtn, quickInput, customTextarea, textWidget, node, graph, downloadModal, statusBar } = promptUI;
-        
+        const { generateBtn, quickInput, customTextarea, textWidget, node, graph, downloadModal, statusBar, tplSelector } = promptUI;
+
         const quickText = quickInput.value.trim();
         if (!quickText) {
             alert("Please enter a quick description first.");
@@ -238,6 +118,9 @@ function createGenerateHandler(promptUI) {
         // 获取当前提示词（如果有）
         const currentPrompt = customTextarea?.value?.trim() || "";
 
+        // 检查是否选择了模板
+        const selectedTemplateId = tplSelector?.value || "";
+
         const modelOk = await checkModelAndPrompt(downloadModal, statusBar);
         if (!modelOk) return;
 
@@ -246,38 +129,82 @@ function createGenerateHandler(promptUI) {
 
         let rafId = null;
         try {
-            // 使用 LLM 智能判断（流式）：LLM 直接判断用户意图并生成/改写
-            generateBtn.textContent = "🤖 Processing...";
             let accumulated = "";
-            await smartPromptStream(currentPrompt, quickText, {
-                onChunk: (chunk) => {
-                    if (chunk.text) {
-                        accumulated += chunk.text;
-                        if (!rafId) {
-                            rafId = requestAnimationFrame(() => {
-                                customTextarea.value = accumulated;
-                                customTextarea.scrollTop = customTextarea.scrollHeight;
-                                rafId = null;
-                            });
-                        }
-                    }
-                },
-                onDone: () => {
-                    if (rafId) cancelAnimationFrame(rafId);
-                    if (textWidget) textWidget.value = accumulated;
-                    saveTextToStorage(node, textWidget, customTextarea);
-                },
-                onError: (err) => {
-                    console.error("Smart prompt stream error:", err);
-                    alert("Failed to process prompt: " + err);
+
+            if (selectedTemplateId) {
+                // 使用选中的模板进行生成
+                generateBtn.textContent = "🤖 Processing with template...";
+
+                // 获取模板内容
+                const { loadTemplate } = await import("./prompt-service.js");
+                const template = await loadTemplate(selectedTemplateId);
+
+                if (template.error) {
+                    throw new Error("Failed to load template: " + template.error);
                 }
-            });
+
+                // 使用模板内容作为系统提示词
+                const systemPrompt = template.content || "";
+                const userPrompt = currentPrompt ? `${currentPrompt}\n\n---\n\n${quickText}` : quickText;
+
+                // 调用 smart_prompt API，但传入模板内容
+                const res = await fetch("/rs_prompts/smart_prompt", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        text: userPrompt,
+                        template: systemPrompt,
+                        description: quickText
+                    })
+                });
+
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    throw new Error(err.error || "Request failed");
+                }
+
+                const data = await res.json();
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+
+                accumulated = data.prompt || "";
+                customTextarea.value = accumulated;
+                if (textWidget) textWidget.value = accumulated;
+                saveTextToStorage(node, textWidget, customTextarea);
+            } else {
+                // 使用 LLM 智能判断（流式）：LLM 直接判断用户意图并生成/改写
+                generateBtn.textContent = "🤖 Processing...";
+                await smartPromptStream(currentPrompt, quickText, {
+                    onChunk: (chunk) => {
+                        if (chunk.text) {
+                            accumulated += chunk.text;
+                            if (!rafId) {
+                                rafId = requestAnimationFrame(() => {
+                                    customTextarea.value = accumulated;
+                                    customTextarea.scrollTop = customTextarea.scrollHeight;
+                                    rafId = null;
+                                });
+                            }
+                        }
+                    },
+                    onDone: () => {
+                        if (rafId) cancelAnimationFrame(rafId);
+                        if (textWidget) textWidget.value = accumulated;
+                        saveTextToStorage(node, textWidget, customTextarea);
+                    },
+                    onError: (err) => {
+                        console.error("Smart prompt stream error:", err);
+                        alert("Failed to process prompt: " + err);
+                    }
+                });
+            }
         } catch (e) {
             console.error("Network Error:", e);
-            alert("Network error during processing.");
+            alert("Network error during processing: " + e.message);
         } finally {
             generateBtn.disabled = false;
-            generateBtn.textContent = "🚀";
+            generateBtn.textContent = "✨";
         }
     };
 }
@@ -510,24 +437,22 @@ export const NodeBehaviors = {
     setTextAndTrigger,
     saveTextToStorage,
     restoreTextFromStorage,
-    
+
     // 节点初始化器工厂
     createBasicNodeInitializer,
-    
+
     // 按钮处理器工厂
-    createEnhanceHandler,
-    createTranslateHandler,
     createGenerateHandler,
     createRandomHandler,
-    
+
     // 文本变更回调
     createOnTextChangeCallback,
-    
+
     // 事件监听器
     createPopupCloser,
     createPromptUpdateHandler,
     createBeforeUnloadHandler,
-    
+
     // 定时器管理
     createNodeBehaviorManager,
 };

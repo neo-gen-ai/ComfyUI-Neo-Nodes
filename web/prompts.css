@@ -5,6 +5,39 @@
 .rs-delete-confirm-overlay, .rs-download-modal, .rs-settings-modal-wrapper {
     box-sizing: border-box;
 }
+
+/* ComfyUI widget container - ensure it fills the node and remove default styling from wrapper divs */
+.comfy-widget,
+.comfy-widget > div,
+.comfy-widget > div > div,
+.comfy-widget > div > div > div,
+.comfy-multiline-input-widget,
+.comfy-multiline-input-widget > div,
+.comfy-multiline-input-widget > div > div,
+.comfy-multiline-input-widget > div > div > div {
+    width: 100% !important;
+    box-sizing: border-box !important;
+    max-width: none !important;
+    min-width: 0 !important;
+    border: none !important;
+    background: transparent !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    outline: none !important;
+}
+
+/* But keep styling for the actual textarea elements */
+.comfy-widget > .comfy-multiline-input,
+.comfy-widget > div > .comfy-multiline-input,
+.comfy-multiline-input-widget > .comfy-multiline-input,
+.comfy-multiline-input-widget > div > .comfy-multiline-input {
+    border: 1px solid #444 !important;
+    background: #1a1a1a !important;
+    padding: 4px !important;
+    border-radius: 4px !important;
+}
  
 /* Waiting overlay */
 .rs-waiting-overlay {
@@ -363,16 +396,6 @@
     border-color: #fbbf24 !important;
 }
 
-/* Quick input */
-.rs-quick-input-wrapper {
-    width: 100%;
-    display: flex;
-    align-items: center;
-    padding: 0;
-    border-bottom: 1px solid #333;
-    box-sizing: border-box;
-}
-
 /* Top-right button group (random, presets, save) - flex row below status bar */
 .rs-top-right-btn-group {
     display: flex;
@@ -416,33 +439,137 @@
     color: #fff !important;
 }
 
-.rs-quick-input {
-    flex: 1;
-    padding: 6px 8px;
-    font-size: 12px;
-    background: #1a1a1a;
-    color: #ccc;
-    border: 1px solid #444;
-    outline: none;
+.rs-quick-input-wrapper {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 4px;
+    padding: 8px;
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    flex-shrink: 0;
     min-width: 0;
+    overflow-x: hidden;
+    position: relative;
+}
+
+.rs-quick-input {
+    width: 100%;
+    padding: 8px 10px 40px 10px;
+    font-size: 13px;
+    background: #2a2a2a;
+    color: #ccc;
+    border: 1px solid #555;
+    border-radius: 6px;
+    outline: none;
     resize: vertical;
-    min-height: 36px;
+    min-height: 40px;
+    max-height: 120px;
     line-height: 1.4;
+    font-family: inherit;
+    box-sizing: border-box;
 }
 
 .rs-quick-input:focus {
     border-color: #5090cc;
-    box-shadow: 0 0 0 2px rgba(80, 144, 204, 0.2);
+    background: #333;
 }
 
-.rs-quick-input::placeholder { 
-    color: #666; 
+.rs-quick-input::placeholder {
+    color: #666;
+    white-space: normal;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+
+/* Input toolbar - chat-like experience */
+.rs-input-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    position: absolute;
+    bottom: 8px;
+    left: 8px;
+    right: 8px;
+    background: transparent;
+    border-radius: 0 0 6px 6px;
+    z-index: 10;
+}
+
+/* Template selector in toolbar */
+.rs-input-toolbar .rs-tpl-selector {
+    width: 120px;
+    flex-shrink: 0;
+    padding: 4px 8px;
+    font-size: 11px;
+    background: #2a2a2a;
+    color: #60a5fa;
+    border: 1px solid #555;
+    border-radius: 4px;
+    cursor: pointer;
+    outline: none;
+}
+
+/* Spacer to push buttons to right */
+.rs-input-toolbar .rs-spacer {
+    flex: 1;
+    min-width: 0;
+}
+
+.rs-input-toolbar .rs-tpl-selector:focus {
+    border-color: #5090cc;
+}
+
+/* Generate button in toolbar */
+.rs-input-toolbar .rs-generate-btn {
+    padding: 4px 10px;
+    font-size: 12px;
+    background: #3a6a9a;
+    color: #fff;
+    border: 1px solid #5090cc;
+    border-radius: 4px;
+    cursor: pointer;
     white-space: nowrap;
+    transition: all 0.2s;
+    font-weight: 500;
+    height: 24px;
+    line-height: 1;
+}
+
+.rs-input-toolbar .rs-generate-btn:hover {
+    background: #4a7aba;
+    border-color: #60a5fa;
+}
+
+.rs-input-toolbar .rs-generate-btn:active {
+    background: #2a5a8a;
+}
+
+/* Settings button in toolbar */
+.rs-input-toolbar .rs-settings-btn {
+    padding: 4px 8px;
+    font-size: 12px;
+    background: #2a2a2a;
+    color: #999;
+    border: 1px solid #555;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+    height: 24px;
+    line-height: 1;
+}
+
+.rs-input-toolbar .rs-settings-btn:hover {
+    background: #3a3a3a;
+    color: #ccc;
+    border-color: #666;
 }
 
 /* Generate / Random / Settings / List buttons - unified top row */
-.rs-generate-btn,
-.rs-quick-input-wrapper .rs-settings-btn,
+/* Only apply these if NOT in input toolbar */
 .rs-random-btn,
 .rs-list-btn {
     padding: 2px 6px;
@@ -458,8 +585,6 @@
 }
 
 /* Unique border-radius per button position (symmetric) */
-.rs-generate-btn { border-radius: 0; }
-.rs-quick-input-wrapper .rs-settings-btn { border-radius: 0 4px 0 0; }
 .rs-random-btn { border-radius: 4px 0 0 0; }
 .rs-list-btn { border-radius: 0 0 0 0; }
 
@@ -491,21 +616,24 @@
 
 /* Root layout - must be relative for dropdown overlay positioning */
 .rs-root {
-    display: flex;
-    flex-direction: column;
+    display: flex !important;
+    flex-direction: column !important;
     height: 100%;
     padding: 0;
     margin: 0;
-    box-sizing: border-box;
-    overflow: visible !important;
+    box-sizing: border-box !important;
+    overflow: hidden !important;
     position: relative;
     z-index: 1;
+    width: 100% !important;
+    min-width: 0;
+    border-radius: 0 !important;
+    border: none !important;
+    background: transparent !important;
 }
 
-/* Quick input wrapper - parent of dropdown */
-.rs-quick-input-wrapper {
-    position: relative;
-    overflow: visible !important;
+.rs-root > * {
+    border-radius: 0 !important;
 }
 
 /* Ensure custom textarea doesn't overlap buttons */
@@ -588,21 +716,7 @@
     color: #fff !important;
 }
 
-/* Template selector in action row - pushed left by margin-right:auto inline style */
-.rs-tpl-selector {
-    background: #1a2a3a !important;
-    color: #60a5fa !important;
-    border: 1px solid #3a6a9a !important;
-    border-radius: 4px !important;
-    padding: 2px 6px !important;
-    font-size: 11px !important;
-    cursor: pointer !important;
-    max-width: 140px !important;
-    height: 22px !important;
-    margin-right: 4px !important;
-    flex-shrink: 0 !important;
-}
-
+/* Template selector options - shared styling */
 .rs-tpl-selector option {
     background: #1a2a3a;
     color: #ccc;

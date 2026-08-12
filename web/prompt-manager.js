@@ -985,7 +985,6 @@ function createStatusBars() {
     
     // Template selector dropdown
     const tplSelector = mkEl("select", "rs-tpl-selector");
-    tplSelector.style.cssText = "background:#1a2a3a;color:#60a5fa;border:1px solid #3a6a9a;border-radius:4px;padding:2px 6px;font-size:11px;cursor:pointer;max-width:140px;height:22px;margin-right:auto !important;flex-grow:1 !important;";
     tplSelector.title = "Select system prompt template";
     
     async function populateTemplateSelector() {
@@ -1039,9 +1038,9 @@ function createStatusBars() {
     quickInput.className = "rs-quick-input";
     quickInput.placeholder = '🔍 Search presets or describe...\n(e.g., "a beautiful sunset over the ocean")';
     quickInput.rows = 2;
-    
+
     let tipInterval = null;
-    
+
     function startTipRotation() {
         stopTipRotation();
         tipInterval = setInterval(() => {
@@ -1050,19 +1049,19 @@ function createStatusBars() {
             }
         }, 5000);
     }
-    
+
     function stopTipRotation() {
         if (tipInterval) {
             clearInterval(tipInterval);
             tipInterval = null;
         }
     }
-    
+
     quickInput.addEventListener("focus", () => {
         quickInput.placeholder = getRandomTip();
         startTipRotation();
     });
-    
+
     quickInput.addEventListener("blur", () => {
         stopTipRotation();
         if (!quickInput.value.trim()) {
@@ -1070,15 +1069,23 @@ function createStatusBars() {
         }
     });
 
+    // Create input toolbar (chat-like experience)
+    const inputToolbar = mkEl("div", "rs-input-toolbar");
+
     const generateBtn = mkEl("button", "rs-generate-btn");
     generateBtn.textContent = "✨";
     generateBtn.setAttribute("data-rs-tooltip", "Generate from description");
 
-    // Note: randomBtn and listBtn are NOT added to quickInputWrapper here.
-    // They will be placed in topRightBtnGroup by createPromptManagerUI().
+    // Add elements to toolbar
+    inputToolbar.appendChild(tplSelector);
+    inputToolbar.appendChild(settingsBtn);
+    const spacer = mkEl("div", "rs-spacer");
+    inputToolbar.appendChild(spacer);
+    inputToolbar.appendChild(generateBtn);
+
+    // Add input and toolbar to wrapper
     quickInputWrapper.appendChild(quickInput);
-    quickInputWrapper.appendChild(generateBtn);
-    quickInputWrapper.appendChild(settingsBtn);
+    quickInputWrapper.appendChild(inputToolbar);
 
     const customTextarea = document.createElement("textarea");
     customTextarea.className = "comfy-multiline-input";
@@ -1088,22 +1095,15 @@ function createStatusBars() {
     
     const actionRow = mkEl("div", "rs-btn-row rs-action-row");
 
-    const enhanceBtn = mkEl("button", "rs-btn rs-action-btn");
-    enhanceBtn.textContent = "🔧";
-    enhanceBtn.setAttribute("data-rs-tooltip", "Enhance prompt with AI");
-    const translateBtn = mkEl("button", "rs-btn rs-action-btn");
-    translateBtn.textContent = "🌐";
-    translateBtn.setAttribute("data-rs-tooltip", "Translate prompt");
     const saveBtn = mkEl("button", "rs-btn rs-action-btn");
     saveBtn.textContent = "💾";
     saveBtn.setAttribute("data-rs-tooltip", "Save as preset");
 
     // Note: saveBtn is NOT added to actionRow here.
     // It will be placed in topRightBtnGroup by createPromptManagerUI().
-    actionRow.append(enhanceBtn, translateBtn);
     buttonsWrapper.appendChild(actionRow);
 
-    return { statusBar, quickInputWrapper, randomBtn, listBtn, quickInput, generateBtn, customTextarea, buttonsWrapper, enhanceBtn, translateBtn, saveBtn, settingsBtn, toggleSwitch, toggleKnob, tplSelector, populateTemplateSelector, actionRow };
+    return { statusBar, quickInputWrapper, randomBtn, listBtn, quickInput, generateBtn, customTextarea, buttonsWrapper, saveBtn, settingsBtn, toggleSwitch, toggleKnob, tplSelector, populateTemplateSelector, actionRow };
 }
 
 // ==========================================
@@ -1111,7 +1111,7 @@ function createStatusBars() {
 // ==========================================
 
 function createPromptManagerUI() {
-    const { statusBar, quickInputWrapper, randomBtn, listBtn, quickInput, generateBtn, customTextarea, buttonsWrapper, enhanceBtn, translateBtn, saveBtn, settingsBtn, toggleSwitch, toggleKnob, tplSelector, populateTemplateSelector, actionRow } = createStatusBars();
+    const { statusBar, quickInputWrapper, randomBtn, listBtn, quickInput, generateBtn, customTextarea, buttonsWrapper, saveBtn, settingsBtn, toggleSwitch, toggleKnob, tplSelector, populateTemplateSelector, actionRow } = createStatusBars();
     const { overlay: presetListOverlay, body: presetListBody, searchBar: presetSearchBar } = createOverlayWithSearch();
     const { modal: presetNameInput, aiStatus, field: inputField, tagsContainer, selectedTags, okBtn: inputOk, cancelBtn: inputCancel } = createInputModal();
     const { modal: deleteConfirmOverlay, textDiv: deleteText, okBtn: deleteOk, cancelBtn: deleteCancel } = createDeleteModal();
@@ -1161,16 +1161,6 @@ function createPromptManagerUI() {
     function init(ctx) {
         context = ctx;
         const { node, graph, textWidget } = ctx;
-
-        // Append template selector to action row
-        if (!actionRow.contains(tplSelector)) {
-            const firstChild = actionRow.children[0];
-            if (firstChild) {
-                actionRow.insertBefore(tplSelector, firstChild);
-            } else {
-                actionRow.appendChild(tplSelector);
-            }
-        }
 
         setTimeout(() => populateTemplateSelector(), 50);
 
@@ -1676,10 +1666,10 @@ function createPromptManagerUI() {
             const btnHeight = settingsBtn.offsetHeight || 24;
             const modalHeight = settingsModal.modal.offsetHeight || 400;
             const topPos = accumulatedTop + (btnHeight / 2) - (modalHeight / 2);
-            
+
             const leftPos = accumulatedLeft + settingsBtn.offsetWidth + 5;
-            
-            settingsModal.modal.style.position = "absolute";
+
+            settingsModal.modal.style.position = "fixed";
             settingsModal.modal.style.zIndex = "999999";
             settingsModal.modal.style.top = topPos + "px";
             settingsModal.modal.style.left = leftPos + "px";
@@ -1689,7 +1679,7 @@ function createPromptManagerUI() {
             settingsModal.modal.style.alignItems = "flex-start";
             settingsModal.modal.style.opacity = "1";
             settingsModal.modal.style.visibility = "visible";
-            
+
             settingsModal.overlay.style.display = "block";
             settingsModal.modal.style.display = "flex";
             
@@ -1735,8 +1725,6 @@ function createPromptManagerUI() {
         return {
             statusBar,
             quickInputWrapper,
-            enhanceBtn,
-            translateBtn,
             generateBtn,
             randomBtn,
             listBtn,

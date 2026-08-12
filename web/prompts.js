@@ -183,7 +183,29 @@ app.registerExtension({
             const root = promptUI.root;
 
             // Add the custom DOM widget - this will contain all visible UI elements
-            node.addDOMWidget("prompt_ui", "custom", root);
+            const widget = node.addDOMWidget("prompt_ui", "custom", root);
+
+            // Set root element width to fill node
+            root.style.width = "100%";
+            root.style.maxWidth = "none";
+
+            // Function to update widget width
+            const updateWidgetWidth = () => {
+                if (widget && node.size) {
+                    widget.width = node.size[0];
+                }
+            };
+
+            // Update width on resize
+            node.onResize = node.onResize || function() {};
+            const originalOnResize = node.onResize;
+            node.onResize = function() {
+                updateWidgetWidth();
+                originalOnResize.apply(this, arguments);
+            };
+
+            // Initial width update
+            updateWidgetWidth();
 
             node.setSize([370, 280]);
             node.minWidth = 370;
@@ -191,12 +213,12 @@ app.registerExtension({
 
             // Initialize prompt manager - get UI elements and settings button
             // Pass textWidget so save handler can read current prompt text for AI extraction
-            const { 
-                enhanceBtn, translateBtn, generateBtn, randomBtn, quickInput,
+            const {
+                generateBtn, randomBtn, quickInput,
                 customTextarea, statusBar, settingsBtn, toggleSwitch, toggleKnob,
                 presetListOverlay, presetNameInput, deleteConfirmOverlay, downloadModal,
                 settingsModal, loadModelsIntoSettings,
-                quickInputWrapper, populateTemplateSelector
+                quickInputWrapper, populateTemplateSelector, tplSelector
             } = promptUI.init({ node, graph: node.graph, textWidget });
 
             // Populate template selector on init
@@ -243,10 +265,6 @@ app.registerExtension({
                 return () => {
                     const isDisabled = node.properties.rs_disable_state;
 
-                    enhanceBtn.disabled = false;
-                    enhanceBtn.style.opacity = "1";
-                    translateBtn.disabled = false;
-                    translateBtn.style.opacity = "1";
                     customTextarea.style.border = "1px solid #444";
 
                     // Update status bar visibility based on text_input connection
@@ -400,16 +418,13 @@ app.registerExtension({
             // ==========================================
             // Use shared button handlers (same as NeoPrompts)
             // ==========================================
-            const promptUIRef = { 
-                enhanceBtn, translateBtn, generateBtn, randomBtn, quickInput, 
-                customTextarea, textWidget, node, graph: node.graph, downloadModal, statusBar: null 
+            const promptUIRef = {
+                generateBtn, randomBtn, quickInput,
+                customTextarea, textWidget, node, graph: node.graph, downloadModal, statusBar: null
             };
-            
-            enhanceBtn.addEventListener("click", NodeBehaviors.createEnhanceHandler(promptUIRef));
-            translateBtn.addEventListener("click", NodeBehaviors.createTranslateHandler(promptUIRef));
-            
+
             const handleGeneratePrompt = NodeBehaviors.createGenerateHandler(
-                { ...promptUIRef, quickInput });
+                { ...promptUIRef, quickInput, tplSelector });
             generateBtn.addEventListener("click", handleGeneratePrompt);
             quickInput.addEventListener("keydown", (e) => {
                 if (e.key === "Enter") { e.preventDefault(); handleGeneratePrompt(); }
@@ -597,18 +612,40 @@ app.registerExtension({
             // 创建提示词管理 UI
             const promptUI = createPromptManagerUI();
             const root = promptUI.root;
-            node.addDOMWidget("prompt_ui", "custom", root);
+            const widget = node.addDOMWidget("prompt_ui", "custom", root);
+
+            // Set root element width to fill node
+            root.style.width = "100%";
+            root.style.maxWidth = "none";
+
+            // Function to update widget width
+            const updateWidgetWidth = () => {
+                if (widget && node.size) {
+                    widget.width = node.size[0];
+                }
+            };
+
+            // Update width on resize
+            node.onResize = node.onResize || function() {};
+            const originalOnResize = node.onResize;
+            node.onResize = function() {
+                updateWidgetWidth();
+                originalOnResize.apply(this, arguments);
+            };
+
+            // Initial width update
+            updateWidgetWidth();
             node.setSize([370, 280]);
             node.minWidth = 370;
             node.minHeight = 260;
 
             // 初始化提示词管理器
-            const { 
-                enhanceBtn, translateBtn, generateBtn, randomBtn, quickInput, 
+            const {
+                generateBtn, randomBtn, quickInput,
                 customTextarea, statusBar, settingsBtn, toggleSwitch, toggleKnob,
                 presetListOverlay, presetNameInput, deleteConfirmOverlay, downloadModal,
                 settingsModal, loadModelsIntoSettings,
-                quickInputWrapper, populateTemplateSelector
+                quickInputWrapper, populateTemplateSelector, tplSelector
             } = promptUI.init({ node, graph: node.graph, textWidget });
 
             // Populate template selector on init
@@ -681,10 +718,6 @@ app.registerExtension({
                     const isDisabled = node.properties.rs_disable_state;
                     removeWaitingOverlay();
 
-                    enhanceBtn.disabled = false;
-                    enhanceBtn.style.opacity = "1";
-                    translateBtn.disabled = false;
-                    translateBtn.style.opacity = "1";
                     customTextarea.style.border = "1px solid #444";
 
                     // Update status bar visibility based on text_input connection
@@ -839,15 +872,12 @@ app.registerExtension({
             // 使用共享的按钮处理器（与 NeoPromptGenerator 相同）
             // ==========================================
             const promptUIRef = {
-                enhanceBtn, translateBtn, generateBtn, randomBtn, quickInput,
+                generateBtn, randomBtn, quickInput,
                 customTextarea, textWidget, node, graph: node.graph, downloadModal, statusBar
             };
 
-            enhanceBtn.addEventListener("click", NodeBehaviors.createEnhanceHandler(promptUIRef));
-            translateBtn.addEventListener("click", NodeBehaviors.createTranslateHandler(promptUIRef));
-
             const handleGeneratePrompt = NodeBehaviors.createGenerateHandler(
-                { ...promptUIRef, quickInput });
+                { ...promptUIRef, quickInput, tplSelector });
             generateBtn.addEventListener("click", handleGeneratePrompt);
             quickInput.addEventListener("keydown", (e) => {
                 if (e.key === "Enter") { e.preventDefault(); handleGeneratePrompt(); }
