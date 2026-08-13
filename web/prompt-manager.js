@@ -966,20 +966,21 @@ function createStatusBars() {
     
     const toggleWrapper = mkEl("div", "rs-toggle-wrapper");
     
+    // Tab-style toggle with text labels
     const toggleSwitch = mkEl("div", "rs-toggle-switch");
-    toggleSwitch.setAttribute("data-rs-tooltip", "Enable external text input");
-    toggleSwitch.style.setProperty('background', '#3a3a3a', 'important');
-    toggleSwitch.style.setProperty('border-color', '#555', 'important');
-
-    const toggleKnob = mkEl("div", "rs-toggle-knob");
-    toggleKnob.style.setProperty('transform', 'translateX(0)', 'important');
-    toggleKnob.style.setProperty('background', '#999', 'important');
-
-    toggleSwitch.appendChild(toggleKnob);
-    toggleWrapper.appendChild(toggleSwitch);
+    toggleSwitch.setAttribute("data-rs-tooltip", "Switch between local prompt and external input");
     
-    const statusText = mkEl("span");
-    statusText.textContent = "🟢 LOCAL PROMPT";
+    const localTab = mkEl("div", "rs-toggle-tab rs-toggle-local");
+    localTab.textContent = "LOCAL";
+    localTab.dataset.state = "local";
+    
+    const externalTab = mkEl("div", "rs-toggle-tab rs-toggle-external");
+    externalTab.textContent = "EXTERNAL";
+    externalTab.dataset.state = "external";
+    
+    toggleSwitch.appendChild(localTab);
+    toggleSwitch.appendChild(externalTab);
+    toggleWrapper.appendChild(toggleSwitch);
     
     // Template selector dropdown
     const tplSelector = mkEl("select", "rs-tpl-selector");
@@ -1017,7 +1018,6 @@ function createStatusBars() {
     settingsBtn.setAttribute("data-rs-tooltip", "Model settings");
     
     statusBar.appendChild(toggleWrapper);
-    statusBar.appendChild(statusText);
 
     const randomBtn = mkEl("button", "rs-random-btn");
     randomBtn.textContent = "🎲";
@@ -1101,7 +1101,7 @@ function createStatusBars() {
     // It will be placed in topRightBtnGroup by createPromptManagerUI().
     buttonsWrapper.appendChild(actionRow);
 
-    return { statusBar, quickInputWrapper, randomBtn, listBtn, quickInput, generateBtn, customTextarea, buttonsWrapper, saveBtn, settingsBtn, toggleSwitch, toggleKnob, tplSelector, populateTemplateSelector, actionRow };
+    return { statusBar, quickInputWrapper, randomBtn, listBtn, quickInput, generateBtn, customTextarea, buttonsWrapper, saveBtn, settingsBtn, toggleSwitch, localTab, externalTab, tplSelector, populateTemplateSelector, actionRow };
 }
 
 // ==========================================
@@ -1109,7 +1109,7 @@ function createStatusBars() {
 // ==========================================
 
 function createPromptManagerUI() {
-    const { statusBar, quickInputWrapper, randomBtn, listBtn, quickInput, generateBtn, customTextarea, buttonsWrapper, saveBtn, settingsBtn, toggleSwitch, toggleKnob, tplSelector, populateTemplateSelector, actionRow } = createStatusBars();
+    const { statusBar, quickInputWrapper, randomBtn, listBtn, quickInput, generateBtn, customTextarea, buttonsWrapper, saveBtn, settingsBtn, toggleSwitch, localTab, externalTab, tplSelector, populateTemplateSelector, actionRow } = createStatusBars();
     const { overlay: presetListOverlay, body: presetListBody, searchBar: presetSearchBar } = createOverlayWithSearch();
     const { modal: presetNameInput, aiStatus, field: inputField, tagsContainer, selectedTags, okBtn: inputOk, cancelBtn: inputCancel } = createInputModal();
     const { modal: deleteConfirmOverlay, textDiv: deleteText, okBtn: deleteOk, cancelBtn: deleteCancel } = createDeleteModal();
@@ -1731,7 +1731,8 @@ function createPromptManagerUI() {
             customTextarea,
             settingsBtn,
             toggleSwitch,
-            toggleKnob,
+            localTab,
+            externalTab,
             saveBtn,
             presetListOverlay,
             presetNameInput,

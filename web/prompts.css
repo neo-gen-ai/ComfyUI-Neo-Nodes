@@ -701,20 +701,19 @@
 
 .rs-status-bar {
     width: 100%;
-    padding: 4px 8px;
+    padding: 0 8px;
     font-size: 11px;
     font-weight: bold;
     text-align: center;
     border-radius: 4px 4px 0 0;
-    margin-bottom: 4px;
+    margin-bottom: 0;
+    margin-top: 0;
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 6px;
     line-height: 1.2;
-    overflow: visible !important;
-    position: relative;
-    z-index: 5;
+    height: auto !important;
 }
 
 .rs-buttons-wrapper {
@@ -724,7 +723,7 @@
     gap: 3px;
     padding: 3px 4px;
     box-sizing: border-box;
-    margin-top: 4px;
+    margin-top: 0;
     position: relative;
     z-index: 10;
 }
@@ -1243,46 +1242,72 @@
     color: #fff;
 }
 
-/* Toggle Switch */
+/* Toggle Switch - Option Tab Style */
 .rs-toggle-wrapper {
-    position: absolute;
-    left: 4px;
-    top: 50%;
-    transform: translateY(-50%);
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 0;
     z-index: 10;
 }
 
 .rs-toggle-switch {
-    width: 28px;
-    height: 16px;
-    background: #3a3a3a !important;
-    border-radius: 8px !important;
-    position: relative !important;
+    display: flex !important;
+    flex-direction: row !important;
+    background: #2a2a2a !important;
+    border-radius: 6px !important;
     cursor: pointer !important;
-    border: 1px solid #555 !important;
-    display: block !important;
+    border: 1px solid #444 !important;
+    overflow: hidden !important;
     visibility: visible !important;
+    height: 16px !important;
+    min-width: 65px !important;
+    position: relative !important;
+    z-index: 100 !important;
 }
 
-.rs-toggle-switch:hover { border-color: #666; }
-
-.rs-toggle-knob {
-    width: 12px;
-    height: 12px;
-    background: #999 !important;
-    border-radius: 50% !important;
-    position: absolute !important;
-    top: 1px;
-    left: 1px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3) !important;
-    display: block !important;
-    visibility: visible !important;
+.rs-toggle-tab {
+    font-size: 8px;
+    font-weight: normal !important;
+    text-transform: uppercase;
+    color: #fff !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+    user-select: none !important;
+    white-space: nowrap !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    flex: 1 !important;
+    height: 16px !important;
+    padding: 0 5px !important;
 }
 
-.rs-toggle-switch:hover .rs-toggle-knob { background: #bbb; }
+.rs-toggle-tab:first-child {
+    border-radius: 6px 0 0 6px !important;
+}
+
+.rs-toggle-tab:last-child {
+    border-radius: 0 6px 6px 0 !important;
+}
+
+.rs-toggle-tab.rs-toggle-local.active {
+    background: #4a4a4a !important;
+    color: #fff !important;
+}
+
+.rs-toggle-tab.rs-toggle-external.active {
+    background: #4a4a4a !important;
+    color: #fff !important;
+}
+
+.rs-toggle-tab:not(.active) {
+    opacity: 0.5;
+    color: #aaa !important;
+}
+
+.rs-toggle-tab:hover:not(.active) {
+    background: #3a3a3a !important;
+}
 
 /* Tooltip */
 [data-rs-tooltip] { position: relative; }
@@ -1323,13 +1348,12 @@
    ========================================== */
 
 .rs-root.rs-theme-local {
-    --theme-primary: #4ade80;
+    --theme-primary: #60a5fa;
     --theme-bg: #1a3a2a;
 }
 
 .rs-root.rs-theme-local .rs-status-bar {
-    background: var(--theme-bg) !important;
-    color: var(--theme-primary) !important;
+    background: transparent !important;
     border: none !important;
     box-shadow: none !important;
 }
@@ -1344,13 +1368,12 @@
    ========================================== */
 
 .rs-root.rs-theme-external {
-    --theme-primary: #60a5fa;
+    --theme-primary: #4ade80;
     --theme-bg: #1a2a4a;
 }
 
 .rs-root.rs-theme-external .rs-status-bar {
-    background: var(--theme-bg) !important;
-    color: var(--theme-primary) !important;
+    background: transparent !important;
     border: none !important;
     box-shadow: none !important;
 }
@@ -1386,10 +1409,20 @@
 }
 
 /* Ensure the toggle switch is always visible in status bar */
-.rs-status-bar .rs-toggle-switch,
-.rs-status-bar .rs-toggle-knob,
+.rs-status-bar .rs-toggle-switch {
+    display: flex !important;
+    visibility: visible !important;
+    pointer-events: auto !important;
+}
+
 .rs-status-bar .rs-toggle-wrapper {
-    display: block !important;
+    display: flex !important;
+    visibility: visible !important;
+    pointer-events: auto !important;
+}
+
+.rs-status-bar .rs-toggle-tab {
+    display: flex !important;
     visibility: visible !important;
     pointer-events: auto !important;
 }

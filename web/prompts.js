@@ -213,7 +213,7 @@ app.registerExtension({
             // Pass textWidget so save handler can read current prompt text for AI extraction
             const {
                 generateBtn, randomBtn, quickInput,
-                customTextarea, statusBar, settingsBtn, toggleSwitch, toggleKnob,
+                customTextarea, statusBar, settingsBtn, toggleSwitch, localTab, externalTab,
                 presetListOverlay, presetNameInput, deleteConfirmOverlay, downloadModal,
                 settingsModal, loadModelsIntoSettings,
                 quickInputWrapper, populateTemplateSelector, tplSelector
@@ -244,17 +244,11 @@ app.registerExtension({
             const updateStatusAndUI = (() => {
                 const applyTheme = (isExternal) => {
                     if (isExternal) {
-                        statusBar.style.background = "#1a2a4a";
-                        statusBar.style.color = "#60a5fa";
-                        const statusTextEl = statusBar.querySelector("span");
-                        if (statusTextEl) statusTextEl.textContent = "🔵 EXTERNAL INPUT";
+                        statusBar.style.background = "";
                         root.classList.remove("rs-theme-local");
                         root.classList.add("rs-theme-external");
                     } else {
-                        statusBar.style.background = "#1a3a1a";
-                        statusBar.style.color = "#4ade80";
-                        const statusTextEl = statusBar.querySelector("span");
-                        if (statusTextEl) statusTextEl.textContent = "🟢 LOCAL PROMPT";
+                        statusBar.style.background = "";
                         root.classList.remove("rs-theme-external");
                         root.classList.add("rs-theme-local");
                     }
@@ -277,19 +271,15 @@ app.registerExtension({
 
                     applyTheme(!isDisabled);
 
-                    if (toggleSwitch && toggleKnob) {
+                    if (toggleSwitch && localTab && externalTab) {
                         if (isDisabled) {
-                            // LOCAL PROMPT: toggle OFF (knob left, gray background)
-                            toggleSwitch.style.setProperty('background', '#3a3a3a', 'important');
-                            toggleSwitch.style.setProperty('border-color', '#555', 'important');
-                            toggleKnob.style.setProperty('transform', 'translateX(0)', 'important');
-                            toggleKnob.style.setProperty('background', '#999', 'important');
+                            // LOCAL PROMPT: local tab active (blue)
+                            localTab.classList.add('active');
+                            externalTab.classList.remove('active');
                         } else {
-                            // EXTERNAL INPUT: toggle ON (knob right, theme color background)
-                            toggleSwitch.style.setProperty('background', '#4a4a4a', 'important');
-                            toggleSwitch.style.setProperty('border-color', '#666', 'important');
-                            toggleKnob.style.setProperty('transform', 'translateX(12px)', 'important');
-                            toggleKnob.style.setProperty('background', '#fff', 'important');
+                            // EXTERNAL INPUT: external tab active (green)
+                            localTab.classList.remove('active');
+                            externalTab.classList.add('active');
                         }
                     }
 
@@ -297,21 +287,25 @@ app.registerExtension({
                 };
             })();
 
-            // Toggle switch click handler
-            if (toggleSwitch) {
-                toggleSwitch.addEventListener("click", (e) => {
+            // Toggle switch click handler - tab-style
+            if (localTab && externalTab) {
+                localTab.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    node.properties.rs_disable_state = true; // LOCAL PROMPT
+                    if (disableWidget) disableWidget.value = true;
+                    updateStatusAndUI();
+                    if (node.graph) node.graph.setDirtyCanvas(true, true);
+                });
+
+                externalTab.addEventListener("click", (e) => {
                     e.stopPropagation();
                     e.preventDefault();
                     const currentState = node.properties.rs_disable_state;
                     const newState = !currentState;
 
                     if (!newState && !hasTextInputConnection()) {
-                        const statusTextEl = statusBar.querySelector("span");
-                        if (statusTextEl) {
-                            statusTextEl.textContent = "⚠️ CONNECT text_input TO SWITCH";
-                        }
-                        statusBar.style.background = "#3a2a1a";
-                        statusBar.style.color = "#fbbf24";
+                        statusBar.style.background = "";
                         updateStatusAndUI();
                         setTimeout(() => updateStatusAndUI(), 1500);
                         return;
@@ -393,11 +387,9 @@ app.registerExtension({
                 }
 
                 // Force toggle to OFF state (LOCAL PROMPT) on initial creation
-                if (toggleSwitch && toggleKnob) {
-                    toggleSwitch.style.setProperty('background', '#3a3a3a', 'important');
-                    toggleSwitch.style.setProperty('border-color', '#555', 'important');
-                    toggleKnob.style.setProperty('transform', 'translateX(0)', 'important');
-                    toggleKnob.style.setProperty('background', '#999', 'important');
+                if (toggleSwitch && localTab && externalTab) {
+                    localTab.classList.add('active');
+                    externalTab.classList.remove('active');
                 }
 
                 startEnforcement();
@@ -644,7 +636,7 @@ app.registerExtension({
             // 初始化提示词管理器
             const {
                 generateBtn, randomBtn, quickInput,
-                customTextarea, statusBar, settingsBtn, toggleSwitch, toggleKnob,
+                customTextarea, statusBar, settingsBtn, toggleSwitch, localTab, externalTab,
                 presetListOverlay, presetNameInput, deleteConfirmOverlay, downloadModal,
                 settingsModal, loadModelsIntoSettings,
                 quickInputWrapper, populateTemplateSelector, tplSelector
@@ -700,17 +692,11 @@ app.registerExtension({
             const updateStatusAndUI = (() => {
                 const applyTheme = (isExternal) => {
                     if (isExternal) {
-                        statusBar.style.background = "#1a2a4a";
-                        statusBar.style.color = "#60a5fa";
-                        const statusTextEl = statusBar.querySelector("span");
-                        if (statusTextEl) statusTextEl.textContent = "🔵 EXTERNAL INPUT";
+                        statusBar.style.background = "";
                         root.classList.remove("rs-theme-local");
                         root.classList.add("rs-theme-external");
                     } else {
-                        statusBar.style.background = "#1a3a1a";
-                        statusBar.style.color = "#4ade80";
-                        const statusTextEl = statusBar.querySelector("span");
-                        if (statusTextEl) statusTextEl.textContent = "🟢 LOCAL PROMPT";
+                        statusBar.style.background = "";
                         root.classList.remove("rs-theme-external");
                         root.classList.add("rs-theme-local");
                     }
@@ -734,19 +720,15 @@ app.registerExtension({
 
                     applyTheme(!isDisabled);
 
-                    if (toggleSwitch && toggleKnob) {
+                    if (toggleSwitch && localTab && externalTab) {
                         if (isDisabled) {
-                            // LOCAL PROMPT: toggle OFF (knob left, gray background)
-                            toggleSwitch.style.setProperty('background', '#3a3a3a', 'important');
-                            toggleSwitch.style.setProperty('border-color', '#555', 'important');
-                            toggleKnob.style.setProperty('transform', 'translateX(0)', 'important');
-                            toggleKnob.style.setProperty('background', '#999', 'important');
+                            // LOCAL PROMPT: local tab active (blue)
+                            localTab.classList.add('active');
+                            externalTab.classList.remove('active');
                         } else {
-                            // EXTERNAL INPUT: toggle ON (knob right, theme color background)
-                            toggleSwitch.style.setProperty('background', '#4a4a4a', 'important');
-                            toggleSwitch.style.setProperty('border-color', '#666', 'important');
-                            toggleKnob.style.setProperty('transform', 'translateX(12px)', 'important');
-                            toggleKnob.style.setProperty('background', '#fff', 'important');
+                            // EXTERNAL INPUT: external tab active (green)
+                            localTab.classList.remove('active');
+                            externalTab.classList.add('active');
                         }
                     }
 
@@ -775,20 +757,25 @@ app.registerExtension({
                 behaviorManager.stopEnforcement(node);
             };
 
-            // Toggle switch click handler - NeoPromptEncoder 特有功能
-            if (toggleSwitch) {
-                toggleSwitch.addEventListener("click", (e) => {
+            // Toggle switch click handler - NeoPromptEncoder 特有功能 (tab-style)
+            if (localTab && externalTab) {
+                localTab.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    node.properties.rs_disable_state = true; // LOCAL PROMPT
+                    if (disableWidget) disableWidget.value = true;
+                    updateStatusAndUI();
+                    if (node.graph) node.graph.setDirtyCanvas(true, true);
+                });
+
+                externalTab.addEventListener("click", (e) => {
                     e.stopPropagation();
                     e.preventDefault();
                     const currentState = node.properties.rs_disable_state;
                     const newState = !currentState;
 
                     if (!newState && !hasTextInputConnection()) {
-                        const statusTextEl = statusBar.querySelector("span");
-                        if (statusTextEl) {
-                            statusTextEl.textContent = "⚠️ CONNECT text_input TO SWITCH";
-                        }
-                        statusBar.style.background = "#3a2a1a";
+                        statusBar.style.background = "";
                         statusBar.style.color = "#fbbf24";
                         // 保持当前状态不变，更新 UI
                         updateStatusAndUI();
@@ -850,11 +837,9 @@ app.registerExtension({
                 }
 
                 // Force toggle to OFF state (LOCAL PROMPT) on initial creation
-                if (toggleSwitch && toggleKnob) {
-                    toggleSwitch.style.setProperty('background', '#3a3a3a', 'important');
-                    toggleSwitch.style.setProperty('border-color', '#555', 'important');
-                    toggleKnob.style.setProperty('transform', 'translateX(0)', 'important');
-                    toggleKnob.style.setProperty('background', '#999', 'important');
+                if (toggleSwitch && localTab && externalTab) {
+                    localTab.classList.add('active');
+                    externalTab.classList.remove('active');
                 }
 
                 startEnforcement();
