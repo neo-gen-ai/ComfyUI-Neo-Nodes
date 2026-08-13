@@ -70,12 +70,10 @@ function createSerializeHandler() {
  */
 function createRestoreHandler(node, textWidget, customTextarea) {
     return function() {
+        // In-memory cache only - no localStorage
         const instanceUid = NodeBehaviors.getInstanceUid(node);
-        const textKey = NodeBehaviors.getTextKey(instanceUid);
-        const savedText = localStorage.getItem(textKey);
-        if (savedText !== null) {
-            if (customTextarea) customTextarea.value = savedText;
-            if (textWidget) textWidget.value = savedText;
+        if (textWidget && textWidget.value) {
+            if (customTextarea) customTextarea.value = textWidget.value;
         }
     };
 }

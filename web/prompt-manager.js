@@ -1296,8 +1296,7 @@ function createPromptManagerUI() {
                         }
 
                         const currentUid = node.properties.rs_instance_uid || node.widgets?.find(w => w.name === "instance_uid")?.value;
-                        const currentTextKey = `rs_prompt_${currentUid}`;
-                        localStorage.setItem(currentTextKey, data.text || "");
+                        // In-memory cache only - no localStorage
 
                         presetListOverlay.style.display = "none";
                         if (graph) graph.setDirtyCanvas(true, true);
@@ -1404,8 +1403,7 @@ function createPromptManagerUI() {
                         }
 
                         const currentUid = node.properties.rs_instance_uid || node.widgets?.find(w => w.name === "instance_uid")?.value;
-                        const currentTextKey = `rs_prompt_${currentUid}`;
-                        localStorage.setItem(currentTextKey, data.text || "");
+                        // In-memory cache only - no localStorage
 
                         presetListOverlay.style.display = "none";
                         if (graph) graph.setDirtyCanvas(true, true);
@@ -1497,8 +1495,7 @@ function createPromptManagerUI() {
                         }
 
                         const currentUid = node.properties.rs_instance_uid || node.widgets?.find(w => w.name === "instance_uid")?.value;
-                        const currentTextKey = `rs_prompt_${currentUid}`;
-                        localStorage.setItem(currentTextKey, data.text || "");
+                        // In-memory cache only - no localStorage
 
                         presetListOverlay.style.display = "none";
                         if (graph) graph.setDirtyCanvas(true, true);
@@ -1559,7 +1556,7 @@ function createPromptManagerUI() {
         });
 
         document.addEventListener("mousedown", (e) => {
-            if (!topRightBtnGroup.contains(e.target) && !presetListOverlay.contains(e.target)) {
+            if (!buttonGroup.contains(e.target) && !presetListOverlay.contains(e.target)) {
                 presetListOverlay.style.display = "none";
                 isListOpen = false;
             }

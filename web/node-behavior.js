@@ -24,15 +24,12 @@ function getInstanceUid(node) {
 }
 
 /**
- * 获取文本键（用于 localStorage）
+ * 获取文本键（已废弃，保留用于兼容性）
  */
 function getTextKey(instanceUid) {
     return `rs_prompt_${instanceUid}`;
 }
 
-/**
- * 保存文本到 localStorage 和 widget
- */
 /**
  * Set textarea value and dispatch synthetic "input" event (triggers auto-switch from EXTERNAL to LOCAL)
  */
@@ -42,9 +39,11 @@ function setTextAndTrigger(customTextarea, value) {
     customTextarea.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
+/**
+ * 保存文本到 widget（in-memory cache）
+ */
 function saveTextToStorage(node, textWidget, customTextarea, forceSave = false) {
     const instanceUid = getInstanceUid(node);
-    const textKey = getTextKey(instanceUid);
     const text = customTextarea?.value ?? textWidget?.value ?? "";
     
     if (textWidget && (forceSave || textWidget.value !== text)) {
@@ -53,27 +52,18 @@ function saveTextToStorage(node, textWidget, customTextarea, forceSave = false) 
     if (customTextarea && customTextarea.value !== text) {
         customTextarea.value = text;
     }
-    localStorage.setItem(textKey, text);
+    // In-memory cache only - no localStorage
     return text;
 }
 
 /**
- * 从 localStorage 恢复文本
+ * 从 widget 恢复文本（in-memory cache）
  */
 function restoreTextFromStorage(node, textWidget, customTextarea) {
-    const instanceUid = getInstanceUid(node);
-    const textKey = getTextKey(instanceUid);
-    const savedText = localStorage.getItem(textKey);
-    
-    if (savedText !== null) {
-        if (textWidget) textWidget.value = savedText;
-        if (customTextarea) customTextarea.value = savedText;
-        return savedText;
-    } else if (textWidget) {
-        const initialText = textWidget.value || "";
-        localStorage.setItem(textKey, initialText);
-        if (customTextarea) customTextarea.value = initialText;
-        return initialText;
+    // In-memory cache only - use widget value
+    if (textWidget && textWidget.value) {
+        if (customTextarea) customTextarea.value = textWidget.value;
+        return textWidget.value;
     }
     return null;
 }
@@ -295,7 +285,7 @@ function createPromptUpdateHandler(promptUI) {
                 customTextarea.value = event.detail.prompt;
                 if (textWidget) {
                     textWidget.value = event.detail.prompt;
-                    localStorage.setItem(getTextKey(currentUid), event.detail.prompt);
+                    // In-memory cache only - no localStorage
                 }
                 if (graph) graph.setDirtyCanvas(true, true);
             }, 10);
@@ -308,10 +298,7 @@ function createPromptUpdateHandler(promptUI) {
  */
 function createBeforeUnloadHandler(node, textWidget) {
     return () => {
-        if (textWidget?.value) {
-            const currentUid = getInstanceUid(node);
-            localStorage.setItem(getTextKey(currentUid), textWidget.value);
-        }
+        // In-memory cache only - no localStorage
         const disableWidget = node.widgets?.find(w => w.name === "disable_text_input");
         if (disableWidget) node.properties.rs_disable_state = disableWidget.value;
     };
