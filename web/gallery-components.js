@@ -345,6 +345,8 @@ export class GalleryComponents {
         }
         const menuItems = [];
         gallery.app.graph._nodes.forEach(node => {
+            // Skip nodes that are in bypass state (mode === 4, set by Ctrl+B or RS_Bypass)
+            if (node.mode === 4) return;
             if (!node.widgets) return;
             node.widgets.forEach((widget, index) => {
                 const wn = (widget.name || '').toLowerCase();
@@ -353,7 +355,7 @@ export class GalleryComponents {
                 if (isLoadVideo && widget.type === 'combo' && /video/.test(wn)) {
                     menuItems.push({ nodeId: node.id, widgetIndex: index, label: `\u25B8 ${node.title || 'Node'} \u2192 ${widget.name}`, isLoadVideo, isText: false });
                 } else if ((isLoadVideo || isVideoWidget) && widget.inputEl) {
-                    menuItems.push({ nodeId: node.id, widgetIndex: index, label: `\u25B8 ${node.title || 'Node'} \u2192 ${widget.name}`, isLoadVideo, isText: widget.type === 'customtext' || widget.type === 'text' });
+                    menuItems.push({ nodeId: node.id, widgetIndex: index, label: `\u25B8 ${node.title || 'Node'} \u2192 ${widget.name}`, isLoadImage, isText: widget.type === 'customtext' || widget.type === 'text' });
                 }
             });
         });
@@ -428,6 +430,8 @@ export class GalleryComponents {
         }
         const menuItems = [];
         gallery.app.graph._nodes.forEach(node => {
+            // Skip nodes that are in bypass state (mode === 4, set by Ctrl+B or RS_Bypass)
+            if (node.mode === 4) return;
             if (!node.widgets) return;
             node.widgets.forEach((widget, index) => {
                 const wn = (widget.name || '').toLowerCase();
@@ -504,6 +508,8 @@ export class GalleryComponents {
         const menuItems = [];
 
         gallery.app.graph._nodes.forEach(node => {
+            // Skip nodes that are in bypass state (mode === 4, set by Ctrl+B or RS_Bypass)
+            if (node.mode === 4) return;
             if (!node.widgets) return;
             node.widgets.forEach((widget, index) => {
                 const wn = (widget.name || '').toLowerCase();
