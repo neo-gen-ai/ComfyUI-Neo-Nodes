@@ -178,6 +178,8 @@ def _scan_templates_recursive(base_dir: str, source: str = "custom") -> list:
         elif entry.endswith('.json') and not entry.startswith('_'):
             data = _load_template_file(full_path)
             if data:
+                # Override source based on actual directory location
+                data['source'] = source
                 data['_mtime'] = os.path.getmtime(full_path)
                 templates.append(data)
     return templates
@@ -1037,12 +1039,13 @@ async def rs_prompts_delete_template(request):
             # 尝试在两个目录中查找并删除
             for search_dir in [TEMPLATE_CUSTOM_DIR, TEMPLATE_PRESETS_DIR]:
                 filepath = os.path.join(search_dir, f"{template_id}.json")
+                
                 if os.path.exists(filepath):
+                    # 根据文件所在目录确定来源
                     source = "custom" if search_dir == TEMPLATE_CUSTOM_DIR else "presets"
                     
                     # 预设模版不允许删除
-                    tpl_data = _load_template_file(filepath)
-                    if tpl_data and tpl_data.get("source") == "presets":
+                    if source == "presets":
                         return web.Response(status=403, text="Cannot delete preset template")
                     
                     os.remove(filepath)

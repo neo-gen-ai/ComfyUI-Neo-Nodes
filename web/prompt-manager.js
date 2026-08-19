@@ -3,6 +3,9 @@
  * 提示词管理模块 - UI 组件创建 + 保存、列表、加载、删除
  */
 
+// Remember last opened settings tab
+let _lastSettingsTab = "llm"; // "llm" or "templates"
+
 import {
     savePrompt,
     loadPrompt,
@@ -374,7 +377,7 @@ function createSettingsModal() {
     // ==========================================
     // Tab switching logic
     // ==========================================
-    const switchToTab = (tabBtn, contentEl) => {
+    const switchToTab = (tabBtn, contentEl, tabName) => {
         llmTabBtn.classList.remove("active");
         templateTabBtn.classList.remove("active");
         tabBtn.classList.add("active");
@@ -385,21 +388,38 @@ function createSettingsModal() {
         
         // Show the selected tab content
         contentEl.style.cssText = "display: block !important";
+        
+        // Remember last opened tab
+        _lastSettingsTab = tabName;
     };
 
-    // Initial state: LLM tab visible, Template tab hidden
-    llmTabContent.style.cssText = "display: block !important";
-    templateTabContent.style.cssText = "display: none !important";
-
     let _templatesLoaded = false;
+
+    // Initial state: restore from memory or default to LLM tab
+    if (_lastSettingsTab === "templates") {
+        llmTabContent.style.cssText = "display: none !important";
+        templateTabContent.style.cssText = "display: block !important";
+        llmTabBtn.classList.remove("active");
+        templateTabBtn.classList.add("active");
+        // Load templates if restoring to templates tab
+        if (!_templatesLoaded) {
+            loadTemplatesList().then(() => { _templatesLoaded = true; });
+        }
+    } else {
+        llmTabContent.style.cssText = "display: block !important";
+        templateTabContent.style.cssText = "display: none !important";
+        llmTabBtn.classList.add("active");
+        templateTabBtn.classList.remove("active");
+    }
+
     const handleLlmClick = (e) => { 
         e.stopImmediatePropagation(); 
-        switchToTab(llmTabBtn, llmTabContent); 
+        switchToTab(llmTabBtn, llmTabContent, "llm"); 
     };
     
     const handleTemplateClick = async (e) => { 
         e.stopImmediatePropagation(); 
-        switchToTab(templateTabBtn, templateTabContent); 
+        switchToTab(templateTabBtn, templateTabContent, "templates"); 
         if (!_templatesLoaded) {
             await loadTemplatesList();
             _templatesLoaded = true;
@@ -662,6 +682,7 @@ function createSettingsModal() {
     // Template management state and functions
     // ==========================================
     let currentTemplateId = null;
+    let currentTemplateSource = "custom";
     
     async function loadTemplatesList() {
         tplListBody.innerHTML = "";
@@ -676,10 +697,18 @@ function createSettingsModal() {
             const row = document.createElement("div");
             row.className = "rs-tpl-item";
             row.dataset.id = tpl.id;
+            row.style.cursor = "default";
             
             const leftDiv = mkEl("div", "rs-preset-left");
             const contentSpan = mkEl("span", "rs-preset-content");
             contentSpan.textContent = tpl.name || tpl.id;
+            contentSpan.style.cursor = "pointer";
+            contentSpan.addEventListener("mousedown", (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                loadTemplateEditor(tpl);
+            }, true);
             
             const sourceBadge = mkEl("span", "rs-source-badge");
             sourceBadge.textContent = tpl.source === "presets" ? "SYS" : "USR";
@@ -697,36 +726,86 @@ function createSettingsModal() {
                 contentSpan.appendChild(tagsSpan);
             }
             
+            // Add view/edit button for all templates
+            const viewBtn = mkEl("span", "rs-delete-icon");
+            viewBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>';
+            viewBtn.title = "View/Edit template";
+            viewBtn.style.cursor = "pointer";
+            viewBtn.style.display = "inline-block";
+            viewBtn.style.pointerEvents = "auto";
+            viewBtn.style.marginRight = "8px";
+            
+            viewBtn.addEventListener("mousedown", (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                loadTemplateEditor(tpl);
+            }, true);
+            row.appendChild(viewBtn);
+            
             if (tpl.source === "custom") {
                 const deleteBtn = mkEl("span", "rs-delete-icon");
                 deleteBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>';
-                deleteBtn.onclick = async (e) => {
+                deleteBtn.style.cursor = "pointer";
+                deleteBtn.style.display = "inline-block";
+                deleteBtn.style.pointerEvents = "auto";
+                deleteBtn.style.zIndex = "1000";
+                
+                deleteBtn.addEventListener("mousedown", async (e) => {
                     e.stopPropagation();
-                    if (!confirm(`Delete template "${tpl.name}"?`)) return;
+                    e.preventDefault();
+                    e.stopImmediatePropagation();
+                    
+                    if (!confirm(`Delete template "${tpl.name}"?`)) {
+                        return;
+                    }
+                    
                     const result = await deleteTemplate(tpl.id);
-                    if (result.success) loadTemplatesList();
-                };
+                    if (result.success) {
+                        loadTemplatesList();
+                    } else {
+                        alert(`Delete failed: ${result.error || "Unknown error"}`);
+                    }
+                }, true);
                 row.appendChild(deleteBtn);
             } else {
                 const copyBtn = mkEl("span", "rs-delete-icon");
-                copyBtn.innerHTML = '📋';
+                copyBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
                 copyBtn.title = "Copy as custom template";
-                copyBtn.onclick = async (e) => {
+                copyBtn.style.cursor = "pointer";
+                copyBtn.style.display = "inline-block";
+                copyBtn.style.pointerEvents = "auto";
+                copyBtn.addEventListener("mousedown", (e) => {
                     e.stopPropagation();
+                    e.preventDefault();
+                    e.stopImmediatePropagation();
                     tplCopyAsCustom(tpl);
-                };
+                }, true);
                 row.appendChild(copyBtn);
             }
             
-            row.addEventListener("click", () => loadTemplateEditor(tpl));
             tplListBody.appendChild(row);
         });
     }
     
     async function loadTemplateEditor(tpl) {
         currentTemplateId = tpl.id;
+        currentTemplateSource = tpl.source || "custom";
         tplNameInput.value = tpl.name || tpl.id;
         tplContentTextarea.value = tpl.content || "";
+        
+        // Disable editing for preset templates
+        const isPreset = currentTemplateSource === "presets";
+        tplNameInput.disabled = isPreset;
+        tplContentTextarea.disabled = isPreset;
+        
+        // Update save button visibility/behavior based on template type
+        if (isPreset) {
+            tplSaveBtn.style.display = "none";
+        } else {
+            tplSaveBtn.style.display = "inline-block";
+        }
+        
         tplEditorArea.style.display = "block";
     }
     
@@ -757,8 +836,12 @@ function createSettingsModal() {
         e.stopPropagation();
         e.stopImmediatePropagation();
         currentTemplateId = null;
+        currentTemplateSource = "custom";
         tplNameInput.value = "";
         tplContentTextarea.value = "";
+        tplNameInput.disabled = false;
+        tplContentTextarea.disabled = false;
+        tplSaveBtn.style.display = "inline-block";
         tplEditorArea.style.display = "block";
         tplNameInput.focus();
     };
