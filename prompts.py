@@ -11,6 +11,7 @@ import server
 import torch
 from aiohttp import web
 import threading
+import copy
 import logging
 from pathlib import Path
 from server import PromptServer
@@ -177,6 +178,8 @@ def _scan_templates_recursive(base_dir: str, source: str = "custom") -> list:
         elif entry.endswith('.json') and not entry.startswith('_'):
             data = _load_template_file(full_path)
             if data:
+                # Override source based on actual directory location
+                data['source'] = source
                 data['_mtime'] = os.path.getmtime(full_path)
                 templates.append(data)
     return templates
@@ -545,15 +548,21 @@ async def rs_prompts_set_model(request):
 # Remote LLM Configuration API Routes
 # ==========================================
 
+def _mask_remote_config(config: dict) -> dict:
+    """复制配置并隐藏所有 provider 的 api_key"""
+    safe = copy.deepcopy(config)
+    for slot in safe.get("providers", {}).values():
+        if isinstance(slot, dict) and slot.get("api_key"):
+            slot["api_key"] = "***"
+    return safe
+
+
 @server.PromptServer.instance.routes.get("/rs_prompts/remote_llm_config")
 async def rs_prompts_get_remote_llm_config(request):
-    """获取远程 LLM 配置"""
+    """获取远程 LLM 配置（按 provider 分槽，返回时隐藏 api_key）"""
     try:
         config = get_remote_llm_config()
-        # 返回时隐藏 api_key
-        safe_config = config.copy()
-        safe_config["api_key"] = "***" if safe_config.get("api_key") else ""
-        return web.json_response(safe_config)
+        return web.json_response(_mask_remote_config(config))
     except Exception as e:
         logger.error(f"Error getting remote LLM config: {e}")
         return web.Response(status=500, text=str(e))
@@ -561,36 +570,15 @@ async def rs_prompts_get_remote_llm_config(request):
 
 @server.PromptServer.instance.routes.post("/rs_prompts/remote_llm_config")
 async def rs_prompts_set_remote_llm_config(request):
-    """设置远程 LLM 配置"""
+    """设置远程 LLM 配置（只更新对应 provider，不覆盖其它 provider）"""
     try:
         data = await request.json()
+        set_remote_llm_config(data)
         config = get_remote_llm_config()
-        
-        # 更新配置
-        if "enabled" in data:
-            config["enabled"] = bool(data["enabled"])
-        if "provider" in data:
-            config["provider"] = data["provider"]
-        if "api_key" in data and data["api_key"]:
-            # 只有当提供新的 api_key 时才更新
-            config["api_key"] = data["api_key"]
-        if "base_url" in data:
-            config["base_url"] = data["base_url"]
-        if "model" in data:
-            config["model"] = data["model"]
-        if "max_tokens" in data:
-            config["max_tokens"] = int(data["max_tokens"])
-        if "temperature" in data:
-            config["temperature"] = float(data["temperature"])
-        if "timeout" in data:
-            config["timeout"] = int(data["timeout"])
-        
-        set_remote_llm_config(config)
-        
         # 返回成功，隐藏 api_key
         return web.json_response({
-            "success": True, 
-            "config": {k: v for k, v in config.items() if k != "api_key"}
+            "success": True,
+            "config": _mask_remote_config(config)
         })
     except Exception as e:
         logger.error(f"Error setting remote LLM config: {e}")
@@ -887,24 +875,45 @@ async def rs_prompts_fetch_remote_models(request):
     try:
         import aiohttp
         data = await request.json()
-        base_url = data.get("base_url", "").rstrip("/")
+        base_url = (data.get("base_url", "") or "").strip().rstrip("/")
         
         if not base_url:
             return web.Response(status=400, text="base_url required")
         
-        # Ensure /v1 suffix
-        url = f"{base_url}/v1/models" if not base_url.endswith("/v1") else f"{base_url}/models"
+        # 兼容 LM Studio / Ollama 的各种 base URL 写法
+        if base_url.endswith("/models"):
+            url = base_url
+        elif base_url.endswith("/api"):
+            url = f"{base_url}/tags"      # Ollama 原生接口
+        elif base_url.endswith("/v1"):
+            url = f"{base_url}/models"
+        else:
+            url = f"{base_url}/v1/models"  # OpenAI 兼容接口
         
         async with aiohttp.ClientSession() as session:
             async with session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
-                if resp.status == 200:
-                    models_data = await resp.json()
-                    return web.json_response({"success": True, "data": models_data})
-                else:
-                    return web.json_response(
-                        {"success": False, "error": f"HTTP {resp.status}"},
-                        status=502
-                    )
+                if resp.status != 200:
+                    return web.json_response({"success": False, "error": f"HTTP {resp.status}"}, status=502)
+                payload = await resp.json()
+
+        models = []
+        data_list = payload.get("data")
+        if isinstance(data_list, list):  # OpenAI 兼容: {"data": [{"id": ...}]}
+            for item in data_list:
+                if isinstance(item, str):
+                    models.append(item)
+                elif isinstance(item, dict):
+                    models.append(item.get("id") or item.get("name") or "")
+        models_list = payload.get("models")
+        if isinstance(models_list, list):  # Ollama tags: {"models": [{"name": ...}]}
+            for item in models_list:
+                if isinstance(item, str):
+                    models.append(item)
+                elif isinstance(item, dict):
+                    models.append(item.get("name") or item.get("id") or "")
+
+        models = sorted({m for m in models if m})
+        return web.json_response({"success": True, "models": models})
     except asyncio.TimeoutError:
         return web.json_response({"success": False, "error": "Timeout"}, status=504)
     except Exception as e:
@@ -1030,12 +1039,13 @@ async def rs_prompts_delete_template(request):
             # 尝试在两个目录中查找并删除
             for search_dir in [TEMPLATE_CUSTOM_DIR, TEMPLATE_PRESETS_DIR]:
                 filepath = os.path.join(search_dir, f"{template_id}.json")
+                
                 if os.path.exists(filepath):
+                    # 根据文件所在目录确定来源
                     source = "custom" if search_dir == TEMPLATE_CUSTOM_DIR else "presets"
                     
                     # 预设模版不允许删除
-                    tpl_data = _load_template_file(filepath)
-                    if tpl_data and tpl_data.get("source") == "presets":
+                    if source == "presets":
                         return web.Response(status=403, text="Cannot delete preset template")
                     
                     os.remove(filepath)
