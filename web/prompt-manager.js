@@ -433,13 +433,16 @@ function createSettingsModal() {
             const result = await resp.json();
             if (!result.success) throw new Error(result.error || 'Failed');
             
-            const data = result.data;
             targetSelect.innerHTML = '';
+
+            const models = result.models || (result.data && result.data.data) || [];
             
-            (data.data || []).forEach(m => {
+            models.forEach(m => {
+                const id = typeof m === 'string' ? m : (m && (m.id || m.name));
+                if (!id) return;
                 const opt = document.createElement('option');
-                opt.value = m.id;
-                opt.textContent = m.id;
+                opt.value = id;
+                opt.textContent = id;
                 targetSelect.appendChild(opt);
             });
             
@@ -532,8 +535,21 @@ function createSettingsModal() {
         }
     };
 
+    const REMOTE_PROVIDER_DEFAULTS = {
+        lmstudio: { baseUrl: "http://localhost:1234/v1" },
+        ollama: { baseUrl: "http://localhost:11430/v1" }
+    };
+
+    let savedRemoteConfig = null;
+
     const handleProviderChange = async () => {
         const provider = providerSelect.value;
+
+        // Load this provider's own saved config so switching providers never overwrites each other
+        const fullConfig = await window.NeoNodes?.getRemoteLLMConfig?.() || {};
+        savedRemoteConfig = fullConfig;
+        const saved = (fullConfig.providers && fullConfig.providers[provider]) || {};
+        const mask = (v) => (v === '***' ? '' : (v || ''));
         
         if (provider === 'local') {
             // Local GGUF: show local model select, hide everything else
@@ -554,20 +570,20 @@ function createSettingsModal() {
             modelInput.placeholder = "e.g., gpt-4o-mini";
             localModelSelectEl.style.setProperty('display', 'none', 'important');
             modelSelectEl.style.setProperty('display', 'none', 'important');
-        } else if (provider === 'lmstudio') {
+            apiKeyInput.value = mask(saved.api_key);
+            baseUrlInput.value = saved.base_url || "";
+            modelInput.value = saved.model || "";
+        } else if (provider === 'lmstudio' || provider === 'ollama') {
             apiKeyRow.style.display = "none";
-            baseUrlInput.value = "http://localhost:1234/v1";
             modelInput.style.setProperty('display', 'none', 'important');
             localModelSelectEl.style.setProperty('display', 'none', 'important');
             modelSelectEl.style.setProperty('display', 'block', 'important');
-            fetchModelsFromUrl("http://localhost:1234/v1", modelSelectEl);
-        } else if (provider === 'ollama') {
-            apiKeyRow.style.display = "none";
-            baseUrlInput.value = "http://localhost:11430/v1";
-            modelInput.style.setProperty('display', 'none', 'important');
-            localModelSelectEl.style.setProperty('display', 'none', 'important');
-            modelSelectEl.style.setProperty('display', 'block', 'important');
-            fetchModelsFromUrl("http://localhost:11430/v1", modelSelectEl);
+            const defaultBaseUrl = REMOTE_PROVIDER_DEFAULTS[provider].baseUrl;
+            baseUrlInput.value = saved.base_url || defaultBaseUrl;
+            await fetchModelsFromUrl(baseUrlInput.value.trim(), modelSelectEl);
+            if (saved.model) {
+                setSelectedModelValue(modelSelectEl, saved.model);
+            }
         }
     };
 
@@ -588,14 +604,20 @@ function createSettingsModal() {
     const autoSaveConfig = () => {
         if (saveTimeout) clearTimeout(saveTimeout);
         saveTimeout = setTimeout(async () => {
+            const provider = providerSelect.value;
             const modelValue = getModelValue();
             const config = {
-                enabled: providerSelect.value !== 'local',
-                provider: providerSelect.value,
-                model: modelValue,
+                enabled: provider !== 'local',
+                provider: provider,
                 api_key: apiKeyInput.value,
                 base_url: baseUrlInput.value
             };
+            // 远程模型下拉为空（加载失败或未选择）时不覆盖已保存的 model
+            if (provider === 'lmstudio' || provider === 'ollama') {
+                if (modelValue) config.model = modelValue;
+            } else {
+                config.model = modelValue;
+            }
 
             const result = await window.NeoNodes?.saveRemoteLLMConfig?.(config);
             
@@ -622,6 +644,16 @@ function createSettingsModal() {
     // Auto-save on field changes (blur/change) - provider select already has its handler above
     apiKeyInput.addEventListener("blur", autoSaveConfig);
     baseUrlInput.addEventListener("blur", autoSaveConfig);
+    // Auto-fetch models when the base URL field changes (LM Studio / Ollama)
+    baseUrlInput.addEventListener("change", async () => {
+        if (providerSelect.value === 'lmstudio' || providerSelect.value === 'ollama') {
+            const url = baseUrlInput.value.trim();
+            if (!url) return;
+            await fetchModelsFromUrl(url, modelSelectEl);
+            const savedModel = savedRemoteConfig?.providers?.[providerSelect.value]?.model;
+            if (savedModel) setSelectedModelValue(modelSelectEl, savedModel);
+        }
+    });
     modelInput.addEventListener("blur", autoSaveConfig);
     modelSelectEl.addEventListener("change", autoSaveConfig);
     localModelSelectEl.addEventListener("change", autoSaveConfig);
@@ -798,6 +830,7 @@ function createSettingsModal() {
         fetchModelsFromUrl,
         setSelectedModelValue,
         fetchLocalModels,
+        handleProviderChange,
         _llmMode: "local",
         _handleLocalModeClick: null,
         _handleRemoteModeClick: null
@@ -810,126 +843,24 @@ function createSettingsModal() {
 // ==========================================
 
 async function loadRemoteLLMConfig(settingsModal) {
-    const config = await window.NeoNodes?.getRemoteLLMConfig?.();
-    
+    const config = await window.NeoNodes?.getRemoteLLMConfig?.() || {};
+
     // Determine provider value - default to 'local' if no valid provider or no config
-    let providerValue = config ? (config.provider || 'local') : 'local';
+    let providerValue = config.active_provider || 'local';
     if (!['local', 'openai', 'lmstudio', 'ollama'].includes(providerValue)) {
         providerValue = 'openai';
     }
-    
+
     // If enabled is false, default to local
-    if (config && config.enabled === false) {
+    if (config.enabled === false) {
         providerValue = 'local';
     }
-    
+
     settingsModal.providerSelect.value = providerValue;
-    if (config) {
-        settingsModal.apiKeyInput.value = config.api_key === '***' ? '' : (config.api_key || '');
-        if (config.base_url) {
-            settingsModal.baseUrlInput.value = config.base_url;
-        }
-    }
 
-    // Always apply provider change logic to show/hide fields correctly
-    const provider = settingsModal.providerSelect.value;
-    
-    if (provider === 'local') {
-        settingsModal.apiKeyRow.style.display = "none";
-        settingsModal.baseUrlRow.style.display = "none";
-        settingsModal.modelInput.style.setProperty('display', 'none', 'important');
-        settingsModal.modelSelectEl.style.setProperty('display', 'none', 'important');
-        
-        // Show local model select and fetch models - use the element reference directly
-        const sel = settingsModal.localModelSelectEl;
-        if (sel) {
-            sel.style.setProperty('display', 'block', 'important');
-            
-            // Small delay to ensure DOM is ready before fetching
-            setTimeout(() => {
-                sel.innerHTML = '';
-                const loadingOpt = document.createElement('option');
-                loadingOpt.value = '__loading__';
-                loadingOpt.textContent = '⏳ Loading...';
-                sel.appendChild(loadingOpt);
-                sel.disabled = true;
-
-                fetch('/rs_prompts/get_models')
-                    .then(r => r.json())
-                    .then(data => {
-                        sel.innerHTML = '';
-                        (data.models || []).forEach(m => {
-                            const opt = document.createElement('option');
-                            opt.value = m.key;
-                            opt.textContent = m.name || m.key;
-                            if (m.key === data.current_model) opt.selected = true;
-                            sel.appendChild(opt);
-                        });
-                        if (!sel.options.length) {
-                            sel.innerHTML = '<option value="">No models found</option>';
-                        }
-                    }).catch(() => {
-                        sel.innerHTML = '<option value="">❌ Failed to load</option>';
-                    }).finally(() => {
-                        sel.disabled = false;
-                    });
-            }, 100);
-        }
-    } else if (provider === 'openai') {
-        settingsModal.apiKeyRow.style.display = "flex";
-        settingsModal.baseUrlRow.style.display = "flex";
-        settingsModal.modelInput.style.setProperty('display', '', '');
-        settingsModal.modelSelectEl.style.setProperty('display', 'none', 'important');
-        settingsModal.localModelSelectEl?.style.setProperty('display', 'none', 'important');
-        
-        if (config && config.model) {
-            setTimeout(() => {
-                const mi = document.getElementById("rs-remote-model");
-                if (mi) mi.value = config.model;
-            }, 50);
-        }
-    } else if (provider === 'lmstudio') {
-        settingsModal.apiKeyRow.style.display = "none";
-        settingsModal.baseUrlInput.value = "http://localhost:1234/v1";
-        settingsModal.modelInput.style.setProperty('display', 'none', 'important');
-        settingsModal.localModelSelectEl?.style.setProperty('display', 'none', 'important');
-        settingsModal.modelSelectEl.style.setProperty('display', 'block', 'important');
-        
-        setTimeout(() => {
-            if (settingsModal.fetchModelsFromUrl) {
-                settingsModal.fetchModelsFromUrl("http://localhost:1234/v1", settingsModal.modelSelectEl).then(() => {
-                    if (config?.model && settingsModal.modelSelectEl) {
-                        for (let i = 0; i < settingsModal.modelSelectEl.options.length; i++) {
-                            if (settingsModal.modelSelectEl.options[i].value === config.model) {
-                                settingsModal.modelSelectEl.value = config.model;
-                                break;
-                            }
-                        }
-                    }
-                }).catch(() => {});
-            }
-        }, 50);
-    } else if (provider === 'ollama') {
-        settingsModal.apiKeyRow.style.display = "none";
-        settingsModal.baseUrlInput.value = "http://localhost:11430/v1";
-        settingsModal.modelInput.style.setProperty('display', 'none', 'important');
-        settingsModal.localModelSelectEl?.style.setProperty('display', 'none', 'important');
-        settingsModal.modelSelectEl.style.setProperty('display', 'block', 'important');
-        
-        setTimeout(() => {
-            if (settingsModal.fetchModelsFromUrl) {
-                settingsModal.fetchModelsFromUrl("http://localhost:11430/v1", settingsModal.modelSelectEl).then(() => {
-                    if (config?.model && settingsModal.modelSelectEl) {
-                        for (let i = 0; i < settingsModal.modelSelectEl.options.length; i++) {
-                            if (settingsModal.modelSelectEl.options[i].value === config.model) {
-                                settingsModal.modelSelectEl.value = config.model;
-                                break;
-                            }
-                        }
-                    }
-                }).catch(() => {});
-            }
-        }, 50);
+    // Load this provider's saved config and show/hide fields correctly
+    if (settingsModal.handleProviderChange) {
+        await settingsModal.handleProviderChange();
     }
 }
 

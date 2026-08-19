@@ -170,25 +170,105 @@ TRANSLATION_CACHE = TranslationCache(max_size=200)
 
 _REMOTE_CONFIG_PATH = os.path.join(_CONFIGS_DIR, "remote_llm_config.json")
 
-def _load_remote_config() -> Dict[str, Any]:
-    """加载远程 LLM 配置"""
-    try:
-        if os.path.exists(_REMOTE_CONFIG_PATH):
-            with open(_REMOTE_CONFIG_PATH, "r", encoding="utf-8") as f:
-                return json.load(f)
-    except Exception as e:
-        logger.error(f"Failed to load remote LLM config: {e}")
-    return {
-        "enabled": False,
-        "provider": "openai",
+# 各远程 provider 的独立默认配置，切换 provider 时互不影响
+_REMOTE_PROVIDER_DEFAULTS = {
+    "openai": {
         "api_key": "",
         "base_url": "",
         "model": "gpt-4o-mini",
         "max_tokens": 500,
         "temperature": 0.0,
         "timeout": 60,
-        "auto_unload_local": False
+    },
+    "lmstudio": {
+        "api_key": "",
+        "base_url": "http://localhost:1234/v1",
+        "model": "",
+        "max_tokens": 500,
+        "temperature": 0.0,
+        "timeout": 60,
+    },
+    "ollama": {
+        "api_key": "",
+        "base_url": "http://localhost:11430/v1",
+        "model": "",
+        "max_tokens": 500,
+        "temperature": 0.0,
+        "timeout": 60,
+    },
+}
+
+
+def _default_remote_config() -> Dict[str, Any]:
+    """默认远程配置：按 provider 分槽存储，互不覆盖"""
+    return {
+        "enabled": False,
+        "active_provider": "openai",
+        "auto_unload_local": False,
+        "providers": {key: dict(defaults) for key, defaults in _REMOTE_PROVIDER_DEFAULTS.items()},
     }
+
+
+def _migrate_remote_config(config: Dict[str, Any]) -> Dict[str, Any]:
+    """兼容旧版扁平配置格式，迁移为按 provider 分槽存储"""
+    providers = config.get("providers")
+    if isinstance(providers, dict):
+        # 已是最新格式，补齐缺失的 provider 槽位
+        for key, defaults in _REMOTE_PROVIDER_DEFAULTS.items():
+            providers.setdefault(key, dict(defaults))
+        config.setdefault("enabled", False)
+        config.setdefault("auto_unload_local", False)
+        active = config.get("active_provider") or "openai"
+        if active not in _REMOTE_PROVIDER_DEFAULTS:
+            active = "openai"
+        config["active_provider"] = active
+        return config
+
+    # 旧格式：单 provider 扁平结构
+    new = _default_remote_config()
+    new["auto_unload_local"] = bool(config.get("auto_unload_local", False))
+    new["enabled"] = bool(config.get("enabled", False))
+    provider = config.get("provider", "openai")
+    if provider not in _REMOTE_PROVIDER_DEFAULTS:
+        # 旧配置可能把远程连接信息放在 "local" 下，按 base_url 推断归属
+        base_url = str(config.get("base_url", "") or "")
+        if "1234" in base_url:
+            provider = "lmstudio"
+        elif "11430" in base_url or "11434" in base_url:
+            provider = "ollama"
+        else:
+            provider = "openai"
+        new["enabled"] = False
+    new["active_provider"] = provider
+    for key in ("api_key", "base_url", "model", "max_tokens", "temperature", "timeout"):
+        if key in config:
+            new["providers"][provider][key] = config[key]
+    return new
+
+
+def _get_active_remote_config() -> Dict[str, Any]:
+    """返回当前激活 provider 的扁平配置（含 provider/enabled 字段），供远程推理使用"""
+    config = _load_remote_config()
+    provider = config.get("active_provider", "openai")
+    slot = config.get("providers", {}).get(provider)
+    merged = dict(_REMOTE_PROVIDER_DEFAULTS.get(provider, {}))
+    if isinstance(slot, dict):
+        merged.update(slot)
+    merged["provider"] = provider
+    merged["enabled"] = bool(config.get("enabled", False))
+    return merged
+
+
+
+def _load_remote_config() -> Dict[str, Any]:
+    """加载远程 LLM 配置"""
+    try:
+        if os.path.exists(_REMOTE_CONFIG_PATH):
+            with open(_REMOTE_CONFIG_PATH, "r", encoding="utf-8") as f:
+                return _migrate_remote_config(json.load(f))
+    except Exception as e:
+        logger.error(f"Failed to load remote LLM config: {e}")
+    return _default_remote_config()
 
 def _save_remote_config(config: Dict[str, Any]):
     """保存远程 LLM 配置"""
@@ -205,7 +285,37 @@ def get_remote_llm_config() -> Dict[str, Any]:
 
 def set_remote_llm_config(config: Dict[str, Any]):
     """设置远程 LLM 配置"""
-    _save_remote_config(config)
+    if isinstance(config.get("providers"), dict):
+        # 完整结构：合并保存
+        merged = _load_remote_config()
+        merged.update(config)
+        _save_remote_config(_migrate_remote_config(merged))
+        return
+
+    # 扁平结构：只更新对应 provider 的槽位，不影响其它 provider
+    current = _load_remote_config()
+    provider = config.get("provider")
+    if provider in current.get("providers", {}):
+        slot = current["providers"][provider]
+        for key in ("base_url", "model", "max_tokens", "temperature", "timeout"):
+            if key in config:
+                slot[key] = config[key]
+        if config.get("api_key"):
+            slot["api_key"] = config["api_key"]
+        if config.get("enabled"):
+            current["enabled"] = True
+            current["active_provider"] = provider
+        else:
+            current["enabled"] = False
+        if "auto_unload_local" in config:
+            current["auto_unload_local"] = bool(config["auto_unload_local"])
+        _save_remote_config(current)
+        logger.info(f"Remote LLM provider '{provider}' config updated")
+        return
+
+    # provider 为 local 或未知：只更新启用状态
+    current["enabled"] = bool(config.get("enabled", current.get("enabled", False)))
+    _save_remote_config(current)
 
 # 远程 LLM 模式常量
 LLM_MODE_LOCAL = "local"
@@ -214,10 +324,9 @@ LLM_MODE_REMOTE = "remote"
 def get_current_mode() -> str:
     """获取当前 LLM 模式：local 或 remote（基于 provider 值判断）"""
     config = _load_remote_config()
-    provider = config.get("provider", "local")
-    if provider == "local":
-        return LLM_MODE_LOCAL
-    return LLM_MODE_REMOTE
+    if config.get("enabled") and config.get("active_provider") in _REMOTE_PROVIDER_DEFAULTS:
+        return LLM_MODE_REMOTE
+    return LLM_MODE_LOCAL
 
 
 # ==========================================
@@ -726,7 +835,10 @@ class RemoteLLMClient:
 
         # 构建请求 URL
         if self.base_url:
-            url = f"{self.base_url.rstrip('/')}/chat/completions"
+            base = self.base_url.rstrip('/')
+            if not base.endswith('/v1'):
+                base = f"{base}/v1"
+            url = f"{base}/chat/completions"
         else:
             url = "https://api.openai.com/v1/chat/completions"
 
@@ -1025,7 +1137,7 @@ def _run_local_inference(system_prompt: str, user_text: str, max_tokens: int,
 def _run_remote_inference(system_prompt: str, user_text: str, max_tokens: int,
                           images: Optional[Any] = None, stream: bool = False) -> Any:  # type: ignore[return-type]
     """执行远程 LLM 推理"""
-    config = _load_remote_config()
+    config = _get_active_remote_config()
 
     if not config.get("enabled", False):
         raise RuntimeError("Remote LLM is not enabled. Please configure remote_llm_config.json")
