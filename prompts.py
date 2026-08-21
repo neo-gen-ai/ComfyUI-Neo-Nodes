@@ -330,7 +330,7 @@ class NeoPrompts:
     _encode_cache = {}
     _CACHE_MAX_SIZE = 50
     MIN_SIZE = (400, 300)
-    
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
@@ -338,6 +338,8 @@ class NeoPrompts:
                 "clip": ("CLIP",),
                 "text": ("STRING", {"multiline": True, "default": "", "hidden": True}),
                 "disable_text_input": ("BOOLEAN", {"default": False, "hidden": True}),
+                "auto_generate": ("BOOLEAN", {"default": False, "hidden": True}),
+                "quick_input": ("STRING", {"default": "", "hidden": True}),
             },
             "optional": {
                 "text_input": ("STRING", {"forceInput": True}),
@@ -352,16 +354,67 @@ class NeoPrompts:
     RETURN_NAMES = ("POSITIVE",  "PROMPT")
     FUNCTION = "encode_prompts"
     CATEGORY = "Neo-Nodes"
-    DESCRIPTION = "AI-powered text encoder supports save/select prompt, LLM-based prompt enhancement, translation, classification, title extraction, and intelligent caching."
+    DESCRIPTION = "AI-powered text encoder supports save/select prompt, LLM-based prompt enhancement, translation, classification, title extraction, intelligent caching, and auto-generate."
 
-    def encode_prompts(self, clip, disable_text_input=False, 
+    def encode_prompts(self, clip, disable_text_input=False, auto_generate=False, quick_input="",
                        text="", text_input=None, unique_id=None, instance_uid=""):
+        """Encode prompts with optional auto-generate support.
         
+        Logic:
+        1. If auto_generate is enabled and quick_input has content, call LLM synchronously (ignore existing text)
+        2. Otherwise, combine text and quick_input (same as frontend logic)
+        """
+        logger.info(f"encode_prompts called: auto_generate={auto_generate}, text='{text[:50]}...', quick_input='{quick_input[:50]}...', text_input={text_input is not None}")
+        
+        # If auto_generate is enabled and quick_input has content, generate synchronously
+        if auto_generate and quick_input.strip() and text_input is None:
+            logger.info(f"Auto-generate condition met, checking LLM mode...")
+            current_mode = get_current_mode()
+            logger.info(f"Current LLM mode: {current_mode}")
+            if current_mode == LLM_MODE_REMOTE:
+                try:
+                    logger.info(f"Calling LLM with smart_prompt task and quick_input: {quick_input[:100]}...")
+                    # Use stream generation for real-time update
+                    from .llm import run_llm_task_stream
+                    accumulated = ""
+                    for chunk in run_llm_task_stream("smart_prompt", quick_input):
+                        accumulated += chunk
+                        # Send real-time update to frontend
+                        if instance_uid:
+                            PromptServer.instance.send_sync("rs.prompt.auto_generate_update", {
+                                "instance_uid": instance_uid,
+                                "prompt": accumulated,
+                                "is_complete": False
+                            })
+                    
+                    if accumulated:
+                        text = accumulated
+                        logger.info(f"Auto-generated prompt: {accumulated[:100]}...")
+                        # Send final update
+                        if instance_uid:
+                            PromptServer.instance.send_sync("rs.prompt.auto_generate_update", {
+                                "instance_uid": instance_uid,
+                                "prompt": accumulated,
+                                "is_complete": True
+                            })
+                except Exception as e:
+                    logger.error(f"Auto-generate failed: {e}")
+                    logger.exception(e)
+            else:
+                logger.warning(f"Auto-generate only works in remote LLM mode, current mode: {current_mode}")
+        else:
+            logger.info(f"Auto-generate condition not met: auto_generate={auto_generate}, quick_input_has_content={quick_input.strip()}, text_input_none={text_input is None}")
+            # Combine text and quick_input (same logic as frontend)
+            if quick_input.strip():
+                if text.strip():
+                    text = f"{text}\n\n---\n\n{quick_input}"
+                else:
+                    text = quick_input
+
+        current_text = text
         if disable_text_input:
-            current_text = text
             effective_text_input = None
         else:
-            current_text = text_input if text_input is not None else text
             effective_text_input = text_input
         
         if effective_text_input is not None and instance_uid:
@@ -395,7 +448,12 @@ class NeoPrompts:
         }
 
     @classmethod
-    def IS_CHANGED(cls, **kwargs):
+    def IS_CHANGED(cls, auto_generate=False, quick_input="", **kwargs):
+        # If auto_generate is enabled and quick_input has content, always re-execute
+        if auto_generate and quick_input.strip():
+            import time
+            return time.time()  # Return unique value to force re-execution
+        # Otherwise, never change (use cached result)
         return float("nan")
 
 
@@ -1109,6 +1167,7 @@ class NeoPromptGenerator:
     - Supports external/internal input toggle
     - Output: STRING (the prompt text)
     - Has a settings button to select LLM model
+    - Supports auto-generate option
     """
 
     _CACHE_MAX_SIZE = 50
@@ -1120,6 +1179,8 @@ class NeoPromptGenerator:
             "required": {
                 "prompt": ("STRING", {"multiline": True, "default": "", "hidden": True}),
                 "disable_text_input": ("BOOLEAN", {"default": False, "hidden": True}),
+                "auto_generate": ("BOOLEAN", {"default": False, "hidden": True}),
+                "quick_input": ("STRING", {"default": "", "hidden": True}),
             },
             "optional": {
                 "text_input": ("STRING", {"forceInput": True}),
@@ -1135,15 +1196,67 @@ class NeoPromptGenerator:
     FUNCTION = "get_prompt"
     CATEGORY = "Neo-Nodes"
     OUTPUT_NODE = True
-    DESCRIPTION = "Simple prompt generator node with settings button. Supports external/internal input toggle. No clip encoder binding."
+    DESCRIPTION = "Simple prompt generator node with settings button. Supports external/internal input toggle and auto-generate. No clip encoder binding."
 
-    def get_prompt(self, prompt="", disable_text_input=False, text_input=None, instance_uid="", unique_id=None):
-        """Returns the prompt text as output."""
+    def get_prompt(self, prompt="", disable_text_input=False, auto_generate=False, quick_input="", text_input=None, instance_uid="", unique_id=None):
+        """Returns the prompt text as output.
+
+        Logic:
+        1. If auto_generate is enabled and quick_input has content, call LLM synchronously (ignore existing prompt)
+        2. Otherwise, combine prompt and quick_input (same as frontend logic)
+        """
+        logger.info(f"get_prompt called: auto_generate={auto_generate}, prompt='{prompt[:50]}...', quick_input='{quick_input[:50]}...', text_input={text_input is not None}")
+        
+        # If auto_generate is enabled and quick_input has content, generate synchronously
+        if auto_generate and quick_input.strip() and text_input is None:
+            logger.info(f"Auto-generate condition met, checking LLM mode...")
+            # Check if we're in remote mode
+            current_mode = get_current_mode()
+            logger.info(f"Current LLM mode: {current_mode}")
+            if current_mode == LLM_MODE_REMOTE:
+                try:
+                    logger.info(f"Calling LLM with smart_prompt task and quick_input: {quick_input[:100]}...")
+                    # Use stream generation for real-time update
+                    from .llm import run_llm_task_stream
+                    accumulated = ""
+                    for chunk in run_llm_task_stream("smart_prompt", quick_input):
+                        accumulated += chunk
+                        # Send real-time update to frontend
+                        if instance_uid:
+                            PromptServer.instance.send_sync("rs.prompt.auto_generate_update", {
+                                "instance_uid": instance_uid,
+                                "prompt": accumulated,
+                                "is_complete": False
+                            })
+                    
+                    if accumulated:
+                        prompt = accumulated
+                        logger.info(f"Auto-generated prompt: {accumulated[:100]}...")
+                        # Send final update
+                        if instance_uid:
+                            PromptServer.instance.send_sync("rs.prompt.auto_generate_update", {
+                                "instance_uid": instance_uid,
+                                "prompt": accumulated,
+                                "is_complete": True
+                            })
+                except Exception as e:
+                    logger.error(f"Auto-generate failed: {e}")
+                    logger.exception(e)
+            else:
+                logger.warning(f"Auto-generate only works in remote LLM mode, current mode: {current_mode}")
+        else:
+            logger.info(f"Auto-generate condition not met: auto_generate={auto_generate}, quick_input_has_content={quick_input.strip()}, text_input_none={text_input is None}")
+            # Combine prompt and quick_input (same logic as frontend)
+            if quick_input.strip():
+                if prompt.strip():
+                    prompt = f"{prompt}\n\n---\n\n{quick_input}"
+                else:
+                    prompt = quick_input
+
+        current_text = prompt
         if disable_text_input:
-            current_text = prompt
             effective_text_input = None
         else:
-            current_text = text_input if text_input is not None else prompt
             effective_text_input = text_input
 
         if effective_text_input is not None and instance_uid:
@@ -1158,7 +1271,12 @@ class NeoPromptGenerator:
         }
 
     @classmethod
-    def IS_CHANGED(cls, **kwargs):
+    def IS_CHANGED(cls, auto_generate=False, quick_input="", **kwargs):
+        # If auto_generate is enabled and quick_input has content, always re-execute
+        if auto_generate and quick_input.strip():
+            import time
+            return time.time()  # Return unique value to force re-execution
+        # Otherwise, never change (use cached result)
         return float("nan")
 
 

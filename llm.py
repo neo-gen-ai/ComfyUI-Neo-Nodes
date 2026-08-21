@@ -1252,7 +1252,6 @@ def _build_llm_tasks() -> Dict[str, Any]:
     task_names = [
         "extract_title",
         "extract_classify",
-        "enhance_prompt",
         "translate_prompt",
         "smart_prompt",
         "template_prompt",

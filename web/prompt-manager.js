@@ -1307,11 +1307,26 @@ function createStatusBars() {
     generateBtn.textContent = "✨";
     generateBtn.setAttribute("data-rs-tooltip", "Generate from description");
 
+    // Auto-generate checkbox (left of generate button)
+    const autoGenerateWrapper = mkEl("div", "rs-auto-generate-wrapper");
+    const autoGenerateCheckbox = document.createElement("input");
+    autoGenerateCheckbox.type = "checkbox";
+    autoGenerateCheckbox.className = "rs-auto-generate-checkbox";
+    autoGenerateCheckbox.id = "rs-auto-generate";
+    autoGenerateCheckbox.setAttribute("data-rs-tooltip", "Auto-generate prompt when workflow runs");
+    const autoGenerateLabel = document.createElement("label");
+    autoGenerateLabel.htmlFor = "rs-auto-generate";
+    autoGenerateLabel.className = "rs-auto-generate-label";
+    autoGenerateLabel.textContent = "自动生成";
+    autoGenerateWrapper.appendChild(autoGenerateCheckbox);
+    autoGenerateWrapper.appendChild(autoGenerateLabel);
+
     // Add elements to toolbar
     inputToolbar.appendChild(tplSelector);
     inputToolbar.appendChild(settingsBtn);
     const spacer = mkEl("div", "rs-spacer");
     inputToolbar.appendChild(spacer);
+    inputToolbar.appendChild(autoGenerateWrapper);
     inputToolbar.appendChild(generateBtn);
 
     // Add input and toolbar to wrapper
@@ -1334,7 +1349,7 @@ function createStatusBars() {
     // It will be placed in topRightBtnGroup by createPromptManagerUI().
     buttonsWrapper.appendChild(actionRow);
 
-    return { statusBar, quickInputWrapper, randomBtn, listBtn, quickInput, generateBtn, customTextarea, buttonsWrapper, saveBtn, settingsBtn, toggleSwitch, localTab, externalTab, tplSelector, populateTemplateSelector, actionRow };
+    return { statusBar, quickInputWrapper, randomBtn, listBtn, quickInput, generateBtn, customTextarea, buttonsWrapper, saveBtn, settingsBtn, toggleSwitch, localTab, externalTab, tplSelector, populateTemplateSelector, actionRow, autoGenerateCheckbox };
 }
 
 // ==========================================
@@ -1342,7 +1357,7 @@ function createStatusBars() {
 // ==========================================
 
 function createPromptManagerUI() {
-    const { statusBar, quickInputWrapper, randomBtn, listBtn, quickInput, generateBtn, customTextarea, buttonsWrapper, saveBtn, settingsBtn, toggleSwitch, localTab, externalTab, tplSelector, populateTemplateSelector, actionRow } = createStatusBars();
+    const { statusBar, quickInputWrapper, randomBtn, listBtn, quickInput, generateBtn, customTextarea, buttonsWrapper, saveBtn, settingsBtn, toggleSwitch, localTab, externalTab, tplSelector, populateTemplateSelector, actionRow, autoGenerateCheckbox } = createStatusBars();
     const { overlay: presetListOverlay, body: presetListBody, searchBar: presetSearchBar } = createOverlayWithSearch();
     const { modal: presetNameInput, aiStatus, field: inputField, tagsContainer, selectedTags, okBtn: inputOk, cancelBtn: inputCancel } = createInputModal();
     const { modal: deleteConfirmOverlay, textDiv: deleteText, okBtn: deleteOk, cancelBtn: deleteCancel } = createDeleteModal();
@@ -1980,7 +1995,8 @@ function createPromptManagerUI() {
             settingsModal,
             loadModelsIntoSettings,
             tplSelector,
-            populateTemplateSelector
+            populateTemplateSelector,
+            autoGenerateCheckbox
         };
     }
 

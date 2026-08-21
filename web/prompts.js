@@ -131,6 +131,15 @@ app.registerExtension({
                 if (disableWidget && this.properties?.rs_disable_state !== undefined) {
                     disableWidget.value = this.properties.rs_disable_state;
                 }
+                // Restore quick_input and auto_generate state
+                const quickInputWidget = this.widgets.find(w => w.name === "quick_input");
+                if (quickInputWidget && this.properties?.rs_quick_input !== undefined) {
+                    quickInputWidget.value = this.properties.rs_quick_input;
+                }
+                const autoGenWidget = this.widgets.find(w => w.name === "auto_generate");
+                if (autoGenWidget && this.properties?.rs_auto_generate !== undefined) {
+                    autoGenWidget.value = this.properties.rs_auto_generate;
+                }
             }
             setTimeout(() => {
                 if (this.restoreFromProperties) this.restoreFromProperties();
@@ -145,6 +154,11 @@ app.registerExtension({
                 if (uidWidget && uidWidget.value) node.properties.rs_instance_uid = uidWidget.value;
                 const disableWidget = node.widgets.find(w => w.name === "disable_text_input");
                 if (disableWidget && node.properties) node.properties.rs_disable_state = disableWidget.value;
+                // Save quick_input and auto_generate state
+                const quickInputWidget = node.widgets.find(w => w.name === "quick_input");
+                if (quickInputWidget && node.properties) node.properties.rs_quick_input = quickInputWidget.value;
+                const autoGenWidget = node.widgets.find(w => w.name === "auto_generate");
+                if (autoGenWidget && node.properties) node.properties.rs_auto_generate = autoGenWidget.value;
             }
             return _origSerialize.apply(this, arguments);
         };
@@ -216,12 +230,17 @@ app.registerExtension({
                 customTextarea, statusBar, settingsBtn, toggleSwitch, localTab, externalTab,
                 presetListOverlay, presetNameInput, deleteConfirmOverlay, downloadModal,
                 settingsModal, loadModelsIntoSettings,
-                quickInputWrapper, populateTemplateSelector, tplSelector
+                quickInputWrapper, populateTemplateSelector, tplSelector, autoGenerateCheckbox
             } = promptUI.init({ node, graph: node.graph, textWidget });
 
             // Populate template selector on init
             if (populateTemplateSelector) {
                 setTimeout(() => populateTemplateSelector(), 100);
+            }
+
+            // Restore quickInput content from properties
+            if (node.properties?.rs_quick_input !== undefined) {
+                quickInput.value = node.properties.rs_quick_input;
             }
 
             // Node lifecycle management
@@ -405,6 +424,15 @@ app.registerExtension({
                 if (node.graph) node.graph.setDirtyCanvas(true, true);
             });
 
+            // Sync quickInput to backend hidden widget
+            const quickInputWidget = node.widgets?.find(w => w.name === "quick_input");
+            quickInput.addEventListener("input", () => {
+                if (quickInputWidget) {
+                    quickInputWidget.value = quickInput.value;
+                    if (node.graph) node.graph.setDirtyCanvas(true, true);
+                }
+            });
+
             // ==========================================
             // Use shared button handlers (same as NeoPrompts)
             // ==========================================
@@ -425,6 +453,48 @@ app.registerExtension({
             });
 
             randomBtn.addEventListener("click", NodeBehaviors.createRandomHandler(promptUIRef));
+
+            // ==========================================
+            // Auto-generate checkbox handler
+            // ==========================================
+            if (autoGenerateCheckbox) {
+                // Restore state from node properties
+                if (node.properties?.rs_auto_generate !== undefined) {
+                    autoGenerateCheckbox.checked = node.properties.rs_auto_generate;
+                }
+
+                autoGenerateCheckbox.addEventListener("change", () => {
+                    if (!node.properties) node.properties = {};
+                    node.properties.rs_auto_generate = autoGenerateCheckbox.checked;
+                    // Update hidden widget if exists
+                    const autoGenWidget = node.widgets?.find(w => w.name === "auto_generate");
+                    if (autoGenWidget) {
+                        autoGenWidget.value = autoGenerateCheckbox.checked;
+                    }
+                    if (node.graph) node.graph.setDirtyCanvas(true, true);
+                });
+
+                // Listen for auto_generate_update event from backend (streaming)
+                api.addEventListener("rs.prompt.auto_generate_update", (event) => {
+                    const currentUid = node.properties?.rs_instance_uid || node.widgets?.find(w => w.name === "instance_uid")?.value;
+                    if (event.detail.instance_uid === currentUid) {
+                        const promptText = event.detail.prompt || "";
+                        // Update customTextarea with streaming text
+                        if (customTextarea) {
+                            customTextarea.value = promptText;
+                            customTextarea.scrollTop = customTextarea.scrollHeight;
+                        }
+                        // Update textWidget
+                        if (textWidget) {
+                            textWidget.value = promptText;
+                        }
+                        // Update storage
+                        NodeBehaviors.saveTextToStorage(node, textWidget, customTextarea);
+                        // Redraw canvas
+                        if (node.graph) node.graph.setDirtyCanvas(true, true);
+                    }
+                });
+            }
 
             // ==========================================
             // Use shared event listeners
@@ -542,6 +612,15 @@ app.registerExtension({
                 if (disableWidget && this.properties?.rs_disable_state !== undefined) {
                     disableWidget.value = this.properties.rs_disable_state;
                 }
+                // Restore quick_input and auto_generate state
+                const quickInputWidget = this.widgets.find(w => w.name === "quick_input");
+                if (quickInputWidget && this.properties?.rs_quick_input !== undefined) {
+                    quickInputWidget.value = this.properties.rs_quick_input;
+                }
+                const autoGenWidget = this.widgets.find(w => w.name === "auto_generate");
+                if (autoGenWidget && this.properties?.rs_auto_generate !== undefined) {
+                    autoGenWidget.value = this.properties.rs_auto_generate;
+                }
             }
             setTimeout(() => {
                 if (this.restoreFromProperties) this.restoreFromProperties();
@@ -557,6 +636,11 @@ app.registerExtension({
                 if (uidWidget && uidWidget.value) node.properties.rs_instance_uid = uidWidget.value;
                 const disableWidget = node.widgets.find(w => w.name === "disable_text_input");
                 if (disableWidget && node.properties) node.properties.rs_disable_state = disableWidget.value;
+                // Save quick_input and auto_generate state
+                const quickInputWidget = node.widgets.find(w => w.name === "quick_input");
+                if (quickInputWidget && node.properties) node.properties.rs_quick_input = quickInputWidget.value;
+                const autoGenWidget = node.widgets.find(w => w.name === "auto_generate");
+                if (autoGenWidget && node.properties) node.properties.rs_auto_generate = autoGenWidget.value;
             }
             return _origSerialize.apply(this, arguments);
         };
@@ -639,12 +723,17 @@ app.registerExtension({
                 customTextarea, statusBar, settingsBtn, toggleSwitch, localTab, externalTab,
                 presetListOverlay, presetNameInput, deleteConfirmOverlay, downloadModal,
                 settingsModal, loadModelsIntoSettings,
-                quickInputWrapper, populateTemplateSelector, tplSelector
+                quickInputWrapper, populateTemplateSelector, tplSelector, autoGenerateCheckbox
             } = promptUI.init({ node, graph: node.graph, textWidget });
 
             // Populate template selector on init
             if (populateTemplateSelector) {
                 setTimeout(() => populateTemplateSelector(), 100);
+            }
+
+            // Restore quickInput content from properties
+            if (node.properties?.rs_quick_input !== undefined) {
+                quickInput.value = node.properties.rs_quick_input;
             }
 
             // 节点生命周期管理 - 使用共享的 behaviorManager
@@ -855,6 +944,15 @@ app.registerExtension({
                 if (node.graph) node.graph.setDirtyCanvas(true, true);
             });
 
+            // Sync quickInput to backend hidden widget
+            const quickInputWidget = node.widgets?.find(w => w.name === "quick_input");
+            quickInput.addEventListener("input", () => {
+                if (quickInputWidget) {
+                    quickInputWidget.value = quickInput.value;
+                    if (node.graph) node.graph.setDirtyCanvas(true, true);
+                }
+            });
+
             // ==========================================
             // 使用共享的按钮处理器（与 NeoPromptGenerator 相同）
             // ==========================================
@@ -875,6 +973,48 @@ app.registerExtension({
             });
 
             randomBtn.addEventListener("click", NodeBehaviors.createRandomHandler(promptUIRef));
+
+            // ==========================================
+            // Auto-generate checkbox handler
+            // ==========================================
+            if (autoGenerateCheckbox) {
+                // Restore state from node properties
+                if (node.properties?.rs_auto_generate !== undefined) {
+                    autoGenerateCheckbox.checked = node.properties.rs_auto_generate;
+                }
+
+                autoGenerateCheckbox.addEventListener("change", () => {
+                    if (!node.properties) node.properties = {};
+                    node.properties.rs_auto_generate = autoGenerateCheckbox.checked;
+                    // Update hidden widget if exists
+                    const autoGenWidget = node.widgets?.find(w => w.name === "auto_generate");
+                    if (autoGenWidget) {
+                        autoGenWidget.value = autoGenerateCheckbox.checked;
+                    }
+                    if (node.graph) node.graph.setDirtyCanvas(true, true);
+                });
+
+                // Listen for auto_generate_update event from backend (streaming)
+                api.addEventListener("rs.prompt.auto_generate_update", (event) => {
+                    const currentUid = node.properties?.rs_instance_uid || node.widgets?.find(w => w.name === "instance_uid")?.value;
+                    if (event.detail.instance_uid === currentUid) {
+                        const promptText = event.detail.prompt || "";
+                        // Update customTextarea with streaming text
+                        if (customTextarea) {
+                            customTextarea.value = promptText;
+                            customTextarea.scrollTop = customTextarea.scrollHeight;
+                        }
+                        // Update textWidget
+                        if (textWidget) {
+                            textWidget.value = promptText;
+                        }
+                        // Update storage
+                        NodeBehaviors.saveTextToStorage(node, textWidget, customTextarea);
+                        // Redraw canvas
+                        if (node.graph) node.graph.setDirtyCanvas(true, true);
+                    }
+                });
+            }
 
             // ==========================================
             // Use shared event listeners

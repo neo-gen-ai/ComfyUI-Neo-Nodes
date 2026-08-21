@@ -1890,6 +1890,43 @@
     margin-right: 8px;
 }
 
+/* Auto-generate checkbox styles */
+.rs-auto-generate-wrapper {
+    display: flex;
+    align-items: center;
+    margin-right: 8px;
+    padding: 4px 8px;
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    cursor: pointer;
+}
+
+.rs-auto-generate-wrapper:hover {
+    background: transparent;
+}
+
+.rs-auto-generate-checkbox {
+    width: 14px;
+    height: 14px;
+    margin: 0;
+    margin-right: 6px;
+    cursor: pointer;
+    accent-color: #5090cc;
+}
+
+.rs-auto-generate-label {
+    font-size: 12px;
+    color: #ccc;
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+}
+
+.rs-auto-generate-wrapper:has(.rs-auto-generate-checkbox:checked) .rs-auto-generate-label {
+    color: #7ab8f5;
+}
+
 /* ==========================================
    Theme - LOCAL PROMPT (Green)
    ========================================== */
