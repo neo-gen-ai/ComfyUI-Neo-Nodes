@@ -1336,12 +1336,26 @@ def run_llm_task(task_name: str, text: str, extra_system_prompt: Optional[str] =
 
     task_config = LLM_TASKS[task_name]
 
-    # 如果提供了自定义 system_prompt，使用它（用于 template_prompt 任务）
-    if system_prompt is None:
+    # Debug logging
+    logger.info(f"run_llm_task: task_name={task_name}, system_prompt provided={system_prompt is not None}, system_prompt_length={len(system_prompt) if system_prompt else 0}")
+
+    # 如果提供了自定义 system_prompt（非空），使用它
+    if system_prompt is not None and system_prompt.strip():
+        # Use the provided system_prompt as-is
+        logger.info(f"Using custom system_prompt (length: {len(system_prompt)})")
+        pass
+    # 如果没有提供 system_prompt，使用任务默认的
+    elif system_prompt is None:
         system_prompt = task_config["system"]
-    # 如果是 template_prompt 且没有提供自定义 system_prompt，使用 extra_system_prompt
-    elif task_name == "template_prompt" and not system_prompt and extra_system_prompt:
+        logger.info(f"Using default system_prompt (length: {len(system_prompt)})")
+    # 如果是 template_prompt 且提供了空字符串，使用 extra_system_prompt
+    elif task_name == "template_prompt" and extra_system_prompt:
         system_prompt = extra_system_prompt
+        logger.info(f"Using extra_system_prompt for template_prompt (length: {len(system_prompt)})")
+    # 否则使用任务默认的
+    else:
+        system_prompt = task_config["system"]
+        logger.info(f"Using default system_prompt (fallback, length: {len(system_prompt)})")
 
     max_tokens = task_config["max_tokens"]
     result_key = task_config["result_key"]

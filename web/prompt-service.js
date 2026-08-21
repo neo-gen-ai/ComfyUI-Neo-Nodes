@@ -181,6 +181,12 @@ async function downloadModel(fileType) {
  * @returns {Promise<boolean>} - 返回 true 表示可以继续操作，false 表示模型未就绪
  */
 async function checkModelAndPrompt(downloadModal = null, statusBar = null) {
+    // Only check/download model in local mode
+    const mode = await getLLMMode();
+    if (mode !== "local") {
+        return true; // Skip model check for remote providers
+    }
+
     const status = await checkModel();
 
     if (!status.model_available) {
@@ -848,6 +854,7 @@ export {
     randomPrompt,
     smartPrompt,
     smartPromptStream,
+    sseStream,
     getAvailableModels,
     setCurrentModel,
     createPromptService,

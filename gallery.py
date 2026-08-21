@@ -47,104 +47,10 @@ def _get_user_custom_dirs():
     return dirs
 
 
-def _get_presets_dir():
-    """Get presets directory path (always the default PRESETS_DIR)."""
-    return PRESETS_DIR
-
-
 def _ensure_dirs() -> None:
     for d in (GALLERY_DIR, PRESETS_DIR, CUSTOM_DIR, THUMBNAIL_DIR):
         d.mkdir(parents=True, exist_ok=True)
 
-
-def _parse_txt(raw_txt: str) -> dict:
-    """Parse an 8-line structured txt."""
-    cleaned: list[str] = [""] * 8
-    if raw_txt:
-        try:
-            lines = raw_txt.strip().splitlines()
-            for i, line in enumerate(lines):
-                if i >= 8:
-                    break
-                m = re.match(r"^\d+\s*\|\s*(.*)", line)
-                cleaned[i] = m.group(1) if m else line
-        except Exception:
-            pass
-
-    style, elements, content, composition, lighting, materials, anatomy, pose = (
-        cleaned[0], cleaned[1], cleaned[2], cleaned[3],
-        cleaned[4], cleaned[5], cleaned[6], cleaned[7],
-    )
-
-    display_style = ""
-    if "：" in style:
-        display_style = style.split("：")[-1].strip()
-    elif ":" in style:
-        display_style = style.split(":")[-1].strip()
-    else:
-        display_style = style.strip()
-
-    txt_content = "\n".join(cleaned).strip() if cleaned else ""
-
-    return {
-        "style": display_style,
-        "elements": elements,
-        "content": content,
-        "composition": composition,
-        "lighting": lighting,
-        "materials": materials,
-        "anatomy": anatomy,
-        "pose": pose,
-        "txt_content": txt_content,
-    }
-
-
-def _make_entry(image_path: Path, txt_path: Path, raw_txt: str) -> dict | None:
-    """Build a gallery entry dict from image + txt paths."""
-    fields = _parse_txt(raw_txt)
-    return {
-        "name": image_path.stem,
-        "filename": image_path.name,
-        "txt_file": txt_path.name,
-        **fields,
-    }
-
-
-def _scan_directory_summary(directory: Path) -> dict:
-    """Lightweight directory scan - only returns structure, no file content.
-    
-    Returns:
-        {
-            "root_count": int,
-            "subdirs": {name: {"image_count": int, "has_subdirs": bool}}
-        }
-    """
-    result = {"root_count": 0, "subdirs": {}}
-    if not directory.exists():
-        return result
-
-    # Count root-level media files (images + videos)
-    for p in directory.iterdir():
-        if p.is_file() and p.suffix.lower() in ALL_MEDIA_EXTENSIONS:
-            result["root_count"] += 1
-
-    # Scan subdirectories
-    for p in directory.iterdir():
-        if not p.is_dir():
-            continue
-        subdir_count = 0
-        has_nested = False
-        for sub_p in p.iterdir():
-            if sub_p.is_file() and sub_p.suffix.lower() in ALL_MEDIA_EXTENSIONS:
-                subdir_count += 1
-            elif sub_p.is_dir():
-                has_nested = True
-        result["subdirs"][p.name] = {
-            "image_count": subdir_count,
-            "has_subdirs": has_nested
-        }
-
-    return result
 
 
 def _scan_gallery_entries_lightweight(directory: Path) -> list[dict]:
@@ -249,25 +155,6 @@ def _scan_directory_structure_only(directory: Path) -> dict:
 
     return result
 
-
-def _scan_gallery_entries_paged(directory: Path, page: int = 1, page_size: int = 50) -> dict:
-    """Scan directory with pagination support.
-    
-    Returns paginated results to avoid loading too many entries at once.
-    """
-    entries = _scan_gallery_entries(directory)
-    total = len(entries)
-    start = (page - 1) * page_size
-    end = start + page_size
-    paged_entries = entries[start:end]
-    
-    return {
-        "entries": paged_entries,
-        "total": total,
-        "page": page,
-        "page_size": page_size,
-        "has_more": end < total
-    }
 
 
 def _scan_gallery_entries(directory: Path, subfolder: str = "") -> list[dict]:
@@ -413,61 +300,6 @@ def _scan_gallery_entries_with_subdirs(directory: Path, subfolder: str = "") -> 
 
     return result
 
-
-def _scan_gallery_entries_recursive(directory: Path) -> list[dict]:
-    """Walk directory recursively and return gallery entries.
-    
-    NOTE: Does NOT parse .txt files - only returns filename + type info for performance.
-    
-    Supports both image and video files.
-    """
-    entries: list[dict] = []
-    if not directory.exists():
-        return entries
-
-    stems: dict[tuple[str, str], list[Path]] = {}
-    for p in directory.rglob("*"):
-        if not p.is_file():
-            continue
-        lower = p.suffix.lower()
-        if lower not in ALL_MEDIA_EXTENSIONS and lower != ".txt":
-            continue
-
-        rel = p.relative_to(directory)
-        parts = rel.parts
-        category: str = ""
-        subfolder: str = ""
-        if len(parts) > 1:
-            category = parts[0]
-            subfolder = "/".join(parts[:-1])
-
-        stems.setdefault((category, p.stem), []).append(p)
-
-    for (category, stem), files in sorted(stems.items()):
-        media_file = None
-        media_type = None
-        for f in files:
-            if f.suffix.lower() in VIDEO_EXTENSIONS:
-                media_file = f
-                media_type = "video"
-            elif f.suffix.lower() in IMG_EXTENSIONS:
-                if media_file is None:
-                    media_file = f
-                    media_type = "image"
-
-        if not media_file:
-            continue
-
-        # Lightweight entry - no txt parsing for performance
-        entries.append({
-            "name": media_file.stem,
-            "filename": media_file.name,
-            "type": media_type,
-            "category": category,
-            "subfolder": subfolder or "",
-        })
-
-    return entries
 
 
 # ---------------------------------------------------------------------------
@@ -920,57 +752,12 @@ async def resolve_comfyui_path(request):
         }, status=500)
 
 
-def _has_media_in_dir(dir_path: Path) -> bool:
-    """Check if a directory contains any media files (image or video) directly."""
-    for p in dir_path.iterdir():
-        if p.is_file() and p.suffix.lower() in ALL_MEDIA_EXTENSIONS:
-            return True
-    return False
-
-
-def _has_images_in_dir(dir_path: Path) -> bool:
-    """Check if a directory contains any image files directly."""
-    for p in dir_path.iterdir():
-        if p.is_file() and p.suffix.lower() in IMG_EXTENSIONS:
-            return True
-    return False
-
-
 def _has_media_in_dir_any(dir_path: Path) -> bool:
     """Check if a directory contains any media files (images OR videos) directly."""
     for p in dir_path.iterdir():
         if p.is_file() and p.suffix.lower() in ALL_MEDIA_EXTENSIONS:
             return True
     return False
-
-
-def _collect_cover_entries(directory: Path, subfolder: str, max_samples: int) -> list[dict]:
-    """Lightweight cover image collection - only filename + subfolder, NO txt parsing.
-    
-    Scans root level first, then immediate subdirectories.
-    If still not enough samples, recursively descends into nested subdirectories.
-    Stops once max_samples are collected to avoid unnecessary scanning.
-    """
-    result: list[dict] = []
-    
-    if not directory.exists() or max_samples <= 0:
-        return result
-    
-    # Level 1: Scan root level files (both images and videos)
-    for p in sorted(directory.iterdir()):
-        if len(result) >= max_samples:
-            break
-        if p.is_file() and p.suffix.lower() in ALL_MEDIA_EXTENSIONS:
-            result.append({
-                "filename": p.name,
-                "name": p.stem,
-                "subfolder": subfolder,
-            })
-    
-    # Level 2+: Scan immediate subdirectories (and recurse deeper if needed)
-    _collect_cover_recursive(directory, "", max_samples - len(result), result)
-    
-    return result
 
 
 def _collect_cover_recursive(parent_dir: Path, current_subfolder: str, needed: int, result: list[dict]):
@@ -1473,31 +1260,6 @@ def _get_thumbnail_path(filename: str, subfolder: str, size: int) -> Path:
     # Auto-create date directory if it doesn't exist
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     return cache_path
-
-
-def _get_thumbnail_cache_dir(date_str: str) -> Path:
-    """Get the cache directory for a specific date."""
-    return THUMBNAIL_DIR / date_str
-
-
-def _find_thumbnail_by_hash(hash_hex: str, size: int) -> Path | None:
-    """Find a cached thumbnail by hash across all date directories."""
-    import hashlib
-    # Search in current year-month and previous months (up to 12 months back)
-    import time
-    now = time.localtime()
-    for i in range(13):  # Check current month + 12 previous months
-        y, m = now.tm_year, now.tm_mon - i
-        while m <= 0:
-            y -= 1
-            m += 12
-        date_str = f"{y:04d}-{m:02d}"
-        cache_dir = THUMBNAIL_DIR / date_str
-        if cache_dir.exists():
-            pattern = f"{hash_hex}_*.jpg"
-            for thumb_file in cache_dir.glob(pattern):
-                return thumb_file
-    return None
 
 
 def _find_source_media(filename: str, subfolder: str) -> Path | None:
@@ -2140,8 +1902,3 @@ async def clear_thumbnails(request):
 
 # Ensure gallery directories exist on module load
 _ensure_dirs()
-
-# Diagnostic: log route registration
-import sys as _sys
-print(f"[Neo Gallery] Module loaded from: {__file__}", file=_sys.stderr, flush=True)
-print(f"[Neo Gallery] Routes registered: {hasattr(PromptServer.instance, 'routes') and hasattr(PromptServer.instance.routes, '_grouped')}", file=_sys.stderr, flush=True)

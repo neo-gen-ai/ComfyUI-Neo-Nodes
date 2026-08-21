@@ -15,6 +15,7 @@ import {
     extractClassify,
     randomPrompt as randomPromptAPI,
     downloadModel,
+    clearModelStatusCache,
     monitorDownloadProgress,
     getAvailableModels,
     setCurrentModel,
@@ -225,7 +226,7 @@ function createSettingsModal() {
     const remoteInfoText = mkEl("div", "rs-settings-info");
     remoteInfoText.innerHTML = `
         <div class="rs-settings-title">LLM Provider</div>
-        <div class="rs-settings-desc">Choose a provider for AI features. Local (GGUF) uses downloaded models.</div>
+        <div class="rs-settings-desc">Choose a provider for AI features</div>
     `;
 
     // Provider select row
@@ -235,8 +236,8 @@ function createSettingsModal() {
     
     const providerSelect = mkEl("select", "rs-form-input rs-remote-provider");
     providerSelect.id = "rs-remote-provider";
+    // <option value="local">Local (GGUF)</option>
     providerSelect.innerHTML = `
-        <option value="local">Local (GGUF)</option>
         <option value="openai">OpenAI Compatible</option>
         <option value="lmstudio">LM Studio</option>
         <option value="ollama">Ollama</option>
@@ -309,7 +310,48 @@ function createSettingsModal() {
     providerSaveStatusText.style.fontSize = "11px";
     providerSaveStatusText.style.color = "#999";
 
-    remoteForm.append(remoteInfoText, providerRow, modelRowWrapper, apiKeyRow, baseUrlRow, providerSaveStatusText);
+    // 本地模型下载区：未下载时显示下载按钮，点击后显示进度
+    const localDownloadArea = mkEl("div", "rs-local-download-area");
+    localDownloadArea.style.display = "none";
+    localDownloadArea.style.marginTop = "10px";
+
+    const localDownloadBtn = mkEl("button", "rs-btn rs-btn-local rs-local-download-btn");
+    localDownloadBtn.textContent = "⬇️ Download Model";
+    localDownloadBtn.type = "button";
+    localDownloadBtn.style.cursor = "pointer";
+
+    const localDownloadProgressWrap = mkEl("div", "rs-local-download-progress-wrap");
+    localDownloadProgressWrap.style.display = "none";
+    localDownloadProgressWrap.style.position = "relative";
+    localDownloadProgressWrap.style.width = "100%";
+    localDownloadProgressWrap.style.height = "24px";
+    localDownloadProgressWrap.style.background = "#2a2a2a";
+    localDownloadProgressWrap.style.border = "1px solid #444";
+    localDownloadProgressWrap.style.borderRadius = "4px";
+    localDownloadProgressWrap.style.overflow = "hidden";
+
+    const localDownloadProgressFill = mkEl("div", "rs-local-download-progress-fill");
+    localDownloadProgressFill.style.width = "0%";
+    localDownloadProgressFill.style.height = "100%";
+    localDownloadProgressFill.style.background = "#5090cc";
+    localDownloadProgressFill.style.transition = "width 0.3s ease";
+
+    const localDownloadProgressText = mkEl("span", "rs-local-download-progress-text");
+    localDownloadProgressText.textContent = "0%";
+    localDownloadProgressText.style.position = "absolute";
+    localDownloadProgressText.style.top = "0";
+    localDownloadProgressText.style.left = "0";
+    localDownloadProgressText.style.right = "0";
+    localDownloadProgressText.style.lineHeight = "24px";
+    localDownloadProgressText.style.textAlign = "center";
+    localDownloadProgressText.style.color = "#fff";
+    localDownloadProgressText.style.fontSize = "11px";
+
+    localDownloadProgressWrap.appendChild(localDownloadProgressFill);
+    localDownloadProgressWrap.appendChild(localDownloadProgressText);
+    localDownloadArea.append(localDownloadBtn, localDownloadProgressWrap);
+
+    remoteForm.append(remoteInfoText, providerRow, modelRowWrapper, apiKeyRow, baseUrlRow, providerSaveStatusText, localDownloadArea);
 
     // ==========================================
     // Template Management Tab (Tab 2)
@@ -581,7 +623,18 @@ function createSettingsModal() {
             
             // Fetch available local models
             fetchLocalModels();
+
+            // 刷新当前选中本地模型的下载状态（显示下载按钮/进度），等下拉填充后执行
+            setTimeout(() => {
+                if (typeof refreshLocalDownloadState === 'function') {
+                    refreshLocalDownloadState();
+                }
+            }, 500);
         } else if (provider === 'openai') {
+            if (typeof stopLocalModelStatusPoller === 'function') {
+                stopLocalModelStatusPoller();
+            }
+            localDownloadArea.style.display = "none";
             apiKeyRow.style.display = "flex";
             baseUrlRow.style.display = "flex";
             apiKeyInput.placeholder = "sk-... (optional for cloud)";
@@ -594,6 +647,10 @@ function createSettingsModal() {
             baseUrlInput.value = saved.base_url || "";
             modelInput.value = saved.model || "";
         } else if (provider === 'lmstudio' || provider === 'ollama') {
+            if (typeof stopLocalModelStatusPoller === 'function') {
+                stopLocalModelStatusPoller();
+            }
+            localDownloadArea.style.display = "none";
             apiKeyRow.style.display = "none";
             modelInput.style.setProperty('display', 'none', 'important');
             localModelSelectEl.style.setProperty('display', 'none', 'important');
@@ -665,7 +722,7 @@ function createSettingsModal() {
     apiKeyInput.addEventListener("blur", autoSaveConfig);
     baseUrlInput.addEventListener("blur", autoSaveConfig);
     // Auto-fetch models when the base URL field changes (LM Studio / Ollama)
-    baseUrlInput.addEventListener("change", async () => {
+    const fetchModelsForBaseUrl = async () => {
         if (providerSelect.value === 'lmstudio' || providerSelect.value === 'ollama') {
             const url = baseUrlInput.value.trim();
             if (!url) return;
@@ -673,10 +730,170 @@ function createSettingsModal() {
             const savedModel = savedRemoteConfig?.providers?.[providerSelect.value]?.model;
             if (savedModel) setSelectedModelValue(modelSelectEl, savedModel);
         }
-    });
+    };
+    baseUrlInput.addEventListener("change", fetchModelsForBaseUrl);
+    baseUrlInput.addEventListener("blur", fetchModelsForBaseUrl);
     modelInput.addEventListener("blur", autoSaveConfig);
     modelSelectEl.addEventListener("change", autoSaveConfig);
-    localModelSelectEl.addEventListener("change", autoSaveConfig);
+
+    // ==========================================
+    // 本地模型下载：未下载时显示下载按钮，点击后显示进度
+    // ==========================================
+    let localModelStatusTimer = null;
+
+    function stopLocalModelStatusPoller() {
+        if (localModelStatusTimer) {
+            clearInterval(localModelStatusTimer);
+            localModelStatusTimer = null;
+        }
+    }
+
+    function setLocalDownloadArea(state) {
+        // state: 'hidden' | 'ready' | 'missing' | 'downloading' | 'error'
+        if (state === "ready" || state === "hidden") {
+            localDownloadArea.style.display = "none";
+            return;
+        }
+        localDownloadArea.style.display = "block";
+        if (state === "missing") {
+            localDownloadBtn.style.display = "inline-block";
+            localDownloadBtn.disabled = false;
+            localDownloadProgressWrap.style.display = "none";
+        } else if (state === "downloading") {
+            localDownloadBtn.style.display = "none";
+            localDownloadProgressWrap.style.display = "block";
+        } else { // error -> 保留按钮重试
+            localDownloadBtn.style.display = "inline-block";
+            localDownloadBtn.disabled = false;
+            localDownloadProgressWrap.style.display = "none";
+        }
+    }
+
+    function setLocalDownloadProgress(percent) {
+        localDownloadProgressFill.style.width = `${percent}%`;
+        localDownloadProgressText.textContent = `${percent}%`;
+    }
+
+    function setLocalStatusMsg(msg, color, autoHide = true) {
+        providerSaveStatusText.textContent = msg;
+        providerSaveStatusText.style.display = "block";
+        providerSaveStatusText.style.color = color || "#999";
+        if (autoHide) {
+            setTimeout(() => { providerSaveStatusText.style.display = "none"; }, 2500);
+        }
+    }
+
+    function pollDownloadProgress() {
+        stopLocalModelStatusPoller();
+        setLocalDownloadArea("downloading");
+        setLocalDownloadProgress(0);
+        localModelStatusTimer = setInterval(async () => {
+            let latest;
+            try {
+                clearModelStatusCache();
+                latest = await checkModel();
+            } catch (e) {
+                latest = null;
+            }
+            const dl = latest?.download_status?.model;
+            if (latest?.model_available) {
+                stopLocalModelStatusPoller();
+                setLocalDownloadArea("ready");
+                setLocalStatusMsg("✅ Model ready", "#16a34a");
+                return;
+            }
+            if (dl?.downloading) {
+                setLocalDownloadProgress(dl.progress || 0);
+                return;
+            }
+            if (dl?.error) {
+                stopLocalModelStatusPoller();
+                setLocalDownloadArea("error");
+                setLocalStatusMsg("❌ Download failed: " + dl.error, "#dc2626", false);
+            }
+        }, 2000);
+    }
+
+    async function refreshLocalDownloadState() {
+        stopLocalModelStatusPoller();
+        let status;
+        try {
+            clearModelStatusCache();
+            status = await checkModel();
+        } catch (e) {
+            setLocalDownloadArea("hidden");
+            return;
+        }
+
+        if (status.model_available) {
+            setLocalDownloadArea("ready");
+            setLocalStatusMsg("✅ Model ready", "#16a34a");
+            return;
+        }
+
+        const dlStatus = status.download_status?.model;
+        if (dlStatus?.downloading) {
+            setLocalDownloadProgress(dlStatus.progress || 0);
+            pollDownloadProgress();
+            return;
+        }
+        if (dlStatus?.error) {
+            setLocalDownloadArea("error");
+            setLocalStatusMsg("❌ Download failed: " + dlStatus.error, "#dc2626", false);
+            return;
+        }
+
+        // 未下载：显示下载按钮
+        setLocalDownloadArea("missing");
+        setLocalStatusMsg("⚠️ Model not downloaded", "#f59e0b");
+    }
+
+    localModelSelectEl.addEventListener("change", async () => {
+        autoSaveConfig();
+        stopLocalModelStatusPoller();
+        const modelKey = localModelSelectEl.value;
+        if (!modelKey) {
+            setLocalDownloadArea("hidden");
+            return;
+        }
+
+        try {
+            const setResult = await setCurrentModel(modelKey);
+            if (!setResult || !setResult.success) {
+                setLocalStatusMsg("❌ Model switch failed: " + (setResult?.error || modelKey), "#dc2626");
+                return;
+            }
+            await refreshLocalDownloadState();
+        } catch (e) {
+            console.error("Failed to switch local model:", e);
+            setLocalStatusMsg("❌ " + (e.message || "Model switch failed"), "#dc2626");
+        }
+    });
+
+    localDownloadBtn.addEventListener("click", async () => {
+        localDownloadBtn.disabled = true;
+        localDownloadBtn.textContent = "⏳ Starting...";
+        try {
+            const result = await downloadModel("model");
+            if (result.error) {
+                setLocalDownloadArea("error");
+                localDownloadBtn.textContent = "⬇️ Download Model";
+                setLocalStatusMsg("❌ Download start failed: " + result.error, "#dc2626", false);
+                return;
+            }
+            if (result.status === "already_exists") {
+                await refreshLocalDownloadState();
+                return;
+            }
+            // 下载已启动：显示进度
+            pollDownloadProgress();
+        } catch (e) {
+            console.error("Failed to start download:", e);
+            localDownloadBtn.disabled = false;
+            localDownloadBtn.textContent = "⬇️ Download Model";
+            setLocalStatusMsg("❌ " + (e.message || "Download failed to start"), "#dc2626");
+        }
+    });
 
     // ==========================================
     // Template management state and functions
@@ -910,6 +1127,8 @@ function createSettingsModal() {
         enableStatusText: null,  // removed
         providerSaveStatusText,
         autoSaveConfig,
+        stopLocalModelStatusPoller,
+        refreshLocalDownloadState,
         fetchModelsFromUrl,
         setSelectedModelValue,
         fetchLocalModels,
@@ -1644,6 +1863,9 @@ function createPromptManagerUI() {
         async function loadModelsIntoSettings() {
             try {
                 stopDownloadPolling();
+                if (settingsModal.stopLocalModelStatusPoller) {
+                    settingsModal.stopLocalModelStatusPoller();
+                }
                 const modelsData = await getAvailableModels();
                 const allModelsStatus = await checkAllModels();
                 const currentModelStatus = await checkModel();
@@ -1711,6 +1933,9 @@ function createPromptManagerUI() {
         }, true);
         
         const closeSettingsModal = async () => {
+            if (settingsModal.stopLocalModelStatusPoller) {
+                settingsModal.stopLocalModelStatusPoller();
+            }
             if (settingsModal.autoSaveConfig) {
                 settingsModal.autoSaveConfig();
             }
@@ -1753,7 +1978,9 @@ function createPromptManagerUI() {
             deleteConfirmOverlay,
             downloadModal,
             settingsModal,
-            loadModelsIntoSettings
+            loadModelsIntoSettings,
+            tplSelector,
+            populateTemplateSelector
         };
     }
 

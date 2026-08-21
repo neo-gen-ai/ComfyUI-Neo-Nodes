@@ -638,9 +638,10 @@ async def rs_prompts_smart_prompt(request):
         data = await request.json()
         original_text = data.get("text", "")  # 原始提示词（可选）
         user_description = data.get("description", "")  # 用户描述
-        template = data.get("template", "")  # 可选的系统提示词模板
+        template_id = data.get("templateId", data.get("template_id", ""))  # 模版 ID
+        template = data.get("template", "")  # 可选的系统提示词内容（直接传递内容）
 
-        logger.info(f"Smart prompt request: original='{original_text[:100]}...', description='{user_description[:100]}...', template='{template[:100] if template else 'None'}...'")
+        logger.info(f"Smart prompt request: original='{original_text[:100]}...', description='{user_description[:100]}...', template_id='{template_id}', template='{template[:100] if template else 'None'}...'")
 
         if not user_description or not user_description.strip():
             return web.json_response({"error": "description is required"}, status=400)
@@ -651,11 +652,25 @@ async def rs_prompts_smart_prompt(request):
         else:
             combined_text = user_description
 
-        from .llm import run_llm_task, get_current_mode, LLM_MODE_REMOTE
+        from .llm import run_llm_task, get_current_mode, LLM_MODE_REMOTE, _load_template_content
+
+        # 确定系统提示词：优先使用 template 内容，其次使用 template_id 加载模版
+        system_prompt = None
+        if template and template.strip():
+            # 直接提供了系统提示词内容
+            system_prompt = template
+            logger.info(f"Using direct template content (length: {len(system_prompt)})")
+        elif template_id:
+            # 使用模版 ID 加载模版内容
+            system_prompt = await _load_template_content(template_id)
+            if system_prompt:
+                logger.info(f"Loaded template '{template_id}' content (length: {len(system_prompt)})")
+            else:
+                logger.warning(f"Template '{template_id}' not found or has no content")
 
         # 如果提供了模板，使用模板作为系统提示词
-        if template and template.strip():
-            result_data = run_llm_task("template_prompt", combined_text, system_prompt=template)
+        if system_prompt and system_prompt.strip():
+            result_data = run_llm_task("template_prompt", combined_text, system_prompt=system_prompt)
         else:
             result_data = run_llm_task("smart_prompt", combined_text)
         
