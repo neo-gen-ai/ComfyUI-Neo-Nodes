@@ -1177,7 +1177,7 @@ const QUICK_INPUT_TIPS = [
     "🎨 输入风格要求，如：'改成赛博朋克风格'",
     "📷 输入场景描述，如：'夕阳下的海边日落'",
     "🔍 输入关键词搜索已有提示词",
-    "🚀 输入描述后按 Ctrl+Enter 或点击 ✨ 生成",
+    "🚀 输入描述后按 Enter 生成，Shift+Enter 换行",
     "🔄 输入修改指令，如：'增加细节描述'",
     "🎭 输入角色描述，如：'一个穿着汉服的女孩'",
     "🌅 输入时间场景，如：'清晨的森林，阳光穿透树叶'",
@@ -1267,7 +1267,7 @@ function createStatusBars() {
 
     const quickInput = document.createElement("textarea");
     quickInput.className = "rs-quick-input";
-    quickInput.placeholder = 'Describe what you want... (Ctrl+Enter to generate)';
+    quickInput.placeholder = 'Describe what you want... (Enter to generate, Shift+Enter for newline)';
     quickInput.rows = 2;
 
     let tipInterval = null;

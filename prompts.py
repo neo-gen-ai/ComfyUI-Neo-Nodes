@@ -657,21 +657,14 @@ async def rs_prompts_smart_prompt(request):
     from aiohttp import web
     try:
         data = await request.json()
-        original_text = data.get("text", "")  # 原始提示词（可选）
-        user_description = data.get("description", "")  # 用户描述
+        text = data.get("text", "")  # 已拼接的提示词（前端拼接）
         template_id = data.get("templateId", data.get("template_id", ""))  # 模版 ID
         template = data.get("template", "")  # 可选的系统提示词内容（直接传递内容）
 
-        logger.info(f"Smart prompt request: original='{original_text[:100]}...', description='{user_description[:100]}...', template_id='{template_id}', template='{template[:100] if template else 'None'}...'")
+        logger.info(f"Smart prompt request: text='{text[:100]}...', template_id='{template_id}', template='{template[:100] if template else 'None'}...'")
 
-        if not user_description or not user_description.strip():
-            return web.json_response({"error": "description is required"}, status=400)
-
-        # 组合输入文本
-        if original_text and original_text.strip():
-            combined_text = f"{original_text}\n\n---\n\n{user_description}"
-        else:
-            combined_text = user_description
+        if not text or not text.strip():
+            return web.json_response({"error": "text is required"}, status=400)
 
         from .llm import run_llm_task, get_current_mode, LLM_MODE_REMOTE, _load_template_content
 
@@ -691,9 +684,9 @@ async def rs_prompts_smart_prompt(request):
 
         # 如果提供了模板，使用模板作为系统提示词
         if system_prompt and system_prompt.strip():
-            result_data = run_llm_task("template_prompt", combined_text, system_prompt=system_prompt)
+            result_data = run_llm_task("template_prompt", text, system_prompt=system_prompt)
         else:
-            result_data = run_llm_task("smart_prompt", combined_text)
+            result_data = run_llm_task("smart_prompt", text)
         
         if "error" in result_data:
             error_msg = result_data["error"]

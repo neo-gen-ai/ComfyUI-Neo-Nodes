@@ -416,9 +416,9 @@ app.registerExtension({
             const handleGeneratePrompt = NodeBehaviors.createGenerateHandler(
                 { ...promptUIRef, quickInput, tplSelector });
             generateBtn.addEventListener("click", handleGeneratePrompt);
-            // Ctrl/Cmd+Enter to generate, plain Enter for newline
+            // Enter to generate, Shift+Enter for newline
             quickInput.addEventListener("keydown", (e) => {
-                if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();
                     handleGeneratePrompt();
                 }
@@ -866,9 +866,9 @@ app.registerExtension({
             const handleGeneratePrompt = NodeBehaviors.createGenerateHandler(
                 { ...promptUIRef, quickInput, tplSelector });
             generateBtn.addEventListener("click", handleGeneratePrompt);
-            // Ctrl/Cmd+Enter to generate, plain Enter for newline
+            // Enter to generate, Shift+Enter for newline
             quickInput.addEventListener("keydown", (e) => {
-                if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();
                     handleGeneratePrompt();
                 }

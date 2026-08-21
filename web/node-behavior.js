@@ -168,8 +168,9 @@ function createGenerateHandler(promptUI) {
             } else {
                 // 使用 LLM 智能判断（流式）：LLM 直接判断用户意图并生成/改写
                 generateBtn.textContent = "🤖 Processing...";
-                // If quickInput is empty, pass empty string as description and use currentPrompt as the main text
-                await smartPromptStream(currentPrompt, quickText || "", {
+                // 拼接 currentPrompt 和 quickText（与选择了模版时保持一致）
+                const userPrompt = quickText ? (currentPrompt ? `${currentPrompt}\n\n---\n\n${quickText}` : quickText) : currentPrompt;
+                await smartPromptStream(userPrompt, "", {
                     onChunk: (chunk) => {
                         if (chunk.text) {
                             accumulated += chunk.text;
