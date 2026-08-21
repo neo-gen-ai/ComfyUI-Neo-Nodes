@@ -3,3 +3,4 @@ huggingface_hub
 modelscope
 requests
 Pillow
+PyYAML

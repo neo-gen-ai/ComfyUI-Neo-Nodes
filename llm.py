@@ -1218,98 +1218,64 @@ def _detect_language(text):
 
 
 # ==========================================
-# LLM Task Definitions
+# LLM Task Definitions - Load from template files
 # ==========================================
 
-LLM_TASKS = {
-    "extract_title": {
-        "system": (
-            "你是一个专业的提示词标题提取助手。"
-            "请从给定的文生图提示词中提取一个简洁的标题，小于 20 字，"
-            "包含主体信息与主要场景,忽略风格词、参数和修饰语。"
-            "只返回标题内容，不要包含任何解释或标点符号。"
-        ),
-        "max_tokens": 20,
-        "result_key": "title",
-        "description": "提取提示词标题"
-    },
-    "extract_classify": {
-        "system": (
-            "你是一个专业的提示词分类助手。"
-            "请分析给定的文生图提示词，从以下列表中选择最适合的 1 个分类："
-            "'唯美', '特色', '写实', '古风', '动漫', '油画', '室内', '户外'。"
-            "仅返回这 1 个分类名称"
-            "不要包含任何解释、标点符号或其他文字。"
-        ),
-        "max_tokens": 50,
-        "result_key": "classify",
-        "description": "提取提示词分类"
-    },
-    "enhance_prompt": {
-        "system": (
-            "你是一个专业的提示词增强助手。"
-            "请分析给定的文生图提示词，将其扩展为更详细、更丰富的版本。"
-            "要求：1.保留原始核心内容；2.添加细节描述（光影、材质、氛围等）；"
-            "3.添加质量词（如：masterpiece, best quality, high resolution 等）；"
-            "4.语言跟原文语言保存一致，适合文生图模型使用。"
-            "仅返回增强后的提示词内容，不要包含任何解释或额外文字。"
-        ),
-        "max_tokens": 500,
-        "result_key": "enhanced",
-        "description": "增强提示词"
-    },
-    "translate_prompt": {
-        "system": (
-            "你是一个专业的提示词翻译助手。"
-            "请将给定的提示词翻译成目标语言。"
-            "要求：1.保留核心主体和关键词；2.保持简洁，适合文生图模型；"
-            "3.不要包含任何解释、标点符号或额外文字。"
-        ),
-        "max_tokens": 500,
-        "result_key": "translated",
-        "description": "翻译提示词"
-    },
-    "smart_prompt": {
-        "system": (
-            "你是一个智能文生图提示词助手。用户会输入一段描述，你需要判断用户的意图并执行相应的操作。\n\n"
-            "可能的意图包括：\n"
-            "1. 【改写】用户想基于现有提示词进行修改（如：删除、添加、替换风格、调整细节等）\n"
-            "2. 【生成】用户想从头生成一个新的提示词\n"
-            "3. 【增强】用户想增强/优化现有提示词\n"
-            "4. 【翻译】用户想翻译提示词\n\n"
-            "判断规则：\n"
-            "- 如果输入包含改写相关词汇（如：删除、添加、替换、修改、风格、改成、去掉、加上等），对原来的提示词执行改写，需要改写内容，不是直接拼接内容\n"
-            "- 如果输入是简洁的描述，直接生成\n"
-            "- 如果输入是纯描述性文字且没有明确操作指令，执行生成\n\n"
-            "【重要】只返回最终的提示词内容，不要返回思考过程内容，不要包含任何解释、说明、前言或后缀文字。\n"
-            "不要说'好的'、'这是改写后的提示词'等任何多余内容。直接输出提示词本身。\n\n"
-            "用户指令格式：[原始提示词（如果有）]\n\n---\n\n[用户描述]"
-        ),
-        "max_tokens": 500,
-        "result_key": "prompt",
-        "description": "智能判断并生成/改写提示词"
-    },
-    "template_prompt": {
-        "system": "",  # Will be replaced by custom template content
-        "max_tokens": 500,
-        "result_key": "prompt",
-        "description": "使用自定义模板生成提示词"
-    },
-    "reverse_prompt": {
-        "system": (
-            "你是一个专业的图像反推提示词助手。请仔细观察给定的图像，反推出用于生成该图像的文生图提示词。\n\n"
-            "要求：\n"
-            "1. 分析图像中的主体、场景、风格、光影、构图、材质、氛围等所有视觉元素\n"
-            "2. 使用英文生成详细的提示词，包含质量词（如：masterpiece, best quality, high resolution 等）\n"
-            "3. 提示词应适合 Stable Diffusion 等文生图模型使用\n"
-            "4. 仅返回提示词内容，不要包含任何解释、说明、前言或后缀文字\n"
-            "5. 不要说'好的'、'这是反推的提示词'等任何多余内容，直接输出提示词本身"
-        ),
-        "max_tokens": 500,
-        "result_key": "prompt",
-        "description": "从图像反推文生图提示词"
-    },
-}
+_TASKS_DIR = os.path.join(os.path.dirname(__file__), "prompts", "templates", "tasks")
+
+def _load_task_template(task_name: str) -> Dict[str, Any]:
+    """Load task template from YAML file."""
+    filepath = os.path.join(_TASKS_DIR, f"{task_name}.yaml")
+    if not os.path.exists(filepath):
+        # Fallback to .yml extension
+        filepath = os.path.join(_TASKS_DIR, f"{task_name}.yml")
+        if not os.path.exists(filepath):
+            logger.warning(f"Task template not found: {task_name}")
+            return {}
+    
+    try:
+        import yaml
+        with open(filepath, 'r', encoding='utf-8') as f:
+            data = yaml.safe_load(f)
+            return data or {}
+    except ImportError:
+        logger.warning(f"PyYAML not installed, cannot load task template: {task_name}")
+        return {}
+    except Exception as e:
+        logger.warning(f"Error loading task template {task_name}: {e}")
+        return {}
+
+
+def _build_llm_tasks() -> Dict[str, Any]:
+    """Build LLM_TASKS from template files."""
+    tasks = {}
+    task_names = [
+        "extract_title",
+        "extract_classify",
+        "enhance_prompt",
+        "translate_prompt",
+        "smart_prompt",
+        "template_prompt",
+        "reverse_prompt"
+    ]
+    
+    for task_name in task_names:
+        template = _load_task_template(task_name)
+        if template:
+            tasks[task_name] = {
+                "system": template.get("content", ""),
+                "max_tokens": template.get("max_tokens", 500),
+                "result_key": template.get("result_key", "prompt"),
+                "description": template.get("description", "")
+            }
+        else:
+            logger.warning(f"Failed to load task template: {task_name}")
+    
+    return tasks
+
+
+# LLM_TASKS is now dynamically loaded from template files
+LLM_TASKS = _build_llm_tasks()
 
 
 # ==========================================
@@ -1401,15 +1367,16 @@ def run_llm_task(task_name: str, text: str, extra_system_prompt: Optional[str] =
 
 
 def run_llm_task_stream(task_name: str, text: str, extra_system_prompt: Optional[str] = None,
-                        images: Optional[Any] = None) -> Generator[str, None, None]:
+                        images: Optional[Any] = None, system_prompt: Optional[str] = None) -> Generator[str, None, None]:
     """
     流式执行 LLM 任务，返回生成器
 
     Args:
         task_name: 任务名称，必须在 LLM_TASKS 中定义
         text: 输入文本
-        extra_system_prompt: 额外的系统提示词（可选）
+        extra_system_prompt: 额外的系统提示词（可选，已废弃，请使用 system_prompt）
         images: 图像数据列表（可选，用于多模态任务）
+        system_prompt: 完全自定义的系统提示词（可选，会覆盖默认系统提示词）
 
     Yields:
         str: 生成的文本块
@@ -1419,7 +1386,25 @@ def run_llm_task_stream(task_name: str, text: str, extra_system_prompt: Optional
         return
 
     task_config = LLM_TASKS[task_name]
-    system_prompt = task_config["system"]
+
+    # 如果提供了自定义 system_prompt（非空），使用它
+    if system_prompt is not None and system_prompt.strip():
+        # Use the provided system_prompt as-is
+        logger.info(f"run_llm_task_stream: Using custom system_prompt (length: {len(system_prompt)})")
+        pass
+    # 如果没有提供 system_prompt，使用任务默认的
+    elif system_prompt is None:
+        system_prompt = task_config["system"]
+        logger.info(f"run_llm_task_stream: Using default system_prompt (length: {len(system_prompt)})")
+    # 如果是 template_prompt 且提供了空字符串，使用 extra_system_prompt
+    elif task_name == "template_prompt" and extra_system_prompt:
+        system_prompt = extra_system_prompt
+        logger.info(f"run_llm_task_stream: Using extra_system_prompt for template_prompt (length: {len(system_prompt)})")
+    # 否则使用任务默认的
+    else:
+        system_prompt = task_config["system"]
+        logger.info(f"run_llm_task_stream: Using default system_prompt (fallback, length: {len(system_prompt)})")
+
     max_tokens = task_config["max_tokens"]
 
     use_remote = get_current_mode() == LLM_MODE_REMOTE
@@ -1432,7 +1417,9 @@ def run_llm_task_stream(task_name: str, text: str, extra_system_prompt: Optional
             target_lang = 'Chinese'
         system_prompt += f"\nTranslation Direction: {source_lang} to {target_lang}"
 
-    if extra_system_prompt:
+    # 兼容旧版：如果没有提供 system_prompt，但有 extra_system_prompt，追加到默认提示词
+    # 注意：如果已经提供了 system_prompt，这个逻辑不会执行
+    if extra_system_prompt and (system_prompt == task_config["system"]):
         system_prompt = system_prompt + extra_system_prompt
 
     try:
@@ -1516,23 +1503,25 @@ async def handle_llm_api_request(task_name, request):
 
 
 async def _load_template_content(template_id):
-    """加载模板内容"""
+    """加载模板内容（仅支持 YAML 格式）"""
     if not template_id:
         return None
-    
+
     from .prompts import (
         TEMPLATES_DIR, TEMPLATE_PRESETS_DIR, TEMPLATE_CUSTOM_DIR,
         _load_template_file
     )
-    
-    # 按优先级搜索模板文件
+
+    # 按优先级搜索模板文件（仅支持 YAML 格式）
     search_dirs = [TEMPLATE_CUSTOM_DIR, TEMPLATE_PRESETS_DIR]
     for base_dir in search_dirs:
-        filepath = os.path.join(base_dir, f"{template_id}.json")
-        data = _load_template_file(filepath)
-        if data and data.get("content"):
-            return data["content"]
-    
+        # 尝试 YAML 格式
+        for ext in ['.yaml', '.yml']:
+            filepath = os.path.join(base_dir, f"{template_id}{ext}")
+            data = _load_template_file(filepath)
+            if data and data.get("content"):
+                return data["content"]
+
     logger.warning(f"Template not found or has no content: {template_id}")
     return None
 
@@ -1559,23 +1548,32 @@ async def handle_llm_api_stream(task_name, request):
         template_id = data.get("templateId", data.get("template_id", ""))
         auto_unload = data.get("autoUnload", data.get("auto_unload", False))
 
-        logger.info(f"LLM API stream request: task={task_name}, text='{text[:100]}...', templateId='{template_id}', autoUnload={auto_unload}")
+        logger.info(f"LLM API stream request: endpoint={task_name}, text='{text[:100]}...', templateId='{template_id}', autoUnload={auto_unload}")
 
         if not text or not text.strip():
             return web.Response(text="data: [ERROR] text content is empty\n\n", content_type="text/event-stream")
 
-        # 加载模板内容作为 extra_system_prompt
-        extra_system_prompt = None
+        # 加载模板内容作为 system_prompt（完全替换默认系统提示词）
+        system_prompt = None
         if template_id:
-            extra_system_prompt = await _load_template_content(template_id)
-            if extra_system_prompt:
-                logger.info(f"Loaded template '{template_id}' for task {task_name}")
+            logger.info(f"Attempting to load template: {template_id}")
+            system_prompt = await _load_template_content(template_id)
+            logger.info(f"Template content loaded: {system_prompt is not None}, length: {len(system_prompt) if system_prompt else 0}")
+            if system_prompt:
+                logger.info(f"Loaded template '{template_id}' (length: {len(system_prompt)})")
+                # 如果提供了模板，使用 template_prompt 任务
+                task_name = "template_prompt"
+                logger.info(f"Switched task from initial endpoint to: {task_name}")
+            else:
+                logger.warning(f"Template '{template_id}' not found or has no content")
+        else:
+            logger.info("No template_id provided, using default task")
 
         async def event_stream():
             try:
                 import asyncio
-                # 将模板内容传递给流式任务
-                gen = run_llm_task_stream(task_name, text, extra_system_prompt=extra_system_prompt)
+                # 将模板内容作为 system_prompt 传递给流式任务
+                gen = run_llm_task_stream(task_name, text, system_prompt=system_prompt)
                 for chunk in gen:
                     yield (f"data: {chunk}\n\n").encode()
                     await asyncio.sleep(0.01)  # 10ms 延迟，让浏览器逐字显示

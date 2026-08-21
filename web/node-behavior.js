@@ -138,7 +138,7 @@ function createGenerateHandler(promptUI) {
                 });
 
                 // 使用流式API，传入templateId
-                await sseStream("/rs_prompts/stream_smart_prompt", {
+                await sseStream("/rs_prompts/stream_generate_prompt", {
                     onChunk: (chunk) => {
                         if (chunk.text) {
                             accumulated += chunk.text;

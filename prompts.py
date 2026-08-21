@@ -132,12 +132,23 @@ DEFAULT_TEMPLATES = [
 
 
 def _load_template_file(filepath: str) -> dict | None:
-    """Load a single template file."""
+    """Load a single template file (YAML format only)."""
     if not os.path.exists(filepath):
         return None
     try:
         with open(filepath, 'r', encoding='utf-8') as f:
-            data = json.load(f)
+            # Support YAML format only
+            if filepath.endswith('.yaml') or filepath.endswith('.yml'):
+                try:
+                    import yaml
+                    data = yaml.safe_load(f)
+                except ImportError:
+                    logger.warning(f"PyYAML not installed, cannot load YAML template: {filepath}")
+                    return None
+            else:
+                logger.warning(f"Unsupported template file format (only YAML supported): {filepath}")
+                return None
+            
             # Ensure required fields
             data.setdefault('id', Path(filepath).stem)
             data.setdefault('name', data.get('id'))
@@ -148,16 +159,26 @@ def _load_template_file(filepath: str) -> dict | None:
                 import datetime
                 data['created_at'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
             return data
-    except (json.JSONDecodeError, Exception) as e:
+    except Exception as e:
         logger.warning(f"Error loading template from {filepath}: {e}")
         return None
 
 
 def _save_template_file(template: dict, filepath: str) -> bool:
-    """Save a template to file."""
+    """Save a template to file (YAML format only)."""
     try:
-        with open(filepath, 'w', encoding='utf-8') as f:
-            json.dump(template, f, indent=2, ensure_ascii=False)
+        # Use YAML format for saving
+        if filepath.endswith('.json'):
+            # Convert to YAML format
+            filepath = filepath.replace('.json', '.yaml')
+        
+        try:
+            import yaml
+            with open(filepath, 'w', encoding='utf-8') as f:
+                yaml.dump(template, f, indent=2, allow_unicode=True, default_flow_style=False)
+        except ImportError:
+            logger.error(f"PyYAML not installed, cannot save template: {filepath}")
+            return False
         return True
     except Exception as e:
         logger.error(f"Error saving template to {filepath}: {e}")
@@ -165,7 +186,7 @@ def _save_template_file(template: dict, filepath: str) -> bool:
 
 
 def _scan_templates_recursive(base_dir: str, source: str = "custom") -> list:
-    """Recursively scan template directory."""
+    """Recursively scan template directory (YAML format only)."""
     templates = []
     if not os.path.exists(base_dir):
         return templates
@@ -175,7 +196,7 @@ def _scan_templates_recursive(base_dir: str, source: str = "custom") -> list:
         if os.path.isdir(full_path):
             sub_prefix = f"{entry}/"
             templates.extend(_scan_templates_recursive(full_path, source))
-        elif entry.endswith('.json') and not entry.startswith('_'):
+        elif (entry.endswith('.yaml') or entry.endswith('.yml')) and not entry.startswith('_'):
             data = _load_template_file(full_path)
             if data:
                 # Override source based on actual directory location
@@ -190,7 +211,7 @@ def _ensure_builtin_templates():
     import datetime
     for tpl in DEFAULT_TEMPLATES:
         target_dir = TEMPLATE_PRESETS_DIR if tpl['source'] == 'presets' else TEMPLATE_CUSTOM_DIR
-        filename = f"{tpl['id']}.json"
+        filename = f"{tpl['id']}.yaml"  # Use YAML format
         filepath = os.path.join(target_dir, filename)
         if not os.path.exists(filepath):
             template_data = {
@@ -817,6 +838,13 @@ async def rs_prompts_stream_llm_api_request(request):
     return await handle_llm_api_stream(task_name, request)
 
 
+@server.PromptServer.instance.routes.post("/rs_prompts/stream_generate_prompt")
+async def rs_prompts_stream_generate_prompt(request):
+    """流式提示词生成请求（智能判断是否使用模版）"""
+    # 默认使用 smart_prompt 任务，如果有 templateId 则会切换
+    return await handle_llm_api_stream("smart_prompt", request)
+
+
 @server.PromptServer.instance.routes.post("/rs_prompts/random_prompt")
 async def rs_prompts_random_prompt(request):
     """Random prompt - pick a random preset from the list."""
@@ -970,23 +998,25 @@ async def rs_prompts_list_templates(request):
 
 @server.PromptServer.instance.routes.post("/rs_prompts/load_template")
 async def rs_prompts_load_template(request):
-    """加载单个模版内容"""
+    """加载单个模版内容（支持 YAML 格式）"""
     try:
         data = await request.json()
         template_id = data.get("id")
         if not template_id:
             return web.Response(status=400, text="Template id required")
-        
+
         with _templates_lock:
-            # 先在 custom 目录查找
+            # 先在 custom 目录查找，支持 YAML 格式
             for search_dir in [TEMPLATE_CUSTOM_DIR, TEMPLATE_PRESETS_DIR]:
-                filepath = os.path.join(search_dir, f"{template_id}.json")
-                if os.path.exists(filepath):
-                    tpl_data = _load_template_file(filepath)
-                    if tpl_data:
-                        result = {k: v for k, v in tpl_data.items() if k != "_mtime"}
-                        return web.json_response(result)
-        
+                # 尝试多种 YAML 扩展
+                for ext in ['.yaml', '.yml']:
+                    filepath = os.path.join(search_dir, f"{template_id}{ext}")
+                    if os.path.exists(filepath):
+                        tpl_data = _load_template_file(filepath)
+                        if tpl_data:
+                            result = {k: v for k, v in tpl_data.items() if k != "_mtime"}
+                            return web.json_response(result)
+
         return web.Response(status=404, text="Template not found")
     except Exception as e:
         logger.error(f"Error loading template: {e}")
@@ -1043,29 +1073,31 @@ async def rs_prompts_save_template(request):
 
 @server.PromptServer.instance.routes.post("/rs_prompts/delete_template")
 async def rs_prompts_delete_template(request):
-    """删除模版（预设不可删）"""
+    """删除模版（预设不可删，仅支持 YAML 格式）"""
     try:
         data = await request.json()
         template_id = data.get("id")
         if not template_id:
             return web.Response(status=400, text="Template id required")
-        
+
         with _templates_lock:
-            # 尝试在两个目录中查找并删除
+            # 尝试在两个目录中查找并删除（支持 YAML 格式）
             for search_dir in [TEMPLATE_CUSTOM_DIR, TEMPLATE_PRESETS_DIR]:
-                filepath = os.path.join(search_dir, f"{template_id}.json")
-                
-                if os.path.exists(filepath):
-                    # 根据文件所在目录确定来源
-                    source = "custom" if search_dir == TEMPLATE_CUSTOM_DIR else "presets"
-                    
-                    # 预设模版不允许删除
-                    if source == "presets":
-                        return web.Response(status=403, text="Cannot delete preset template")
-                    
-                    os.remove(filepath)
-                    return web.json_response({"success": True})
-        
+                # 尝试多种 YAML 扩展
+                for ext in ['.yaml', '.yml']:
+                    filepath = os.path.join(search_dir, f"{template_id}{ext}")
+
+                    if os.path.exists(filepath):
+                        # 根据文件所在目录确定来源
+                        source = "custom" if search_dir == TEMPLATE_CUSTOM_DIR else "presets"
+
+                        # 预设模版不允许删除
+                        if source == "presets":
+                            return web.Response(status=403, text="Cannot delete preset template")
+
+                        os.remove(filepath)
+                        return web.json_response({"success": True})
+
         return web.Response(status=404, text="Template not found")
     except Exception as e:
         logger.error(f"Error deleting template: {e}")

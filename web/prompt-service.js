@@ -608,7 +608,7 @@ async function smartPrompt(text, description) {
  * 智能提示词 - 流式
  */
 async function smartPromptStream(text, description, options = {}) {
-    return sseStream("/rs_prompts/stream_smart_prompt", options, { text: text || "", description });
+    return sseStream("/rs_prompts/stream_generate_prompt", options, { text: text || "", description });
 }
 
 /**
