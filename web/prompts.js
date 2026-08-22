@@ -233,10 +233,28 @@ app.registerExtension({
                 quickInputWrapper, populateTemplateSelector, tplSelector, autoGenerateCheckbox
             } = promptUI.init({ node, graph: node.graph, textWidget });
 
-            // Populate template selector on init
+            // Populate template selector, restore last selection and sync to hidden widget
             if (populateTemplateSelector) {
-                setTimeout(() => populateTemplateSelector(), 100);
+                setTimeout(async () => {
+                    await populateTemplateSelector();
+                    if (node.properties?.rs_selected_template) {
+                        tplSelector.value = node.properties.rs_selected_template;
+                    }
+                    const tplWidget = node.widgets?.find(w => w.name === "template_id");
+                    if (tplWidget) tplWidget.value = tplSelector.value;
+                }, 100);
             }
+
+            // Sync template selection so backend auto-generate uses the selected template
+            tplSelector.addEventListener("change", () => {
+                if (!node.properties) node.properties = {};
+                node.properties.rs_selected_template = tplSelector.value;
+                const tplWidget = node.widgets?.find(w => w.name === "template_id");
+                if (tplWidget) tplWidget.value = tplSelector.value;
+            });
+
+            // Expose for rs.templates.updated listener to refresh this selector
+            node._populateTemplateSelector = populateTemplateSelector;
 
             // Restore quickInput content from properties
             if (node.properties?.rs_quick_input !== undefined) {
@@ -367,6 +385,17 @@ app.registerExtension({
             // Restore logic - use shared method
             node.restoreFromProperties = () => {
                 NodeBehaviors.restoreTextFromStorage(node, textWidget, customTextarea);
+                // Restore quick input content and auto-generate checkbox (runs after workflow configure)
+                const quickInputWidget = node.widgets?.find(w => w.name === "quick_input");
+                if (quickInput) {
+                    const v = quickInputWidget ? quickInputWidget.value : node.properties?.rs_quick_input;
+                    if (v !== undefined) quickInput.value = v;
+                }
+                if (autoGenerateCheckbox) {
+                    const autoGenWidget = node.widgets?.find(w => w.name === "auto_generate");
+                    const v = autoGenWidget ? autoGenWidget.value : node.properties?.rs_auto_generate;
+                    if (v !== undefined) autoGenerateCheckbox.checked = !!v;
+                }
                 updateStatusAndUI();
             };
 
@@ -570,6 +599,16 @@ document.addEventListener("gallery.send.prompt", (event) => {
     }
 });
 
+// Refresh template selectors on all Neo prompt nodes when templates change
+// (dispatched by the settings window after save/copy/delete)
+document.addEventListener("rs.templates.updated", () => {
+    app.graph?._nodes?.forEach(node => {
+        if (typeof node._populateTemplateSelector === "function") {
+            node._populateTemplateSelector();
+        }
+    });
+});
+
 window.addEventListener("beforeunload", NodeBehaviors.createBeforeUnloadHandler);
 
 // ==========================================
@@ -726,10 +765,28 @@ app.registerExtension({
                 quickInputWrapper, populateTemplateSelector, tplSelector, autoGenerateCheckbox
             } = promptUI.init({ node, graph: node.graph, textWidget });
 
-            // Populate template selector on init
+            // Populate template selector, restore last selection and sync to hidden widget
             if (populateTemplateSelector) {
-                setTimeout(() => populateTemplateSelector(), 100);
+                setTimeout(async () => {
+                    await populateTemplateSelector();
+                    if (node.properties?.rs_selected_template) {
+                        tplSelector.value = node.properties.rs_selected_template;
+                    }
+                    const tplWidget = node.widgets?.find(w => w.name === "template_id");
+                    if (tplWidget) tplWidget.value = tplSelector.value;
+                }, 100);
             }
+
+            // Sync template selection so backend auto-generate uses the selected template
+            tplSelector.addEventListener("change", () => {
+                if (!node.properties) node.properties = {};
+                node.properties.rs_selected_template = tplSelector.value;
+                const tplWidget = node.widgets?.find(w => w.name === "template_id");
+                if (tplWidget) tplWidget.value = tplSelector.value;
+            });
+
+            // Expose for rs.templates.updated listener to refresh this selector
+            node._populateTemplateSelector = populateTemplateSelector;
 
             // Restore quickInput content from properties
             if (node.properties?.rs_quick_input !== undefined) {
@@ -909,6 +966,17 @@ app.registerExtension({
             // 恢复逻辑 - 使用共享方法
             node.restoreFromProperties = () => {
                 NodeBehaviors.restoreTextFromStorage(node, textWidget, customTextarea);
+                // 恢复 quick_input 内容和自动生成勾选状态（在工作流 configure 之后调用）
+                const quickInputWidget = node.widgets?.find(w => w.name === "quick_input");
+                if (quickInput) {
+                    const v = quickInputWidget ? quickInputWidget.value : node.properties?.rs_quick_input;
+                    if (v !== undefined) quickInput.value = v;
+                }
+                if (autoGenerateCheckbox) {
+                    const autoGenWidget = node.widgets?.find(w => w.name === "auto_generate");
+                    const v = autoGenWidget ? autoGenWidget.value : node.properties?.rs_auto_generate;
+                    if (v !== undefined) autoGenerateCheckbox.checked = !!v;
+                }
                 updateStatusAndUI();
             };
 

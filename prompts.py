@@ -228,6 +228,21 @@ def _ensure_builtin_templates():
 # Initialize built-in templates on module load
 _ensure_builtin_templates()
 
+
+def _load_template_content(template_id: str) -> str | None:
+    """Load template content by id (custom first, then presets)."""
+    if not template_id:
+        return None
+    for base_dir in [TEMPLATE_CUSTOM_DIR, TEMPLATE_PRESETS_DIR]:
+        for ext in ['.yaml', '.yml']:
+            data = _load_template_file(os.path.join(base_dir, f"{template_id}{ext}"))
+            if data and data.get("content"):
+                return data["content"]
+    logger.warning(f"Template not found or has no content: {template_id}")
+    return None
+
+
+_tags_lock = threading.Lock()
 _tags_lock = threading.Lock()
 
 # 从 llm 模块导入 LLM 相关功能
@@ -340,6 +355,7 @@ class NeoPrompts:
                 "disable_text_input": ("BOOLEAN", {"default": False, "hidden": True}),
                 "auto_generate": ("BOOLEAN", {"default": False, "hidden": True}),
                 "quick_input": ("STRING", {"default": "", "hidden": True}),
+                "template_id": ("STRING", {"default": "", "hidden": True}),
             },
             "optional": {
                 "text_input": ("STRING", {"forceInput": True}),
@@ -357,7 +373,7 @@ class NeoPrompts:
     DESCRIPTION = "AI-powered text encoder supports save/select prompt, LLM-based prompt enhancement, translation, classification, title extraction, intelligent caching, and auto-generate."
 
     def encode_prompts(self, clip, disable_text_input=False, auto_generate=False, quick_input="",
-                       text="", text_input=None, unique_id=None, instance_uid=""):
+                       text="", text_input=None, unique_id=None, instance_uid="", template_id=""):
         """Encode prompts with optional auto-generate support.
         
         Logic:
@@ -373,11 +389,21 @@ class NeoPrompts:
             logger.info(f"Current LLM mode: {current_mode}")
             if current_mode == LLM_MODE_REMOTE:
                 try:
-                    logger.info(f"Calling LLM with smart_prompt task and quick_input: {quick_input[:100]}...")
+                    # Use selected template as system prompt when available
+                    task_name = "smart_prompt"
+                    system_prompt = None
+                    if template_id.strip():
+                        system_prompt = _load_template_content(template_id)
+                        if system_prompt:
+                            task_name = "template_prompt"
+                            logger.info(f"Auto-generate using template '{template_id}' (length: {len(system_prompt)})")
+                        else:
+                            logger.warning(f"Template '{template_id}' not found, falling back to smart_prompt")
+                    logger.info(f"Calling LLM with {task_name} task and quick_input: {quick_input[:100]}...")
                     # Use stream generation for real-time update
                     from .llm import run_llm_task_stream
                     accumulated = ""
-                    for chunk in run_llm_task_stream("smart_prompt", quick_input):
+                    for chunk in run_llm_task_stream(task_name, quick_input, system_prompt=system_prompt):
                         accumulated += chunk
                         # Send real-time update to frontend
                         if instance_uid:
@@ -386,7 +412,7 @@ class NeoPrompts:
                                 "prompt": accumulated,
                                 "is_complete": False
                             })
-                    
+
                     if accumulated:
                         text = accumulated
                         logger.info(f"Auto-generated prompt: {accumulated[:100]}...")
@@ -1083,9 +1109,9 @@ async def rs_prompts_save_template(request):
         if not template_id:
             return web.Response(status=400, text="Template id required")
         
-        # 验证 ID（只允许字母、数字、下划线、连字符）
+        # 验证 ID（允许 Unicode 字母、数字、下划线、连字符；不含路径分隔符等危险字符）
         import re
-        template_id = re.sub(r'[^a-zA-Z0-9_-]', '', template_id)
+        template_id = re.sub(r'[^\w-]', '', template_id)
         if not template_id:
             return web.Response(status=400, text="Invalid template id")
         
@@ -1097,12 +1123,10 @@ async def rs_prompts_save_template(request):
         # 确定保存目录
         target_dir = TEMPLATE_PRESETS_DIR if source == "presets" else TEMPLATE_CUSTOM_DIR
         
-        filepath = os.path.join(target_dir, f"{template_id}.json")
+        filepath = os.path.join(target_dir, f"{template_id}.yaml")
         
         # 加载现有数据以保留 created_at
-        existing_data = _load_template_file(filepath) if os.path.exists(filepath) else {}
-        # _load_template_file can return None on JSON parse errors, ensure we have a dict
-        existing_data = existing_data or {}
+        existing_data = _load_template_file(filepath) or {}
         template_data = {
             "id": template_id,
             "name": name,
@@ -1181,6 +1205,7 @@ class NeoPromptGenerator:
                 "disable_text_input": ("BOOLEAN", {"default": False, "hidden": True}),
                 "auto_generate": ("BOOLEAN", {"default": False, "hidden": True}),
                 "quick_input": ("STRING", {"default": "", "hidden": True}),
+                "template_id": ("STRING", {"default": "", "hidden": True}),
             },
             "optional": {
                 "text_input": ("STRING", {"forceInput": True}),
@@ -1198,7 +1223,7 @@ class NeoPromptGenerator:
     OUTPUT_NODE = True
     DESCRIPTION = "Simple prompt generator node with settings button. Supports external/internal input toggle and auto-generate. No clip encoder binding."
 
-    def get_prompt(self, prompt="", disable_text_input=False, auto_generate=False, quick_input="", text_input=None, instance_uid="", unique_id=None):
+    def get_prompt(self, prompt="", disable_text_input=False, auto_generate=False, quick_input="", text_input=None, instance_uid="", unique_id=None, template_id=""):
         """Returns the prompt text as output.
 
         Logic:
@@ -1215,11 +1240,21 @@ class NeoPromptGenerator:
             logger.info(f"Current LLM mode: {current_mode}")
             if current_mode == LLM_MODE_REMOTE:
                 try:
-                    logger.info(f"Calling LLM with smart_prompt task and quick_input: {quick_input[:100]}...")
+                    # Use selected template as system prompt when available
+                    task_name = "smart_prompt"
+                    system_prompt = None
+                    if template_id.strip():
+                        system_prompt = _load_template_content(template_id)
+                        if system_prompt:
+                            task_name = "template_prompt"
+                            logger.info(f"Auto-generate using template '{template_id}' (length: {len(system_prompt)})")
+                        else:
+                            logger.warning(f"Template '{template_id}' not found, falling back to smart_prompt")
+                    logger.info(f"Calling LLM with {task_name} task and quick_input: {quick_input[:100]}...")
                     # Use stream generation for real-time update
                     from .llm import run_llm_task_stream
                     accumulated = ""
-                    for chunk in run_llm_task_stream("smart_prompt", quick_input):
+                    for chunk in run_llm_task_stream(task_name, quick_input, system_prompt=system_prompt):
                         accumulated += chunk
                         # Send real-time update to frontend
                         if instance_uid:
@@ -1228,7 +1263,7 @@ class NeoPromptGenerator:
                                 "prompt": accumulated,
                                 "is_complete": False
                             })
-                    
+
                     if accumulated:
                         prompt = accumulated
                         logger.info(f"Auto-generated prompt: {accumulated[:100]}...")

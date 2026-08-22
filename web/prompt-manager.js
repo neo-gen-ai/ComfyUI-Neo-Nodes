@@ -980,6 +980,7 @@ function createSettingsModal() {
                     const result = await deleteTemplate(tpl.id);
                     if (result.success) {
                         loadTemplatesList();
+                        document.dispatchEvent(new CustomEvent("rs.templates.updated"));
                     } else {
                         alert(`Delete failed: ${result.error || "Unknown error"}`);
                     }
@@ -1036,6 +1037,7 @@ function createSettingsModal() {
             source: "custom"
         });
         loadTemplatesList();
+        document.dispatchEvent(new CustomEvent("rs.templates.updated"));
     }
     
     // Template search handler
@@ -1074,7 +1076,8 @@ function createSettingsModal() {
         
         const content = tplContentTextarea.value;
         
-        let id = currentTemplateId || name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+        // Generate id from name, keeping unicode letters/digits (e.g. Chinese names)
+        let id = currentTemplateId || name.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-+|-+$/g, "");
         if (!id) return;
         
         const result = await saveTemplate({
@@ -1090,6 +1093,7 @@ function createSettingsModal() {
             tplContentTextarea.value = "";
             currentTemplateId = null;
             loadTemplatesList();
+            document.dispatchEvent(new CustomEvent("rs.templates.updated"));
         } else {
             alert("Save failed: " + (result.error || "Unknown error"));
         }
