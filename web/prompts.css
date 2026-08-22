@@ -474,7 +474,6 @@
 
 .rs-quick-input:focus {
     border-color: #5090cc;
-    background: #333;
 }
 
 .rs-quick-input::placeholder {
@@ -656,17 +655,35 @@
     padding-bottom: 36px !important;
 }
 
-/* Position button group wrapper at bottom-right */
+/* Floating button group - collapsed to one semi-transparent button, expands on hover */
 .rs-custom-textarea-wrapper > .rs-button-group {
     position: absolute;
-    bottom: 4px;
-    right: 30px;
+    bottom: 0;
+    right: 10px;
     z-index: 100;
     display: flex;
     gap: 0;
     border-radius: 4px;
     overflow: hidden;
-    background: rgba(42, 42, 42, 0.8);
+    background: rgba(42, 42, 42, 0.6);
+    opacity: 0.6;
+    transition: opacity 0.2s ease;
+}
+
+.rs-custom-textarea-wrapper > .rs-button-group:hover {
+    opacity: 1;
+    background: rgba(42, 42, 42, 0.85);
+}
+
+/* Collapsed by default: only the presets (☰) button is visible */
+.rs-button-group > .rs-random-btn,
+.rs-button-group > .rs-action-btn {
+    display: none !important;
+}
+
+.rs-button-group:hover > .rs-random-btn,
+.rs-button-group:hover > .rs-action-btn {
+    display: block !important;
 }
 
 /* Style buttons within button group */

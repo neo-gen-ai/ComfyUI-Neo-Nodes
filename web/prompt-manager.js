@@ -1230,7 +1230,7 @@ function createStatusBars() {
         
         const defaultOpt = document.createElement("option");
         defaultOpt.value = "";
-        defaultOpt.textContent = "📝 No template";
+        defaultOpt.textContent = "默认";
         tplSelector.appendChild(defaultOpt);
         
         if (templates) {

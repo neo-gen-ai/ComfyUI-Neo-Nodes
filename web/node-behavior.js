@@ -212,7 +212,6 @@ function createRandomHandler(promptUI) {
         const { randomBtn, customTextarea, textWidget, node, graph } = promptUI;
 
         randomBtn.disabled = true;
-        randomBtn.textContent = "⏳";
 
         try {
             const data = await randomPrompt();
@@ -229,7 +228,6 @@ function createRandomHandler(promptUI) {
             alert("Network error during random prompt generation.");
         } finally {
             randomBtn.disabled = false;
-            randomBtn.textContent = "🎲";
         }
     };
 }
